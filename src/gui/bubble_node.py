@@ -3,20 +3,31 @@
 import uuid
 from typing import List, Optional, TYPE_CHECKING
 
-from PySide6.QtCore import QRectF, Qt, QPointF
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QFont
+from PySide6.QtCore import QRectF, Qt, QPointF, QPoint
+from PySide6.QtGui import (
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QBrush,
+    QFont,
+    QIcon,
+    QPixmap,
+    QLinearGradient,
+)
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsItem,
     QGraphicsProxyWidget,
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QLineEdit,
-    QComboBox,
     QPlainTextEdit,
     QLabel,
-    QSizePolicy,
     QFrame,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
 )
 
 from src.llm.base_provider import LLMProviderRegistry
@@ -38,22 +49,272 @@ PORT_RADIUS = 7
 CORNER_RADIUS = 12
 
 
+class _ModelListWidget(QListWidget):
+    """List widget that notifies when it loses focus."""
+
+    def __init__(self, on_focus_lost, parent=None):
+        super().__init__(parent)
+        self._on_focus_lost = on_focus_lost
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        if self._on_focus_lost:
+            self._on_focus_lost()
+
+
+class ModelSelector(QWidget):
+    """Compact model selector with dropdown overlay on the top-level window."""
+
+    LIST_STYLESHEET = """
+        QListWidget {
+            background: #2a2a2a;
+            color: #e8e8e8;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            padding: 2px;
+            outline: 0px;
+        }
+        QListWidget::item {
+            padding: 4px 6px;
+        }
+        QListWidget::item:selected {
+            background: #3a8ef5;
+            color: #ffffff;
+        }
+        QListWidget::item:hover {
+            background: #324056;
+        }
+    """
+
+    def __init__(self, popup_parent: QWidget, on_layout_change=None, parent=None):
+        super().__init__(parent)
+        self._on_layout_change = on_layout_change
+        self._popup_parent = popup_parent
+        self._current_model_id: Optional[str] = None
+        self._current_label = "Select model"
+        self._dropdown_height = 0
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._toggle_button = QPushButton()
+        self._toggle_button.setCheckable(True)
+        self._toggle_button.setMinimumHeight(26)
+        self._toggle_button.setToolTip("Choose model")
+        self._toggle_button.clicked.connect(self._on_toggle_clicked)
+        layout.addWidget(self._toggle_button)
+
+        self._list = _ModelListWidget(self._close_dropdown, popup_parent)
+        self._list.setVisible(False)
+        self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self._list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._list.setStyleSheet(self.LIST_STYLESHEET)
+
+        self._update_button_label()
+
+    def clear(self):
+        self._list.clear()
+        self._current_model_id = None
+        self._current_label = "Select model"
+        self._close_dropdown()
+        self._update_button_label()
+        self._update_list_height()
+
+    def add_model(self, icon: QIcon, model_name: str, model_id: str, company_name: str):
+        item = QListWidgetItem(icon, model_name)
+        item.setData(Qt.ItemDataRole.UserRole, model_id)
+        item.setToolTip(company_name)
+        self._list.addItem(item)
+        self._update_list_height()
+
+        if self._current_model_id is None:
+            self._select_item(item)
+
+    def current_model_id(self) -> Optional[str]:
+        return self._current_model_id
+
+    def set_model_id(self, model_id: str):
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == model_id:
+                self._select_item(item)
+                return
+
+    def set_enabled(self, enabled: bool):
+        self._toggle_button.setEnabled(enabled)
+        self._list.setEnabled(enabled)
+        if not enabled:
+            self._close_dropdown()
+            self._update_button_label()
+
+    def _on_toggle_clicked(self):
+        if self._toggle_button.isChecked():
+            self._open_dropdown()
+            return
+        self._close_dropdown()
+
+    def _on_item_clicked(self, item: QListWidgetItem):
+        self._select_item(item)
+        self._close_dropdown()
+
+    def _select_item(self, item: QListWidgetItem):
+        self._list.setCurrentItem(item)
+        self._current_model_id = item.data(Qt.ItemDataRole.UserRole)
+        self._current_label = item.text()
+        self._toggle_button.setIcon(item.icon())
+        self._update_button_label()
+
+    def _update_button_label(self):
+        self._toggle_button.setText(self._current_label)
+
+    def _update_list_height(self):
+        if self._list.count() == 0:
+            self._dropdown_height = 0
+            return
+
+        visible_rows = min(self._list.count(), 10)
+        row_h = self._list.sizeHintForRow(0)
+        if row_h <= 0:
+            row_h = 24
+
+        frame = self._list.frameWidth() * 2
+        self._dropdown_height = frame + (visible_rows * row_h) + 2
+
+    def _open_dropdown(self):
+        if self._list.count() == 0 or self._dropdown_height <= 0:
+            self._toggle_button.setChecked(False)
+            return
+        self._ensure_overlay_parent()
+        self._position_dropdown()
+        self._list.show()
+        self._list.raise_()
+        self._list.setFocus(Qt.FocusReason.MouseFocusReason)
+
+    def _close_dropdown(self):
+        self._list.hide()
+        if self._toggle_button.isChecked():
+            self._toggle_button.blockSignals(True)
+            self._toggle_button.setChecked(False)
+            self._toggle_button.blockSignals(False)
+
+    def _position_dropdown(self):
+        overlay_parent = self._overlay_parent()
+
+        width = min(
+            self._toggle_button.width(),
+            max(120, overlay_parent.width() - 16),
+        )
+
+        button_top_global = self._toggle_button.mapToGlobal(QPoint(0, 0))
+        button_top = overlay_parent.mapFromGlobal(button_top_global)
+        button_bottom_y = button_top.y() + self._toggle_button.height() + 2
+
+        x = button_top.x()
+        x = max(8, min(x, overlay_parent.width() - width - 8))
+
+        frame = self._list.frameWidth() * 2
+        row_h = self._list.sizeHintForRow(0)
+        if row_h <= 0:
+            row_h = 24
+        min_rows = min(3, max(1, self._list.count()))
+        min_height = frame + (row_h * min_rows) + 2
+
+        down_space = max(0, overlay_parent.height() - button_bottom_y - 8)
+        up_space = max(0, button_top.y() - 10)
+
+        place_below = down_space >= min_height or down_space >= up_space
+        if place_below:
+            height = min(self._dropdown_height, down_space)
+            if height < min_height and up_space > down_space:
+                place_below = False
+        if not place_below:
+            height = min(self._dropdown_height, up_space)
+            y = button_top.y() - height - 2
+            y = max(8, y)
+        else:
+            y = button_bottom_y
+
+        if height <= 0:
+            self._close_dropdown()
+            return
+
+        self._list.setGeometry(x, y, width, height)
+
+    def _overlay_parent(self) -> QWidget:
+        active_window = QApplication.activeWindow()
+        if isinstance(active_window, QWidget):
+            return active_window
+        window = self._popup_parent.window()
+        if isinstance(window, QWidget):
+            return window
+        return self._popup_parent
+
+    def _ensure_overlay_parent(self):
+        overlay_parent = self._overlay_parent()
+        if self._list.parentWidget() is overlay_parent:
+            return
+        self._list.hide()
+        self._list.setParent(overlay_parent)
+        self._list.setStyleSheet(self.LIST_STYLESHEET)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._list.isVisible():
+            self._position_dropdown()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if self._list.isVisible():
+            self._position_dropdown()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._close_dropdown()
+
+
 class BubbleWidget(QWidget):
     """Inner Qt widget embedded in the graphics item."""
 
-    def __init__(self, parent=None):
+    def __init__(self, on_layout_change=None, parent=None):
         super().__init__(parent)
+        self.setObjectName("bubble_widget_root")
         self.setStyleSheet("""
-            QWidget { background: transparent; color: #e8e8e8; font-size: 12px; }
+            QWidget#bubble_widget_root {
+                background: transparent;
+                color: #e8e8e8;
+                font-size: 12px;
+            }
             QLineEdit {
                 background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
                 padding: 3px 6px; color: #e8e8e8; font-weight: bold; font-size: 13px;
             }
-            QComboBox {
+            QPushButton {
                 background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
-                padding: 3px 6px; color: #e8e8e8;
+                padding: 4px 8px; color: #e8e8e8; text-align: left;
             }
-            QComboBox QAbstractItemView { background: #2a2a2a; color: #e8e8e8; }
+            QPushButton:hover { border: 1px solid #555; }
+            QPushButton:pressed { background: #222222; }
+            QListWidget {
+                background: #2a2a2a;
+                color: #e8e8e8;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 2px;
+                outline: 0px;
+            }
+            QListWidget::item {
+                padding: 4px 6px;
+            }
+            QListWidget::item:selected {
+                background: #3a8ef5;
+                color: #ffffff;
+            }
+            QListWidget::item:hover {
+                background: #324056;
+            }
             QPlainTextEdit {
                 background: #1e1e1e; border: 1px solid #444; border-radius: 4px;
                 padding: 4px; color: #e8e8e8; font-family: monospace; font-size: 11px;
@@ -73,9 +334,12 @@ class BubbleWidget(QWidget):
         # Model selector
         model_label = QLabel("Model")
         layout.addWidget(model_label)
-        self.model_combo = QComboBox()
+        self.model_selector = ModelSelector(
+            popup_parent=self,
+            on_layout_change=on_layout_change,
+        )
         self._populate_models()
-        layout.addWidget(self.model_combo)
+        layout.addWidget(self.model_selector)
 
         # Prompt
         prompt_label = QLabel("Prompt  (use {{bubble_name_output}} for upstream output)")
@@ -102,25 +366,90 @@ class BubbleWidget(QWidget):
         self.setFixedWidth(NODE_WIDTH - 20)
 
     def _populate_models(self):
-        self.model_combo.clear()
-        for provider in LLMProviderRegistry.all():
-            # Separator item with provider name
-            self.model_combo.addItem(f"── {provider.display_name} ──")
-            idx = self.model_combo.count() - 1
-            item = self.model_combo.model().item(idx)
-            item.setEnabled(False)
-            item.setForeground(QColor("#888888"))
+        self.model_selector.clear()
+        providers = self._get_registered_providers()
+        first_model_index = -1
+        model_rows = 0
+
+        for provider in providers:
+            icon = self._provider_icon(provider.name)
+            company_name = self._provider_company(provider.name)
             for model_id, model_name in provider.get_models():
-                self.model_combo.addItem(f"  {model_name}", userData=model_id)
+                self.model_selector.add_model(icon, model_name, model_id, company_name)
+                if first_model_index < 0:
+                    first_model_index = model_rows
+                model_rows += 1
+
+        if first_model_index >= 0:
+            self.model_selector.set_enabled(True)
+            return
+
+        self.model_selector.clear()
+        self.model_selector.set_enabled(False)
+
+    @staticmethod
+    def _provider_company(provider_name: str) -> str:
+        return {
+            "claude": "Anthropic",
+            "codex": "OpenAI",
+            "gemini": "Google Gemini",
+        }.get(provider_name, provider_name.title())
+
+    @staticmethod
+    def _get_registered_providers():
+        providers = LLMProviderRegistry.all()
+        if providers:
+            return providers
+
+        # Fallback when app entrypoint didn't preload provider modules.
+        import src.llm  # noqa: F401
+
+        return LLMProviderRegistry.all()
+
+    @staticmethod
+    def _provider_icon(provider_name: str) -> QIcon:
+        icon_size = 16
+        pixmap = QPixmap(icon_size, icon_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = pixmap.rect().adjusted(1, 1, -1, -1)
+
+        if provider_name == "codex":
+            fill_brush = QBrush(QColor("#10a37f"))
+            border = QColor("#6de8cb")
+            label = "O"
+        elif provider_name == "gemini":
+            gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+            gradient.setColorAt(0.0, QColor("#1a73e8"))
+            gradient.setColorAt(1.0, QColor("#9b63ff"))
+            fill_brush = QBrush(gradient)
+            border = QColor("#bfd3ff")
+            label = "G"
+        else:
+            fill_brush = QBrush(QColor("#1d1d1d"))
+            border = QColor("#a0a0a0")
+            label = "A"
+
+        painter.setPen(QPen(border, 1))
+        painter.setBrush(fill_brush)
+        painter.drawRoundedRect(rect, 4, 4)
+
+        font = QFont("Segoe UI", 8)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QColor("#f5f5f5"))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+        painter.end()
+
+        return QIcon(pixmap)
 
     def get_model_id(self) -> Optional[str]:
-        return self.model_combo.currentData()
+        return self.model_selector.current_model_id()
 
     def set_model_id(self, model_id: str):
-        for i in range(self.model_combo.count()):
-            if self.model_combo.itemData(i) == model_id:
-                self.model_combo.setCurrentIndex(i)
-                return
+        self.model_selector.set_model_id(model_id)
 
     def show_output(self, visible: bool = True):
         self._output_frame.setVisible(visible)
@@ -145,7 +474,7 @@ class BubbleNode(QGraphicsItem):
         self.setZValue(1)
 
         # Embedded widget
-        self._widget = BubbleWidget()
+        self._widget = BubbleWidget(on_layout_change=self._update_height)
         self._widget.title_edit.setText(f"Bubble {label_index}")
         self._proxy = QGraphicsProxyWidget(self)
         self._proxy.setWidget(self._widget)

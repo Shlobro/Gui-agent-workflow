@@ -10,7 +10,7 @@
 - `__init__.py`: Package marker.
 
 ## Data Flow
-1. UI collects node prompts and model selections.
+1. UI collects node prompts and model selections (with provider badges in a compact model-picker that opens a top-level bounded overlay dropdown).
 2. Canvas resolves upstream placeholders and chooses a provider via `LLMProviderRegistry`.
 3. `LLMWorker` runs the provider command in a background `QThread`.
 4. Streamed output lines are appended live into the active node.
