@@ -11,7 +11,7 @@
 
 ## Data Flow
 1. UI collects node prompts and model selections (with provider logos loaded from `gui/assets/` in a compact model-picker that opens a bounded overlay dropdown on the canvas viewport).
-2. `WorkflowCanvas` handles graph interaction including node/edge editing, wheel-to-zoom, right-drag panning, a zoom-stable dot grid background, auto-expanding scene bounds so moved nodes stay reachable, and temporary zoom suspension while model dropdowns are open (wheel then scrolls the dropdown list).
+2. `WorkflowCanvas` handles graph interaction including node/edge editing, wheel-to-zoom, right-drag panning, a zoom-stable dot grid background, auto-expanding scene bounds so moved nodes stay reachable, obstacle-aware connection routing around bubble boxes, and temporary zoom suspension while model dropdowns are open (wheel then scrolls the dropdown list).
 3. Canvas runs nodes in topological order, passing each node's raw prompt text to the selected provider via `LLMProviderRegistry`.
 4. `LLMWorker` runs the provider command in a background `QThread`.
 5. Streamed output lines are appended live into the active node.

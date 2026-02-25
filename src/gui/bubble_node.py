@@ -637,6 +637,7 @@ class BubbleNode(QGraphicsItem):
             self.prepareGeometryChange()
             self._height = new_h
             self._update_connections()
+            self._update_scene_connection_routes()
 
     # ------------------------------------------------------------------
     # Port positions
@@ -674,6 +675,17 @@ class BubbleNode(QGraphicsItem):
         for conn in self._connections:
             conn.update_path()
 
+    def _update_scene_connection_routes(self):
+        scene = self.scene()
+        if scene is None:
+            return
+
+        from .connection_item import ConnectionItem
+
+        for item in scene.items():
+            if isinstance(item, ConnectionItem) and item not in self._connections:
+                item.update_path()
+
     # ------------------------------------------------------------------
     # QGraphicsItem overrides
     # ------------------------------------------------------------------
@@ -685,6 +697,7 @@ class BubbleNode(QGraphicsItem):
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self._update_connections()
+            self._update_scene_connection_routes()
         return super().itemChange(change, value)
 
     def paint(self, painter: QPainter, option, widget=None):

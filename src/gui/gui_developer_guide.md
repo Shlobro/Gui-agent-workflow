@@ -24,5 +24,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Canvas panning is driven by right-button drag (middle-button drag remains accepted).
 - Background grid dots are rendered with a cosmetic pen so they stay visible and keep a fixed on-screen size across zoom levels.
 - Scene bounds auto-expand around moved/loaded nodes with padding so corner nodes remain reachable after zooming and panning.
+- Connection paths are routed around bubble bounding boxes using obstacle-aware grid routing; moving or resizing any bubble recomputes all edge routes so lines avoid passing under other bubbles.
+- Arrowheads terminate just outside the target input port, keeping direction visible instead of being hidden by the port dot.
 - Connections only define execution order; node outputs are displayed per node and are not injected into downstream prompts.
 - Model selection uses a compact selector row that opens an overlay dropdown on the canvas viewport (not a Qt popup window), keeps node height unchanged while open, anchors dropdown position from scene coordinates so it stays aligned with moved/zoomed nodes, clamps geometry to visible viewport bounds (opening upward when needed), shows provider logos from `assets/` (Anthropic/OpenAI/Gemini), normalizes them to a 16x16 icon canvas, auto-selects the first available model, and lazy-loads provider modules if needed.
