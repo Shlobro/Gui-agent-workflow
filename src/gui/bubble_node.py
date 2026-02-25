@@ -1,9 +1,10 @@
 """BubbleNode — a draggable node on the workflow canvas."""
 
 import uuid
+from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
-from PySide6.QtCore import QRectF, Qt, QPointF, QPoint
+from PySide6.QtCore import QRectF, Qt, QPointF, QPoint, QSize
 from PySide6.QtGui import (
     QColor,
     QPainter,
@@ -47,6 +48,15 @@ NODE_WIDTH = 420
 NODE_HEIGHT = 300
 PORT_RADIUS = 7
 CORNER_RADIUS = 12
+ICON_SIZE = 16
+
+LOGO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+PROVIDER_LOGO_FILES = {
+    "claude": "claude_logo.png",
+    "codex": "openai_logo.png",
+    "gemini": "gemini_logo.png",
+}
+PROVIDER_ICON_CACHE = {}
 
 
 class _ModelListWidget(QListWidget):
@@ -100,6 +110,7 @@ class ModelSelector(QWidget):
 
         self._toggle_button = QPushButton()
         self._toggle_button.setCheckable(True)
+        self._toggle_button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._toggle_button.setMinimumHeight(26)
         self._toggle_button.setToolTip("Choose model")
         self._toggle_button.clicked.connect(self._on_toggle_clicked)
@@ -108,6 +119,7 @@ class ModelSelector(QWidget):
         self._list = _ModelListWidget(self._close_dropdown, popup_parent)
         self._list.setVisible(False)
         self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self._list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -408,8 +420,49 @@ class BubbleWidget(QWidget):
 
     @staticmethod
     def _provider_icon(provider_name: str) -> QIcon:
-        icon_size = 16
-        pixmap = QPixmap(icon_size, icon_size)
+        if provider_name in PROVIDER_ICON_CACHE:
+            return PROVIDER_ICON_CACHE[provider_name]
+
+        logo_filename = PROVIDER_LOGO_FILES.get(provider_name)
+        if logo_filename:
+            logo_path = LOGO_ASSETS_DIR / logo_filename
+            if logo_path.exists():
+                source = QPixmap(str(logo_path))
+                if not source.isNull():
+                    normalized = BubbleWidget._normalized_logo_pixmap(source)
+                    icon = QIcon(normalized)
+                    PROVIDER_ICON_CACHE[provider_name] = icon
+                    return icon
+
+        icon = BubbleWidget._fallback_provider_icon(provider_name)
+        PROVIDER_ICON_CACHE[provider_name] = icon
+        return icon
+
+    @staticmethod
+    def _normalized_logo_pixmap(source: QPixmap) -> QPixmap:
+        pixmap = QPixmap(ICON_SIZE, ICON_SIZE)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        scaled = source.scaled(
+            ICON_SIZE,
+            ICON_SIZE,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+
+        x = (ICON_SIZE - scaled.width()) // 2
+        y = (ICON_SIZE - scaled.height()) // 2
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawPixmap(x, y, scaled)
+        painter.end()
+        return pixmap
+
+    @staticmethod
+    def _fallback_provider_icon(provider_name: str) -> QIcon:
+        pixmap = QPixmap(ICON_SIZE, ICON_SIZE)
         pixmap.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(pixmap)
@@ -430,7 +483,7 @@ class BubbleWidget(QWidget):
         else:
             fill_brush = QBrush(QColor("#1d1d1d"))
             border = QColor("#a0a0a0")
-            label = "A"
+            label = BubbleWidget._provider_company(provider_name)[:1].upper()
 
         painter.setPen(QPen(border, 1))
         painter.setBrush(fill_brush)

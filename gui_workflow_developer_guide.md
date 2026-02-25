@@ -27,7 +27,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 ## Change Map
 - App startup and entrypoint behavior: `workflow_entry.py`, `run_gui_workflow.bat`.
 - Canvas graph behavior and workflow execution order: `src/gui/canvas.py`.
-- Node rendering, node editor behavior, and bounded overlay provider-badged model picker behavior: `src/gui/bubble_node.py`.
+- Node rendering, node editor behavior, and bounded overlay provider-logo model picker behavior: `src/gui/bubble_node.py`, `src/gui/assets/`.
 - Save/load and toolbar actions: `src/gui/main_window.py`.
 - Provider models and CLI command construction: `src/llm/*_provider.py`.
 - Subprocess streaming, cancellation, and timeouts: `src/workers/llm_worker.py`.
