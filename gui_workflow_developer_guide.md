@@ -16,7 +16,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 1. Start the app through `run_gui_workflow.bat` or directly with `python workflow_entry.py`.
 2. Importing `src.llm` registers provider implementations into `LLMProviderRegistry`.
 3. `src.gui.main_window.MainWindow` creates the toolbar/status shell and mounts `WorkflowCanvas`.
-4. Canvas interactions create nodes/connections, support wheel zoom and right-drag panning, and optionally save/load workflow JSON files.
+4. Canvas interactions create nodes/connections, support wheel zoom and right-drag panning, keep background grid dots visible with fixed on-screen size across zoom levels, auto-expand scene bounds so corner nodes remain reachable, suspend wheel zoom while model dropdowns are open so wheel input scrolls the model list, and optionally save/load workflow JSON files.
 5. Execution resolves prompt placeholders, chooses the provider for each model, and runs each node via `LLMWorker`.
 
 ## Built-In Models
@@ -32,7 +32,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 ## Change Map
 - App startup and entrypoint behavior: `workflow_entry.py`, `run_gui_workflow.bat`.
 - Canvas graph behavior and workflow execution order: `src/gui/canvas.py`.
-- Node rendering, node editor behavior, and bounded overlay provider-logo model picker behavior: `src/gui/bubble_node.py`, `src/gui/assets/`.
+- Node rendering, node editor behavior, and viewport-anchored overlay provider-logo model picker behavior: `src/gui/bubble_node.py`, `src/gui/assets/`.
 - Save/load and toolbar actions: `src/gui/main_window.py`.
 - Provider models and CLI command construction: `src/llm/*_provider.py`.
 - Subprocess streaming, cancellation, and timeouts: `src/workers/llm_worker.py`.

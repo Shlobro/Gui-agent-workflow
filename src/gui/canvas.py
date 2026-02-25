@@ -4,11 +4,11 @@ import re
 from collections import deque
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QPointF, Signal, QObject
-from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent
+from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
+from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent, QPen
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsLineItem,
-    QMessageBox,
+    QListWidget, QMessageBox,
 )
 
 from src.llm.base_provider import LLMProviderRegistry
@@ -29,7 +29,8 @@ class WorkflowCanvas(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
-        self._scene.setSceneRect(-5000, -5000, 10000, 10000)
+        self._base_scene_rect = QRectF(-5000, -5000, 10000, 10000)
+        self._scene.setSceneRect(self._base_scene_rect)
         self.setScene(self._scene)
 
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -58,13 +59,22 @@ class WorkflowCanvas(QGraphicsView):
         self._pan_start = QPointF()
         self._pan_button: Optional[Qt.MouseButton] = None
 
+        # Keep scene bounds large enough to pan back to moved nodes.
+        self._scene.changed.connect(self._expand_scene_rect_to_fit_items)
+
     # ------------------------------------------------------------------
     # Background grid
     # ------------------------------------------------------------------
 
     def drawBackground(self, painter: QPainter, rect):
         super().drawBackground(painter, rect)
-        painter.setPen(QColor("#2a2a2a"))
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        dot_pen = QPen(QColor("#4a4a4a"))
+        dot_pen.setCosmetic(True)
+        dot_pen.setWidth(1)
+        painter.setPen(dot_pen)
+
         grid = 30
         left = int(rect.left()) - (int(rect.left()) % grid)
         top = int(rect.top()) - (int(rect.top()) % grid)
@@ -75,6 +85,21 @@ class WorkflowCanvas(QGraphicsView):
                 painter.drawPoint(x, y)
                 y += grid
             x += grid
+
+        painter.restore()
+
+    def _expand_scene_rect_to_fit_items(self, _changed_rects=None):
+        items_rect = self._scene.itemsBoundingRect()
+        if items_rect.isNull():
+            required_rect = self._base_scene_rect
+        else:
+            padding = 800
+            required_rect = items_rect.adjusted(-padding, -padding, padding, padding)
+            required_rect = required_rect.united(self._base_scene_rect)
+
+        current_rect = self._scene.sceneRect()
+        if not current_rect.contains(required_rect):
+            self._scene.setSceneRect(current_rect.united(required_rect))
 
     # ------------------------------------------------------------------
     # Bubble management
@@ -166,7 +191,6 @@ class WorkflowCanvas(QGraphicsView):
         self._conn_source = source
         port = source.output_port_scene_pos()
         self._rubber_line = QGraphicsLineItem(port.x(), port.y(), scene_pos.x(), scene_pos.y())
-        from PySide6.QtGui import QPen
         self._rubber_line.setPen(QPen(QColor("#5599ff"), 2, Qt.PenStyle.DashLine))
         self._scene.addItem(self._rubber_line)
 
@@ -221,7 +245,34 @@ class WorkflowCanvas(QGraphicsView):
     # Zoom
     # ------------------------------------------------------------------
 
+    def _visible_model_dropdown(self) -> Optional[QListWidget]:
+        for list_widget in self.viewport().findChildren(QListWidget, "model_selector_dropdown"):
+            if list_widget.isVisible():
+                return list_widget
+        return None
+
+    @staticmethod
+    def _scroll_dropdown_list(list_widget: QListWidget, delta: int):
+        scroll_bar = list_widget.verticalScrollBar()
+        if scroll_bar is None:
+            return
+
+        single_step = scroll_bar.singleStep() or 20
+        wheel_steps = delta / 120.0
+        if wheel_steps == 0:
+            wheel_steps = delta / 15.0
+
+        scroll_bar.setValue(scroll_bar.value() - int(wheel_steps * single_step))
+
     def wheelEvent(self, event: QWheelEvent):
+        dropdown = self._visible_model_dropdown()
+        if dropdown is not None:
+            delta = event.angleDelta().y() or event.pixelDelta().y()
+            if delta != 0:
+                self._scroll_dropdown_list(dropdown, delta)
+            event.accept()
+            return
+
         delta = event.angleDelta().y() or event.pixelDelta().y()
         if delta == 0:
             event.accept()
@@ -409,6 +460,7 @@ class WorkflowCanvas(QGraphicsView):
         for conn in list(self._connections):
             conn.detach()
         self._scene.clear()
+        self._scene.setSceneRect(self._base_scene_rect)
         self._bubbles.clear()
         self._connections.clear()
         self._bubble_counter = 0
@@ -441,3 +493,4 @@ class WorkflowCanvas(QGraphicsView):
                 conn = ConnectionItem(src, tgt, c_data.get("inject_output", False))
                 self._scene.addItem(conn)
                 self._connections.append(conn)
+        self._expand_scene_rect_to_fit_items()

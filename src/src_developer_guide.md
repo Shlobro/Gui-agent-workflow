@@ -10,8 +10,8 @@
 - `__init__.py`: Package marker.
 
 ## Data Flow
-1. UI collects node prompts and model selections (with provider logos loaded from `gui/assets/` in a compact model-picker that opens a top-level bounded overlay dropdown).
-2. `WorkflowCanvas` handles graph interaction including node/edge editing, wheel-to-zoom, and right-drag panning.
+1. UI collects node prompts and model selections (with provider logos loaded from `gui/assets/` in a compact model-picker that opens a bounded overlay dropdown on the canvas viewport).
+2. `WorkflowCanvas` handles graph interaction including node/edge editing, wheel-to-zoom, right-drag panning, a zoom-stable dot grid background, auto-expanding scene bounds so moved nodes stay reachable, and temporary zoom suspension while model dropdowns are open (wheel then scrolls the dropdown list).
 3. Canvas resolves upstream placeholders and chooses a provider via `LLMProviderRegistry`.
 4. `LLMWorker` runs the provider command in a background `QThread`.
 5. Streamed output lines are appended live into the active node.

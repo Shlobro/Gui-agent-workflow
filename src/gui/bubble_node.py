@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
-from PySide6.QtCore import QRectF, Qt, QPointF, QPoint, QSize
+from PySide6.QtCore import QRectF, Qt, QPointF, QPoint, QSize, QRect
 from PySide6.QtGui import (
     QColor,
     QPainter,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QGraphicsItem,
     QGraphicsProxyWidget,
+    QGraphicsView,
     QWidget,
     QVBoxLayout,
     QLineEdit,
@@ -73,7 +74,7 @@ class _ModelListWidget(QListWidget):
 
 
 class ModelSelector(QWidget):
-    """Compact model selector with dropdown overlay on the top-level window."""
+    """Compact model selector with dropdown overlay on the canvas viewport."""
 
     LIST_STYLESHEET = """
         QListWidget {
@@ -117,6 +118,7 @@ class ModelSelector(QWidget):
         layout.addWidget(self._toggle_button)
 
         self._list = _ModelListWidget(self._close_dropdown, popup_parent)
+        self._list.setObjectName("model_selector_dropdown")
         self._list.setVisible(False)
         self._list.itemClicked.connect(self._on_item_clicked)
         self._list.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
@@ -214,17 +216,14 @@ class ModelSelector(QWidget):
 
     def _position_dropdown(self):
         overlay_parent = self._overlay_parent()
+        button_rect = self._button_rect_in_overlay(overlay_parent)
 
-        width = min(
-            self._toggle_button.width(),
-            max(120, overlay_parent.width() - 16),
-        )
+        width = max(120, button_rect.width())
+        width = min(width, max(120, overlay_parent.width() - 16))
 
-        button_top_global = self._toggle_button.mapToGlobal(QPoint(0, 0))
-        button_top = overlay_parent.mapFromGlobal(button_top_global)
-        button_bottom_y = button_top.y() + self._toggle_button.height() + 2
+        button_bottom_y = button_rect.y() + button_rect.height() + 2
 
-        x = button_top.x()
+        x = button_rect.x()
         x = max(8, min(x, overlay_parent.width() - width - 8))
 
         frame = self._list.frameWidth() * 2
@@ -235,7 +234,7 @@ class ModelSelector(QWidget):
         min_height = frame + (row_h * min_rows) + 2
 
         down_space = max(0, overlay_parent.height() - button_bottom_y - 8)
-        up_space = max(0, button_top.y() - 10)
+        up_space = max(0, button_rect.y() - 10)
 
         place_below = down_space >= min_height or down_space >= up_space
         if place_below:
@@ -244,7 +243,7 @@ class ModelSelector(QWidget):
                 place_below = False
         if not place_below:
             height = min(self._dropdown_height, up_space)
-            y = button_top.y() - height - 2
+            y = button_rect.y() - height - 2
             y = max(8, y)
         else:
             y = button_bottom_y
@@ -255,7 +254,54 @@ class ModelSelector(QWidget):
 
         self._list.setGeometry(x, y, width, height)
 
+    def _resolve_canvas_view(self) -> Optional[QGraphicsView]:
+        proxy = self._popup_parent.graphicsProxyWidget()
+        if proxy is None:
+            return None
+
+        scene = proxy.scene()
+        if scene is None:
+            return None
+
+        views = scene.views()
+        if not views:
+            return None
+        return views[0]
+
+    def _button_rect_in_overlay(self, overlay_parent: QWidget) -> QRect:
+        view = self._resolve_canvas_view()
+        if view is not None and overlay_parent is view.viewport():
+            proxy = self._popup_parent.graphicsProxyWidget()
+            if proxy is not None:
+                button_rect_proxy = proxy.subWidgetRect(self._toggle_button)
+                scene_top_left = proxy.mapToScene(button_rect_proxy.topLeft())
+                scene_bottom_right = proxy.mapToScene(button_rect_proxy.bottomRight())
+                top_left = view.mapFromScene(scene_top_left)
+                bottom_right = view.mapFromScene(scene_bottom_right)
+
+                left = min(top_left.x(), bottom_right.x())
+                top = min(top_left.y(), bottom_right.y())
+                width = max(1, abs(bottom_right.x() - top_left.x()))
+                height = max(1, abs(bottom_right.y() - top_left.y()))
+                return QRect(left, top, width, height)
+
+        top_left_global = self._toggle_button.mapToGlobal(QPoint(0, 0))
+        bottom_right_global = self._toggle_button.mapToGlobal(
+            QPoint(self._toggle_button.width(), self._toggle_button.height())
+        )
+        top_left = overlay_parent.mapFromGlobal(top_left_global)
+        bottom_right = overlay_parent.mapFromGlobal(bottom_right_global)
+        left = min(top_left.x(), bottom_right.x())
+        top = min(top_left.y(), bottom_right.y())
+        width = max(1, abs(bottom_right.x() - top_left.x()))
+        height = max(1, abs(bottom_right.y() - top_left.y()))
+        return QRect(left, top, width, height)
+
     def _overlay_parent(self) -> QWidget:
+        view = self._resolve_canvas_view()
+        if view is not None:
+            return view.viewport()
+
         active_window = QApplication.activeWindow()
         if isinstance(active_window, QWidget):
             return active_window

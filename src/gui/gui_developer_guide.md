@@ -21,7 +21,9 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 ## Behavior Notes
 - Only acyclic subgraphs are executable; cycles are blocked with an error dialog.
 - Running from selection executes the reachable subgraph from that node.
-- Mouse wheel zoom is always active on the canvas (zoom under cursor), with zoom clamped to prevent extreme scales.
+- Mouse wheel zoom is active on the canvas (zoom under cursor) with zoom clamped to prevent extreme scales, except while a model dropdown is open where wheel input scrolls the dropdown list instead of zooming.
 - Canvas panning is driven by right-button drag (middle-button drag remains accepted).
+- Background grid dots are rendered with a cosmetic pen so they stay visible and keep a fixed on-screen size across zoom levels.
+- Scene bounds auto-expand around moved/loaded nodes with padding so corner nodes remain reachable after zooming and panning.
 - Prompt placeholders support `{{prev_output}}` plus upstream aliases (bubble id, label index, normalized title, `bubble_<index>`).
-- Model selection uses a compact selector row that opens a top-level overlay dropdown (not a Qt popup window), keeps node height unchanged while open, clamps dropdown geometry to visible window bounds (opening upward when needed), shows provider logos from `assets/` (Anthropic/OpenAI/Gemini), normalizes them to a 16x16 icon canvas, auto-selects the first available model, and lazy-loads provider modules if needed.
+- Model selection uses a compact selector row that opens an overlay dropdown on the canvas viewport (not a Qt popup window), keeps node height unchanged while open, anchors dropdown position from scene coordinates so it stays aligned with moved/zoomed nodes, clamps geometry to visible viewport bounds (opening upward when needed), shows provider logos from `assets/` (Anthropic/OpenAI/Gemini), normalizes them to a 16x16 icon canvas, auto-selects the first available model, and lazy-loads provider modules if needed.
