@@ -10,6 +10,11 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `gemini_provider.py`: Gemini model list and command builder.
 - `__init__.py`: Imports all providers so they self-register at startup.
 
+## Current Model Sets
+- Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
+- Codex: GPT-5.3 Codex with `low`, default (medium), `high`, and `xhigh` reasoning-effort options.
+- Gemini: See `gemini_provider.py` for the current list exposed to the UI.
+
 ## Provider Contract
 - `name` and `display_name` identify the provider in UI/registry.
 - `get_models()` returns `(model_id, label)` tuples for selection widgets.

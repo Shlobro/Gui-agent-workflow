@@ -19,6 +19,11 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 4. Canvas interactions create nodes/connections, support wheel zoom and right-drag panning, and optionally save/load workflow JSON files.
 5. Execution resolves prompt placeholders, chooses the provider for each model, and runs each node via `LLMWorker`.
 
+## Built-In Models
+- Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
+- Codex: GPT-5.3 Codex with `low`, default (medium), `high`, and `xhigh` reasoning effort.
+- Gemini: model catalog defined in `src/llm/gemini_provider.py`.
+
 ## User Data and Artifacts
 - Workflow graphs are user-saved JSON files chosen from file dialogs.
 - Node output is held in-memory during runtime and displayed in each node.

@@ -12,13 +12,6 @@ class CodexProvider(BaseLLMProvider):
         ("gpt-5.3-codex:low", "GPT-5.3 Codex (Low)"),
         ("gpt-5.3-codex:high", "GPT-5.3 Codex (High)"),
         ("gpt-5.3-codex:xhigh", "GPT-5.3 Codex (Ultra High)"),
-        ("gpt-5.2-codex", "GPT-5.2 Codex (Medium)"),
-        ("gpt-5.2-codex:low", "GPT-5.2 Codex (Low)"),
-        ("gpt-5.2-codex:high", "GPT-5.2 Codex (High)"),
-        ("gpt-5.2-codex:xhigh", "GPT-5.2 Codex (Ultra High)"),
-        ("gpt-5.1-codex-max", "GPT-5.1 Codex Max"),
-        ("gpt-5.1-codex-mini", "GPT-5.1 Codex Mini"),
-        ("gpt-5.2", "GPT-5.2"),
     ]
 
     @property

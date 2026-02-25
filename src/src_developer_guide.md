@@ -16,6 +16,11 @@
 4. `LLMWorker` runs the provider command in a background `QThread`.
 5. Streamed output lines are appended live into the active node.
 
+## Current Built-In Models
+- Claude provider: Opus 4.6, Sonnet 4.6, Haiku 4.5.
+- Codex provider: GPT-5.3 Codex with `low`, default (medium), `high`, and `xhigh` effort options.
+- Gemini provider: models declared in `llm/gemini_provider.py`.
+
 ## When To Edit What
 - Graph interaction/serialization behavior: `gui/`.
 - Add or adjust model catalogs and CLI flags: `llm/`.
