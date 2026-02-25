@@ -1,0 +1,11 @@
+- always start by reading `gui_workflow_developer_guide.md` and then read any other relevant `*_developer_guide.md` files for the folders you will modify.
+- always read the `.md` file in every folder you work in. if there is no `.md` file in that folder, create one named `<folder>_developer_guide.md` and write it for developers who are new to the codebase. these files should never be over 500 lines long.
+- when changing any file, update the `.md` file in that folder and in ancestor folders when the developer-facing architecture or behavior changed. these `.md` files should never be longer than 500 lines.
+- no code file generated or edited should exceed 1000 lines of code. split files before they cross this limit.
+- whenever creating a new file, choose its folder carefully and create a new folder when needed so responsibility boundaries stay clear.
+- each folder should only have 1 `.md` file, except the repository root which may contain multiple `.md` files. never create summary-only or visualization-only markdown files.
+- never mention legacy functionality or recent change history in developer guide markdown files. write only what is true for the current code.
+- keep system temp directories (for example `%TEMP%/`) ignored via `.gitignore`.
+- always ask whether a commit message is good before committing.
+- `.md` files are ignored when counting files in a folder. keep each folder at 10 code files or fewer.
+- always verify code changes by running linting/static checks and a compile/run sanity check before finalizing.

@@ -1,0 +1,19 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Local environments
+.venv/
+venv/
+env/
+
+# Logs and editor/runtime artifacts
+*.log
+.DS_Store
+
+# System temp directories
+%TEMP%/
+/tmp/
+/Temp/
