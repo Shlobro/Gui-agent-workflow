@@ -22,9 +22,13 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Running from selection executes the reachable subgraph from that node.
 - Mouse wheel zoom is active on the canvas (zoom under cursor) with zoom clamped to prevent extreme scales, except while a model dropdown is open where wheel input scrolls the dropdown list instead of zooming.
 - Canvas panning is driven by right-button drag (middle-button drag remains accepted).
+- Left-drag on empty canvas uses a rubber-band rectangle to select multiple bubbles at once.
 - Background grid dots are rendered with a cosmetic pen so they stay visible and keep a fixed on-screen size across zoom levels.
 - Scene bounds auto-expand around moved/loaded nodes with padding so corner nodes remain reachable after zooming and panning.
-- Connection paths are routed around bubble bounding boxes using obstacle-aware grid routing; moving or resizing any bubble recomputes all edge routes so lines avoid passing under other bubbles.
+- Connection paths are routed around bubble bounding boxes using obstacle-aware grid routing; route recompute runs immediately after connection creation and whenever bubbles move/resize so lines avoid passing under bubbles.
 - Arrowheads terminate just outside the target input port, keeping direction visible instead of being hidden by the port dot.
+- Bubble ports are direction-cued and color-differentiated: a left-side ingress arrow and right-side egress arrow protrude from the bubble edge to indicate flow, and each arrow hides once that side has at least one connection.
+- Connection items use an expanded hit-test shape (line + arrowhead) so selecting arrows for delete is easier without rendering thicker lines.
+- Selected bubbles render an additional light-blue neon frame so active selection is visually obvious.
 - Connections only define execution order; node outputs are displayed per node and are not injected into downstream prompts.
 - Model selection uses a compact selector row that opens an overlay dropdown on the canvas viewport (not a Qt popup window), keeps node height unchanged while open, anchors dropdown position from scene coordinates so it stays aligned with moved/zoomed nodes, clamps geometry to visible viewport bounds (opening upward when needed), shows provider logos from `assets/` (Anthropic/OpenAI/Gemini), normalizes them to a 16x16 icon canvas, auto-selects the first available model, and lazy-loads provider modules if needed.

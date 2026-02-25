@@ -32,7 +32,8 @@ class WorkflowCanvas(QGraphicsView):
         self.setScene(self._scene)
 
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.setRubberBandSelectionMode(Qt.ItemSelectionMode.IntersectsItemShape)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setBackgroundBrush(QColor("#1a1a1a"))
@@ -216,6 +217,7 @@ class WorkflowCanvas(QGraphicsView):
 
         conn = ConnectionItem(self._conn_source, target_node)
         self._scene.addItem(conn)
+        conn.update_path()
         self._connections.append(conn)
 
         self._conn_source = None

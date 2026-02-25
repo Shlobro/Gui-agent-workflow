@@ -50,6 +50,12 @@ NODE_HEIGHT = 300
 PORT_RADIUS = 7
 CORNER_RADIUS = 12
 ICON_SIZE = 16
+INPUT_PORT_EDGE_COLOR = QColor("#6bc6ff")
+INPUT_PORT_FILL_COLOR = QColor("#133241")
+INPUT_PORT_LABEL_COLOR = QColor("#8ddcff")
+OUTPUT_PORT_EDGE_COLOR = QColor("#ffb96f")
+OUTPUT_PORT_FILL_COLOR = QColor("#3b2714")
+OUTPUT_PORT_LABEL_COLOR = QColor("#ffd7ab")
 
 LOGO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 PROVIDER_LOGO_FILES = {
@@ -663,10 +669,12 @@ class BubbleNode(QGraphicsItem):
 
     def add_connection(self, conn: "ConnectionItem"):
         self._connections.append(conn)
+        self.update()
 
     def remove_connection(self, conn: "ConnectionItem"):
         if conn in self._connections:
             self._connections.remove(conn)
+            self.update()
 
     def connections(self) -> List["ConnectionItem"]:
         return list(self._connections)
@@ -685,6 +693,27 @@ class BubbleNode(QGraphicsItem):
         for item in scene.items():
             if isinstance(item, ConnectionItem) and item not in self._connections:
                 item.update_path()
+
+    def _has_input_connection(self) -> bool:
+        return any(conn.target_bubble is self for conn in self._connections)
+
+    def _has_output_connection(self) -> bool:
+        return any(conn.source_bubble is self for conn in self._connections)
+
+    @staticmethod
+    def _draw_port_direction_arrow(
+        painter: QPainter,
+        start_x: float,
+        tip_x: float,
+        y: float,
+        color: QColor,
+    ):
+        arrow_pen = QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(arrow_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(start_x, y), QPointF(tip_x, y))
+        painter.drawLine(QPointF(tip_x - 5.0, y - 3.7), QPointF(tip_x, y))
+        painter.drawLine(QPointF(tip_x - 5.0, y + 3.7), QPointF(tip_x, y))
 
     # ------------------------------------------------------------------
     # QGraphicsItem overrides
@@ -708,19 +737,57 @@ class BubbleNode(QGraphicsItem):
         path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, self._height), CORNER_RADIUS, CORNER_RADIUS)
         painter.fillPath(path, QBrush(QColor("#252525")))
 
+        if self.isSelected():
+            glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
+            glow_path = QPainterPath()
+            glow_path.addRoundedRect(glow_rect, CORNER_RADIUS + 2.5, CORNER_RADIUS + 2.5)
+
+            outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
+            outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(outer_glow_pen)
+            painter.drawPath(glow_path)
+
+            inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
+            inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(inner_glow_pen)
+            painter.drawPath(glow_path)
+
         # Border (status-colored)
         color = STATUS_COLORS.get(self.status, STATUS_COLORS["idle"])
-        pen_width = 3 if self.isSelected() else 2
-        painter.setPen(QPen(color, pen_width))
+        border_pen = QPen(color, 2)
+        border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(border_pen)
         painter.drawPath(path)
 
+        port_center_y = self._height / 2
+
         # Output port (right)
-        painter.setPen(QPen(QColor("#888888"), 1))
-        painter.setBrush(QBrush(QColor("#444444")))
-        painter.drawEllipse(QPointF(NODE_WIDTH, self._height / 2), PORT_RADIUS, PORT_RADIUS)
+        painter.setPen(QPen(OUTPUT_PORT_EDGE_COLOR, 1.4))
+        painter.setBrush(QBrush(OUTPUT_PORT_FILL_COLOR))
+        painter.drawEllipse(QPointF(NODE_WIDTH, port_center_y), PORT_RADIUS, PORT_RADIUS)
 
         # Input port (left)
-        painter.drawEllipse(QPointF(0, self._height / 2), PORT_RADIUS, PORT_RADIUS)
+        painter.setPen(QPen(INPUT_PORT_EDGE_COLOR, 1.4))
+        painter.setBrush(QBrush(INPUT_PORT_FILL_COLOR))
+        painter.drawEllipse(QPointF(0, port_center_y), PORT_RADIUS, PORT_RADIUS)
+
+        if not self._has_input_connection():
+            self._draw_port_direction_arrow(
+                painter,
+                start_x=-6.0,
+                tip_x=6.0,
+                y=port_center_y,
+                color=INPUT_PORT_LABEL_COLOR,
+            )
+
+        if not self._has_output_connection():
+            self._draw_port_direction_arrow(
+                painter,
+                start_x=NODE_WIDTH - 6.0,
+                tip_x=NODE_WIDTH + 6.0,
+                y=port_center_y,
+                color=OUTPUT_PORT_LABEL_COLOR,
+            )
 
     # ------------------------------------------------------------------
     # Serialization

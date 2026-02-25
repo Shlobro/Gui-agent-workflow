@@ -5,12 +5,23 @@ import math
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QPolygonF
+from PySide6.QtGui import (
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPainterPathStroker,
+    QPen,
+    QBrush,
+    QPolygonF,
+)
 from PySide6.QtWidgets import QGraphicsPathItem
 
 from .bubble_node import BubbleNode, PORT_RADIUS
 
 ARROW_SIZE = 10
+VISUAL_STROKE_WIDTH = 2
+HIT_STROKE_WIDTH = 16
+ARROW_HIT_PADDING = 5
 PORT_EDGE_OFFSET = PORT_RADIUS + 2
 PORT_GUARD_OFFSET = 38
 OBSTACLE_PADDING = 12
@@ -30,6 +41,8 @@ class ConnectionItem(QGraphicsPathItem):
         self.target_bubble = target
         self._arrow_tip = QPointF()
         self._arrow_angle = 0.0
+        self._hit_path = QPainterPath()
+        self._hit_rect = QRectF()
 
         self.setZValue(0)
         self.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -63,6 +76,7 @@ class ConnectionItem(QGraphicsPathItem):
         self.setPath(path)
 
         self._set_arrow_geometry(points)
+        self._rebuild_hit_path(path)
         self.update()
 
     def _obstacle_rects(self) -> List[QRectF]:
@@ -284,6 +298,44 @@ class ConnectionItem(QGraphicsPathItem):
         self._arrow_tip = tip
         self._arrow_angle = math.atan2(tip.y() - prev.y(), tip.x() - prev.x())
 
+    def _arrow_polygon(self, size: float) -> QPolygonF:
+        p1 = QPointF(
+            self._arrow_tip.x() - size * math.cos(self._arrow_angle - math.pi / 6),
+            self._arrow_tip.y() - size * math.sin(self._arrow_angle - math.pi / 6),
+        )
+        p2 = QPointF(
+            self._arrow_tip.x() - size * math.cos(self._arrow_angle + math.pi / 6),
+            self._arrow_tip.y() - size * math.sin(self._arrow_angle + math.pi / 6),
+        )
+        return QPolygonF([self._arrow_tip, p1, p2])
+
+    def _rebuild_hit_path(self, line_path: QPainterPath):
+        stroker = QPainterPathStroker()
+        stroker.setWidth(HIT_STROKE_WIDTH)
+        stroker.setCapStyle(Qt.PenCapStyle.RoundCap)
+        stroker.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        hit_path = stroker.createStroke(line_path)
+
+        arrow_path = QPainterPath()
+        arrow_path.addPolygon(self._arrow_polygon(ARROW_SIZE + ARROW_HIT_PADDING))
+        hit_path = hit_path.united(arrow_path)
+
+        hit_rect = hit_path.boundingRect()
+        if hit_rect != self._hit_rect:
+            self.prepareGeometryChange()
+            self._hit_rect = hit_rect
+        self._hit_path = hit_path
+
+    def shape(self) -> QPainterPath:
+        if not self._hit_path.isEmpty():
+            return self._hit_path
+        return super().shape()
+
+    def boundingRect(self) -> QRectF:
+        if not self._hit_rect.isNull():
+            return self._hit_rect
+        return super().boundingRect()
+
     def paint(self, painter: QPainter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -291,22 +343,14 @@ class ConnectionItem(QGraphicsPathItem):
         if self.isSelected():
             color = QColor("#ffcc44")
 
-        pen = QPen(color, 2, Qt.PenStyle.SolidLine)
+        pen = QPen(color, VISUAL_STROKE_WIDTH, Qt.PenStyle.SolidLine)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(self.path())
 
-        p1 = QPointF(
-            self._arrow_tip.x() - ARROW_SIZE * math.cos(self._arrow_angle - math.pi / 6),
-            self._arrow_tip.y() - ARROW_SIZE * math.sin(self._arrow_angle - math.pi / 6),
-        )
-        p2 = QPointF(
-            self._arrow_tip.x() - ARROW_SIZE * math.cos(self._arrow_angle + math.pi / 6),
-            self._arrow_tip.y() - ARROW_SIZE * math.sin(self._arrow_angle + math.pi / 6),
-        )
-        arrow = QPolygonF([self._arrow_tip, p1, p2])
+        arrow = self._arrow_polygon(ARROW_SIZE)
         painter.setBrush(QBrush(color))
         painter.setPen(QPen(color, 1))
         painter.drawPolygon(arrow)
