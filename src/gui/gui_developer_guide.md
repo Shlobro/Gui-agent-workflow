@@ -21,5 +21,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 ## Behavior Notes
 - Only acyclic subgraphs are executable; cycles are blocked with an error dialog.
 - Running from selection executes the reachable subgraph from that node.
+- Mouse wheel zoom is always active on the canvas (zoom under cursor), with zoom clamped to prevent extreme scales.
+- Canvas panning is driven by right-button drag (middle-button drag remains accepted).
 - Prompt placeholders support `{{prev_output}}` plus upstream aliases (bubble id, label index, normalized title, `bubble_<index>`).
 - Model selection uses a compact selector row that opens a top-level overlay dropdown (not a Qt popup window), keeps node height unchanged while open, clamps dropdown geometry to visible window bounds (opening upward when needed), shows provider logos from `assets/` (Anthropic/OpenAI/Gemini), normalizes them to a 16x16 icon canvas, auto-selects the first available model, and lazy-loads provider modules if needed.

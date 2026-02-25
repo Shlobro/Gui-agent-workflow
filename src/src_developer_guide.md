@@ -11,9 +11,10 @@
 
 ## Data Flow
 1. UI collects node prompts and model selections (with provider logos loaded from `gui/assets/` in a compact model-picker that opens a top-level bounded overlay dropdown).
-2. Canvas resolves upstream placeholders and chooses a provider via `LLMProviderRegistry`.
-3. `LLMWorker` runs the provider command in a background `QThread`.
-4. Streamed output lines are appended live into the active node.
+2. `WorkflowCanvas` handles graph interaction including node/edge editing, wheel-to-zoom, and right-drag panning.
+3. Canvas resolves upstream placeholders and chooses a provider via `LLMProviderRegistry`.
+4. `LLMWorker` runs the provider command in a background `QThread`.
+5. Streamed output lines are appended live into the active node.
 
 ## When To Edit What
 - Graph interaction/serialization behavior: `gui/`.

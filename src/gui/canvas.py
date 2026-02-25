@@ -1,6 +1,5 @@
 """WorkflowCanvas — QGraphicsView with node graph interaction."""
 
-import json
 import re
 from collections import deque
 from typing import Dict, List, Optional
@@ -57,6 +56,7 @@ class WorkflowCanvas(QGraphicsView):
         # Pan state
         self._panning = False
         self._pan_start = QPointF()
+        self._pan_button: Optional[Qt.MouseButton] = None
 
     # ------------------------------------------------------------------
     # Background grid
@@ -116,9 +116,10 @@ class WorkflowCanvas(QGraphicsView):
                     self._start_connection(node, scene_pos)
                     return
 
-        if event.button() == Qt.MouseButton.MiddleButton:
+        if event.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
             self._panning = True
             self._pan_start = event.pos()
+            self._pan_button = event.button()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
@@ -146,8 +147,9 @@ class WorkflowCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.MiddleButton:
+        if self._panning and event.button() == self._pan_button:
             self._panning = False
+            self._pan_button = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
             event.accept()
             return
@@ -220,11 +222,17 @@ class WorkflowCanvas(QGraphicsView):
     # ------------------------------------------------------------------
 
     def wheelEvent(self, event: QWheelEvent):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
+        delta = event.angleDelta().y() or event.pixelDelta().y()
+        if delta == 0:
+            event.accept()
+            return
+
+        factor = 1.15 if delta > 0 else 1 / 1.15
+        current_zoom = self.transform().m11()
+        new_zoom = current_zoom * factor
+        if 0.2 <= new_zoom <= 4.0:
             self.scale(factor, factor)
-        else:
-            super().wheelEvent(event)
+        event.accept()
 
     # ------------------------------------------------------------------
     # Execution
