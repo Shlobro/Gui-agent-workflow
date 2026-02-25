@@ -400,7 +400,7 @@ class BubbleWidget(QWidget):
         layout.addWidget(self.model_selector)
 
         # Prompt
-        prompt_label = QLabel("Prompt  (use {{bubble_name_output}} for upstream output)")
+        prompt_label = QLabel("Prompt")
         layout.addWidget(prompt_label)
         self.prompt_edit = QPlainTextEdit()
         self.prompt_edit.setPlaceholderText("Enter your prompt here…")

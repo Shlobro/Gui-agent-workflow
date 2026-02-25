@@ -16,12 +16,10 @@ ARROW_SIZE = 10
 class ConnectionItem(QGraphicsPathItem):
     """Bezier arrow from source bubble's output port to target bubble's input port."""
 
-    def __init__(self, source: "BubbleNode", target: "BubbleNode",
-                 inject_output: bool = False):
+    def __init__(self, source: "BubbleNode", target: "BubbleNode"):
         super().__init__()
         self.source_bubble = source
         self.target_bubble = target
-        self.inject_output = inject_output
 
         self.setZValue(0)
         self.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -50,7 +48,7 @@ class ConnectionItem(QGraphicsPathItem):
     def paint(self, painter: QPainter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        color = QColor("#5599ff") if self.inject_output else QColor("#888888")
+        color = QColor("#888888")
         if self.isSelected():
             color = QColor("#ffcc44")
 
@@ -90,5 +88,4 @@ class ConnectionItem(QGraphicsPathItem):
         return {
             "from": self.source_bubble.bubble_id,
             "to": self.target_bubble.bubble_id,
-            "inject_output": self.inject_output,
         }

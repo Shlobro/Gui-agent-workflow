@@ -1,6 +1,5 @@
 """WorkflowCanvas — QGraphicsView with node graph interaction."""
 
-import re
 from collections import deque
 from typing import Dict, List, Optional
 
@@ -15,7 +14,6 @@ from src.llm.base_provider import LLMProviderRegistry
 from src.workers.llm_worker import LLMWorker
 from .bubble_node import BubbleNode
 from .connection_item import ConnectionItem
-from .connection_dialog import ConnectionDialog
 
 
 class _ExecutionSignals(QObject):
@@ -216,14 +214,9 @@ class WorkflowCanvas(QGraphicsView):
                 self._conn_source = None
                 return
 
-        # Show dialog
-        dlg = ConnectionDialog(
-            self._conn_source.title, target_node.title, parent=self
-        )
-        if dlg.exec() == ConnectionDialog.DialogCode.Accepted:
-            conn = ConnectionItem(self._conn_source, target_node, dlg.inject_output)
-            self._scene.addItem(conn)
-            self._connections.append(conn)
+        conn = ConnectionItem(self._conn_source, target_node)
+        self._scene.addItem(conn)
+        self._connections.append(conn)
 
         self._conn_source = None
 
@@ -375,8 +368,7 @@ class WorkflowCanvas(QGraphicsView):
         total = len(order)
         self.status_update.emit(f"Running bubble {index + 1} of {total}: {node.title}…")
 
-        # Resolve prompt template
-        resolved_prompt = self._resolve_prompt(node)
+        resolved_prompt = node.prompt_text
 
         model_id = node.model_id
         if not model_id:
@@ -412,38 +404,6 @@ class WorkflowCanvas(QGraphicsView):
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
         worker.start()
-
-    def _resolve_prompt(self, node: BubbleNode) -> str:
-        prompt = node.prompt_text
-
-        # Collect all upstream outputs available to this node
-        upstream_outputs: Dict[str, str] = {}
-        for conn in self._connections:
-            if conn.target_bubble is node:
-                src = conn.source_bubble
-                upstream_outputs[src.bubble_id] = src.output_text
-                upstream_outputs[str(src.label_index)] = src.output_text
-                # Normalised title key (lowercase, spaces→underscore)
-                title_key = re.sub(r"\s+", "_", src.title.lower())
-                upstream_outputs[title_key] = src.output_text
-                upstream_outputs[f"bubble_{src.label_index}"] = src.output_text
-
-                # Inject via {{prev_output}} or auto-append if flag set
-                if conn.inject_output:
-                    if "{{prev_output}}" in prompt:
-                        prompt = prompt.replace("{{prev_output}}", src.output_text)
-                    elif not re.search(r"\{\{[^}]+\}\}", prompt):
-                        # No placeholder at all → append
-                        if src.output_text.strip():
-                            prompt = prompt.rstrip() + "\n\n" + src.output_text
-
-        # Replace remaining {{...}} placeholders
-        def replace_var(match):
-            key = match.group(1).strip()
-            return upstream_outputs.get(key, match.group(0))
-
-        prompt = re.sub(r"\{\{([^}]+)\}\}", replace_var, prompt)
-        return prompt
 
     def _get_provider_for_model(self, model_id: str):
         for provider in LLMProviderRegistry.all():
@@ -490,7 +450,7 @@ class WorkflowCanvas(QGraphicsView):
             src = self._bubbles.get(c_data["from"])
             tgt = self._bubbles.get(c_data["to"])
             if src and tgt:
-                conn = ConnectionItem(src, tgt, c_data.get("inject_output", False))
+                conn = ConnectionItem(src, tgt)
                 self._scene.addItem(conn)
                 self._connections.append(conn)
         self._expand_scene_rect_to_fit_items()

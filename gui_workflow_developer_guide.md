@@ -17,7 +17,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 2. Importing `src.llm` registers provider implementations into `LLMProviderRegistry`.
 3. `src.gui.main_window.MainWindow` creates the toolbar/status shell and mounts `WorkflowCanvas`.
 4. Canvas interactions create nodes/connections, support wheel zoom and right-drag panning, keep background grid dots visible with fixed on-screen size across zoom levels, auto-expand scene bounds so corner nodes remain reachable, suspend wheel zoom while model dropdowns are open so wheel input scrolls the model list, and optionally save/load workflow JSON files.
-5. Execution resolves prompt placeholders, chooses the provider for each model, and runs each node via `LLMWorker`.
+5. Execution uses each node prompt exactly as authored, chooses the provider for each model, and runs each node via `LLMWorker`.
 
 ## Built-In Models
 - Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
