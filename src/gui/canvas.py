@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 
 from src.llm.base_provider import LLMProviderRegistry
 from src.workers.llm_worker import LLMWorker
-from .bubble_node import BubbleNode
+from .bubble_node import BubbleNode, StartNode
 from .connection_item import ConnectionItem
 
 
@@ -23,6 +23,7 @@ class _ExecutionSignals(QObject):
 
 class WorkflowCanvas(QGraphicsView):
     status_update = Signal(str)
+    selection_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,7 +50,11 @@ class WorkflowCanvas(QGraphicsView):
 
         # Execution state
         self._running = False
-        self._active_worker: Optional[LLMWorker] = None
+        self._no_fanout: bool = False
+        self._active_workers: Dict[int, Optional[LLMWorker]] = {}
+        self._current_run_exec_ids: set = set()   # exec_ids belonging to the active run only
+        self._exec_counter: int = 0
+        self._run_id: int = 0
         self._exec_signals = _ExecutionSignals()
         self._exec_signals.status_update.connect(self.status_update)
 
@@ -60,6 +65,10 @@ class WorkflowCanvas(QGraphicsView):
 
         # Keep scene bounds large enough to pan back to moved nodes.
         self._scene.changed.connect(self._expand_scene_rect_to_fit_items)
+        self._scene.selectionChanged.connect(self.selection_changed)
+
+        # Permanent start node — created after scene is ready
+        self._start_node: StartNode = self._add_start_node()
 
     # ------------------------------------------------------------------
     # Background grid
@@ -101,6 +110,16 @@ class WorkflowCanvas(QGraphicsView):
             self._scene.setSceneRect(current_rect.united(required_rect))
 
     # ------------------------------------------------------------------
+    # Start node
+    # ------------------------------------------------------------------
+
+    def _add_start_node(self) -> StartNode:
+        node = StartNode()
+        node.setPos(-300, -40)
+        self._scene.addItem(node)
+        return node
+
+    # ------------------------------------------------------------------
     # Bubble management
     # ------------------------------------------------------------------
 
@@ -115,6 +134,8 @@ class WorkflowCanvas(QGraphicsView):
         return node
 
     def remove_bubble(self, node: BubbleNode):
+        if getattr(node, 'bubble_id', None) == "start":
+            return
         for conn in list(node.connections()):
             self._remove_connection(conn)
         self._scene.removeItem(node)
@@ -134,7 +155,10 @@ class WorkflowCanvas(QGraphicsView):
         scene_pos = self.mapToScene(event.pos())
 
         if event.button() == Qt.MouseButton.LeftButton:
-            # Check if clicking near an output port
+            # Check start node output port first, then regular bubbles
+            if self._start_node.is_near_output_port(scene_pos):
+                self._start_connection(self._start_node, scene_pos)
+                return
             for node in self._bubbles.values():
                 if node.is_near_output_port(scene_pos):
                     self._start_connection(node, scene_pos)
@@ -215,12 +239,40 @@ class WorkflowCanvas(QGraphicsView):
                 self._conn_source = None
                 return
 
-        conn = ConnectionItem(self._conn_source, target_node)
+        # Capture and clear source before any dialog to prevent re-entrancy.
+        source = self._conn_source
+        self._conn_source = None
+
+        # Draw-time warnings (cycle takes priority over fan-out).
+        src_label = getattr(source, "title", "Start")
+        tgt_label = getattr(target_node, "title", "Start")
+        if self._would_create_cycle(source, target_node):
+            reply = QMessageBox.warning(
+                self, "Cycle Warning",
+                f'Connecting "{src_label}" \u2192 "{tgt_label}" would create a cycle.\n\n'
+                "Nodes in cycles will execute repeatedly until you stop the workflow.\n"
+                "Add the connection anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        elif self._source_has_outgoing(source):
+            reply = QMessageBox.information(
+                self, "Parallel Fan-Out",
+                f'"{src_label}" already has an outgoing connection.\n\n'
+                f'Adding this one means "{src_label}" will feed multiple nodes, '
+                "which will run in parallel when the workflow executes.\nProceed?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        conn = ConnectionItem(source, target_node)
         self._scene.addItem(conn)
         conn.update_path()
         self._connections.append(conn)
-
-        self._conn_source = None
 
     # ------------------------------------------------------------------
     # Keyboard
@@ -229,6 +281,8 @@ class WorkflowCanvas(QGraphicsView):
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Delete:
             for item in self._scene.selectedItems():
+                if getattr(item, 'bubble_id', None) == "start":
+                    continue
                 if isinstance(item, ConnectionItem):
                     self._remove_connection(item)
                 elif isinstance(item, BubbleNode):
@@ -285,21 +339,75 @@ class WorkflowCanvas(QGraphicsView):
     # ------------------------------------------------------------------
 
     def run_all(self):
-        self._run_workflow(list(self._bubbles.values()))
+        reachable = self._reachable_from(self._start_node)
+        nodes = [n for n in reachable if not getattr(n, 'is_start', False)]
+        if not nodes:
+            self.status_update.emit("Nothing to run \u2014 connect nodes to Start first.")
+            return
+        errors = self._validate_nodes(nodes)
+        if errors:
+            QMessageBox.warning(
+                self, "Cannot Run",
+                "Fix these issues before running:\n\n" + "\n".join(errors),
+            )
+            return
+        self._run_workflow(nodes, roots=self._direct_children(self._start_node))
 
-    def run_from_selected(self):
-        selected = [i for i in self._scene.selectedItems() if isinstance(i, BubbleNode)]
+    def run_selected_only(self):
+        selected = [
+            i for i in self._scene.selectedItems()
+            if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
+        ]
         if not selected:
-            QMessageBox.information(self, "No Selection", "Select a bubble node first.")
+            QMessageBox.information(self, "No Selection", "Select at least one bubble first.")
+            return
+        if len(selected) > 1:
+            reply = QMessageBox.question(
+                self, "Run Multiple",
+                f"Run {len(selected)} selected nodes simultaneously (without fan-out)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        errors = self._validate_nodes(selected)
+        if errors:
+            QMessageBox.warning(
+                self, "Cannot Run",
+                "Fix these issues before running:\n\n" + "\n".join(errors),
+            )
+            return
+        self._run_workflow(selected, roots=list(selected), no_fanout=True)
+
+    def run_from_here(self):
+        selected = [
+            i for i in self._scene.selectedItems()
+            if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
+        ]
+        if len(selected) != 1:
             return
         start = selected[0]
         reachable = self._reachable_from(start)
-        self._run_workflow(reachable)
+        nodes = [n for n in reachable if not getattr(n, 'is_start', False)]
+        errors = self._validate_nodes(nodes)
+        if errors:
+            QMessageBox.warning(
+                self, "Cannot Run",
+                "Fix these issues before running:\n\n" + "\n".join(errors),
+            )
+            return
+        self._run_workflow(nodes, roots=[start])
 
     def stop_all(self):
-        if self._active_worker:
-            self._active_worker.cancel()
         self._running = False
+        self._no_fanout = False
+        for worker in list(self._active_workers.values()):
+            if worker is not None:
+                worker.cancel()
+        # Do not clear _active_workers here — keep Python refs alive until
+        # each thread's finished/error callback fires and removes its entry,
+        # preventing QThread destruction while the thread is still running.
+        self.status_update.emit("Stopped.")
 
     def _reachable_from(self, start: BubbleNode) -> List[BubbleNode]:
         visited = []
@@ -316,96 +424,124 @@ class WorkflowCanvas(QGraphicsView):
                         queue.append(nxt)
         return visited
 
-    def _topological_sort(self, nodes: List[BubbleNode]) -> Optional[List[BubbleNode]]:
-        node_ids = {n.bubble_id for n in nodes}
-        in_degree: Dict[str, int] = {n.bubble_id: 0 for n in nodes}
-        adj: Dict[str, List[BubbleNode]] = {n.bubble_id: [] for n in nodes}
+    def _would_create_cycle(self, source: BubbleNode, target: BubbleNode) -> bool:
+        """Return True if adding source→target would create a cycle."""
+        return source in self._reachable_from(target)
 
-        for conn in self._connections:
-            s_id = conn.source_bubble.bubble_id
-            t_id = conn.target_bubble.bubble_id
-            if s_id in node_ids and t_id in node_ids:
-                adj[s_id].append(conn.target_bubble)
-                in_degree[t_id] += 1
+    def _source_has_outgoing(self, source: BubbleNode) -> bool:
+        """Return True if source already has at least one outgoing connection."""
+        return any(conn.source_bubble is source for conn in self._connections)
 
-        queue = deque([n for n in nodes if in_degree[n.bubble_id] == 0])
-        order = []
-        while queue:
-            node = queue.popleft()
-            order.append(node)
-            for nxt in adj[node.bubble_id]:
-                in_degree[nxt.bubble_id] -= 1
-                if in_degree[nxt.bubble_id] == 0:
-                    queue.append(nxt)
+    def _validate_nodes(self, nodes: List[BubbleNode]) -> List[str]:
+        """Return error strings for nodes missing a prompt or model."""
+        errors = []
+        for node in nodes:
+            title = getattr(node, 'title', node.bubble_id)
+            if not node.prompt_text.strip():
+                errors.append(f'\u2022 "{title}" has no prompt.')
+            if not node.model_id:
+                errors.append(f'\u2022 "{title}" has no model selected.')
+        return errors
 
-        if len(order) != len(nodes):
-            return None  # cycle detected
-        return order
+    def _direct_children(self, node) -> List[BubbleNode]:
+        """Return immediate downstream neighbours of node."""
+        return [
+            conn.target_bubble for conn in self._connections
+            if conn.source_bubble is node
+        ]
 
-    def _run_workflow(self, nodes: List[BubbleNode]):
+    def _run_workflow(self, nodes: List[BubbleNode], roots: List[BubbleNode], no_fanout: bool = False):
         if self._running:
             return
-        order = self._topological_sort(nodes)
-        if order is None:
-            QMessageBox.critical(self, "Cycle Detected",
-                                 "The workflow contains a cycle. Please remove circular connections.")
-            return
-
-        # Reset status
-        for node in order:
+        for node in nodes:
             node.set_status("idle")
             node.clear_output()
-
         self._running = True
-        self._run_next(order, 0)
+        self._no_fanout = no_fanout
+        self._run_id += 1
+        self._current_run_exec_ids.clear()
+        n = len(roots)
+        self.status_update.emit(f"Running\u2026 ({n} node{'s' if n != 1 else ''} triggered)")
+        for node in roots:
+            self._trigger_node(node)
+        self._check_drain()  # handles zero-roots case
 
-    def _run_next(self, order: List[BubbleNode], index: int):
-        if index >= len(order) or not self._running:
-            self._running = False
-            self.status_update.emit("Done.")
+    def _trigger_node(self, node: BubbleNode):
+        """Schedule one new invocation of node if execution is active."""
+        if not self._running:
             return
+        self._exec_counter += 1
+        self._fire_invocation(node, self._exec_counter)
 
-        node = order[index]
+    def _fire_invocation(self, node: BubbleNode, exec_id: int):
+        """Launch one LLMWorker invocation tagged with exec_id."""
+        self._active_workers[exec_id] = None  # reserve slot before any early return
+        self._current_run_exec_ids.add(exec_id)
         node.set_status("running")
-        total = len(order)
-        self.status_update.emit(f"Running bubble {index + 1} of {total}: {node.title}…")
-
-        resolved_prompt = node.prompt_text
-
         model_id = node.model_id
         if not model_id:
             node.append_output("[Error] No model selected.")
             node.set_status("error")
-            self._run_next(order, index + 1)
+            del self._active_workers[exec_id]
+            self._current_run_exec_ids.discard(exec_id)
             return
-
         provider = self._get_provider_for_model(model_id)
         if provider is None:
             node.append_output(f"[Error] Unknown model: {model_id}")
             node.set_status("error")
-            self._run_next(order, index + 1)
+            del self._active_workers[exec_id]
+            self._current_run_exec_ids.discard(exec_id)
             return
 
-        worker = LLMWorker(provider, resolved_prompt, model=model_id)
-        self._active_worker = worker
+        worker = LLMWorker(provider, node.prompt_text, model=model_id)
+        self._active_workers[exec_id] = worker
 
-        def on_output(line: str):
-            node.append_output(line)
+        run_id = self._run_id
 
-        def on_finished(full_output: str):
-            node.output_text = full_output
-            node.set_status("done")
-            self._run_next(order, index + 1)
+        def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
+            if _r == self._run_id and self._running and _e in self._active_workers:
+                _n.append_output(line)
 
-        def on_error(msg: str):
-            node.append_output(f"[Error] {msg}")
-            node.set_status("error")
-            self._run_next(order, index + 1)
+        def on_finished(full: str, _n=node, _e=exec_id, _r=run_id):
+            self._on_invocation_done(_n, _e, full, error=False, run_id=_r)
+
+        def on_error(msg: str, _n=node, _e=exec_id, _r=run_id):
+            self._on_invocation_done(_n, _e, msg, error=True, run_id=_r)
 
         worker.output_line.connect(on_output)
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
         worker.start()
+
+    def _on_invocation_done(self, node: BubbleNode, exec_id: int, result: str, error: bool, run_id: int = 0):
+        """Main-thread callback when one invocation finishes or errors."""
+        if exec_id not in self._active_workers:
+            return                          # double-call guard
+        del self._active_workers[exec_id]
+        self._current_run_exec_ids.discard(exec_id)
+        if run_id != self._run_id or not self._running:
+            self._check_drain()             # ref released — drain in case new run is now empty
+            return                          # stale callback from a previous run
+
+        if error:
+            node.append_output(f"[Error] {result}")
+            node.set_status("error")
+            # Dead end — do not trigger children on error
+        else:
+            node.output_text = result
+            node.set_status("done")
+            if not self._no_fanout:
+                for conn in self._connections:
+                    if conn.source_bubble is node:
+                        self._trigger_node(conn.target_bubble)
+
+        self._check_drain()
+
+    def _check_drain(self):
+        """Emit Done and clear _running when all current-run workers are gone."""
+        if self._running and not self._current_run_exec_ids:
+            self._running = False
+            self.status_update.emit("Done.")
 
     def _get_provider_for_model(self, model_id: str):
         for provider in LLMProviderRegistry.all():
@@ -419,6 +555,7 @@ class WorkflowCanvas(QGraphicsView):
     # ------------------------------------------------------------------
 
     def clear_canvas(self):
+        self.stop_all()
         for conn in list(self._connections):
             conn.detach()
         self._scene.clear()
@@ -426,21 +563,27 @@ class WorkflowCanvas(QGraphicsView):
         self._bubbles.clear()
         self._connections.clear()
         self._bubble_counter = 0
+        self._start_node = self._add_start_node()
 
     # ------------------------------------------------------------------
     # Save / Load
     # ------------------------------------------------------------------
 
     def get_workflow_data(self) -> dict:
+        sp = self._start_node.pos()
         return {
             "bubbles": [n.to_dict() for n in self._bubbles.values()],
             "connections": [c.to_dict() for c in self._connections],
             "bubble_counter": self._bubble_counter,
+            "start_pos": [sp.x(), sp.y()],
         }
 
     def load_workflow_data(self, data: dict):
         self.clear_canvas()
         self._bubble_counter = data.get("bubble_counter", 0)
+        sp = data.get("start_pos")
+        if sp:
+            self._start_node.setPos(sp[0], sp[1])
         for b_data in data.get("bubbles", []):
             idx = b_data.get("label_index", 1)
             node = BubbleNode(bubble_id=b_data.get("id"), label_index=idx)
@@ -449,7 +592,9 @@ class WorkflowCanvas(QGraphicsView):
             self._bubbles[node.bubble_id] = node
 
         for c_data in data.get("connections", []):
-            src = self._bubbles.get(c_data["from"])
+            if c_data.get("to") == "start":
+                continue  # Start has no input port; skip invalid edges
+            src = self._start_node if c_data["from"] == "start" else self._bubbles.get(c_data["from"])
             tgt = self._bubbles.get(c_data["to"])
             if src and tgt:
                 conn = ConnectionItem(src, tgt)

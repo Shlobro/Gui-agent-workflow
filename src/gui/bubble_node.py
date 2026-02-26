@@ -813,3 +813,107 @@ class BubbleNode(QGraphicsItem):
         if data.get("model"):
             self.model_id = data["model"]
         self.prompt_text = data.get("prompt", "")
+
+
+# ---------------------------------------------------------------------------
+# Start node
+# ---------------------------------------------------------------------------
+
+START_NODE_WIDTH = 140
+START_NODE_HEIGHT = 80
+
+
+class StartNode(QGraphicsItem):
+    """Permanent pure-trigger root node. Has no model/prompt; fires children immediately."""
+
+    is_start = True
+    bubble_id = "start"
+
+    def __init__(self):
+        super().__init__()
+        self._connections: List["ConnectionItem"] = []
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+        self.setZValue(1)
+
+    # ------------------------------------------------------------------
+    # Port API — same signatures as BubbleNode so canvas code is unchanged
+    # ------------------------------------------------------------------
+
+    def output_port_scene_pos(self) -> QPointF:
+        return self.mapToScene(QPointF(START_NODE_WIDTH, START_NODE_HEIGHT / 2))
+
+    def is_near_output_port(self, scene_pos: QPointF) -> bool:
+        port = self.output_port_scene_pos()
+        return (scene_pos - port).manhattanLength() < PORT_RADIUS * 3
+
+    # ------------------------------------------------------------------
+    # Connection bookkeeping
+    # ------------------------------------------------------------------
+
+    def add_connection(self, conn: "ConnectionItem"):
+        self._connections.append(conn)
+        self.update()
+
+    def remove_connection(self, conn: "ConnectionItem"):
+        if conn in self._connections:
+            self._connections.remove(conn)
+            self.update()
+
+    def connections(self) -> List["ConnectionItem"]:
+        return list(self._connections)
+
+    # ------------------------------------------------------------------
+    # QGraphicsItem overrides
+    # ------------------------------------------------------------------
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(
+            -PORT_RADIUS, -PORT_RADIUS,
+            START_NODE_WIDTH + PORT_RADIUS * 2,
+            START_NODE_HEIGHT + PORT_RADIUS * 2,
+        )
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            for conn in self._connections:
+                conn.update_path()
+        return super().itemChange(change, value)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, START_NODE_WIDTH, START_NODE_HEIGHT), 12, 12)
+        painter.fillPath(path, QBrush(QColor("#1a2e1a")))
+
+        border_pen = QPen(QColor("#3aaa5a"), 2)
+        border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(border_pen)
+        painter.drawPath(path)
+
+        font = QFont("Segoe UI", 13, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.setPen(QColor("#3aaa5a"))
+        painter.drawText(
+            QRectF(0, 0, START_NODE_WIDTH, START_NODE_HEIGHT),
+            Qt.AlignmentFlag.AlignCenter,
+            "\u25b6 START",
+        )
+
+        # Output port (right side)
+        cy = START_NODE_HEIGHT / 2
+        painter.setPen(QPen(OUTPUT_PORT_EDGE_COLOR, 1.4))
+        painter.setBrush(QBrush(OUTPUT_PORT_FILL_COLOR))
+        painter.drawEllipse(QPointF(START_NODE_WIDTH, cy), PORT_RADIUS, PORT_RADIUS)
+
+        if not any(conn.source_bubble is self for conn in self._connections):
+            BubbleNode._draw_port_direction_arrow(
+                painter,
+                start_x=START_NODE_WIDTH - 6.0,
+                tip_x=START_NODE_WIDTH + 6.0,
+                y=cy,
+                color=OUTPUT_PORT_LABEL_COLOR,
+            )

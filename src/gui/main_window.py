@@ -2,14 +2,14 @@
 
 import json
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QAction
 from PySide6.QtWidgets import (
     QMainWindow, QToolBar, QStatusBar, QFileDialog,
-    QMessageBox, QWidget,
+    QMessageBox,
 )
 
 from .canvas import WorkflowCanvas
+from .bubble_node import BubbleNode
 
 
 class MainWindow(QMainWindow):
@@ -22,7 +22,9 @@ class MainWindow(QMainWindow):
         self.canvas = WorkflowCanvas()
         self.setCentralWidget(self.canvas)
         self.canvas.status_update.connect(self._on_status)
+        self.canvas.selection_changed.connect(self._on_selection_changed)
 
+        self._run_from_here_action: QAction = None  # set in _build_toolbar
         self._build_toolbar()
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
@@ -60,8 +62,15 @@ class MainWindow(QMainWindow):
 
         act("＋ Add Bubble", self.canvas.add_bubble, tip="Add a new bubble node")
         tb.addSeparator()
-        act("▶ Run All", self.canvas.run_all, shortcut="F5", tip="Run the entire workflow")
-        act("▶ Run Selected", self.canvas.run_from_selected, tip="Run from the selected bubble")
+        act("▶ Run All", self.canvas.run_all, shortcut="F5",
+            tip="Run all nodes reachable from Start")
+        act("▶ Run Selected", self.canvas.run_selected_only,
+            tip="Run only the selected node(s) without fan-out")
+        self._run_from_here_action = act(
+            "▶ Run From Here", self.canvas.run_from_here,
+            tip="Run the selected node and all its descendants",
+        )
+        self._run_from_here_action.setEnabled(False)
         act("■ Stop", self.canvas.stop_all, tip="Cancel running workers")
         tb.addSeparator()
         act("💾 Save", self._save, shortcut="Ctrl+S", tip="Save workflow to JSON")
@@ -73,6 +82,15 @@ class MainWindow(QMainWindow):
 
     def _on_status(self, msg: str):
         self._status_bar.showMessage(msg)
+
+    def _on_selection_changed(self):
+        if self._run_from_here_action is None:
+            return
+        selected_bubbles = [
+            i for i in self.canvas._scene.selectedItems()
+            if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
+        ]
+        self._run_from_here_action.setEnabled(len(selected_bubbles) == 1)
 
     def _save(self):
         path, _ = QFileDialog.getSaveFileName(

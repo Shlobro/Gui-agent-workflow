@@ -16,7 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QGraphicsPathItem
 
-from .bubble_node import BubbleNode, PORT_RADIUS
+from .bubble_node import BubbleNode, StartNode, PORT_RADIUS
 
 ARROW_SIZE = 10
 VISUAL_STROKE_WIDTH = 2
@@ -86,7 +86,7 @@ class ConnectionItem(QGraphicsPathItem):
 
         obstacles: List[QRectF] = []
         for item in scene.items():
-            if not isinstance(item, BubbleNode):
+            if not isinstance(item, (BubbleNode, StartNode)):
                 continue
             rect = item.mapRectToScene(item.boundingRect())
             if rect.isNull():

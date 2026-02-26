@@ -30,8 +30,26 @@ class LLMWorker(QThread):
         self._output_lines = []
         self._lock = threading.Lock()
 
+    def _terminate_process(self):
+        """Kill the subprocess if it is running. Safe to call from any thread."""
+        proc = self._process
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except Exception:
+                pass
+
     def run(self):
         try:
+            # Check before spawning — cancel() may have fired before Popen
+            if self._cancelled:
+                self.error.emit("Cancelled")
+                return
+
             command = self.provider.build_command(
                 self.prompt,
                 model=self.model,
@@ -53,6 +71,12 @@ class LLMWorker(QThread):
                 shell=use_shell,
             )
 
+            # Check again immediately after Popen in case cancel() raced
+            if self._cancelled:
+                self._terminate_process()
+                self.error.emit("Cancelled")
+                return
+
             # Send prompt via stdin
             self._process.stdin.write(self.provider.get_stdin_prompt(self.prompt))
             self._process.stdin.close()
@@ -66,11 +90,17 @@ class LLMWorker(QThread):
                     self._output_lines.append(stripped)
                 self.output_line.emit(stripped)
 
-            self._process.wait(timeout=self.timeout)
+            if self._cancelled:
+                self._terminate_process()
+                self.error.emit("Cancelled")
+                return
 
-            if not self._cancelled:
-                full_output = "\n".join(self._output_lines)
-                self.finished.emit(full_output)
+            self._process.wait(timeout=self.timeout)
+            if self._cancelled:
+                self.error.emit("Cancelled")
+                return
+            full_output = "\n".join(self._output_lines)
+            self.finished.emit(full_output)
 
         except FileNotFoundError:
             cmd_name = self.provider.build_command("", model=self.model)[0]
@@ -83,16 +113,23 @@ class LLMWorker(QThread):
                 self._process.kill()
             self.error.emit(f"Timed out after {self.timeout}s")
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit("Cancelled" if self._cancelled else str(e))
 
     def cancel(self):
+        """Signal the worker to stop. Non-blocking: sets flag and spawns a
+        daemon thread that runs terminate→wait(4s)→kill so the subprocess is
+        guaranteed to die even if readline() is blocking the worker thread."""
         self._cancelled = True
-        if self._process and self._process.poll() is None:
-            try:
-                self._process.terminate()
+        proc = self._process
+        if proc and proc.poll() is None:
+            def _kill():
                 try:
-                    self._process.wait(timeout=4)
-                except subprocess.TimeoutExpired:
-                    self._process.kill()
-            except Exception:
-                pass
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=4)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                except Exception:
+                    pass
+            t = threading.Thread(target=_kill, daemon=True)
+            t.start()
