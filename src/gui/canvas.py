@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
-from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent, QPen
+from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent, QPen, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsView, QGraphicsScene, QGraphicsLineItem,
@@ -17,6 +17,11 @@ from src.llm.base_provider import LLMProviderRegistry
 from src.workers.llm_worker import LLMWorker
 from .bubble_node import BubbleNode, StartNode
 from .connection_item import ConnectionItem
+from .undo_commands import (
+    AddBubbleCommand, RemoveBubbleCommand,
+    AddConnectionCommand, RemoveConnectionCommand,
+    MoveBubbleCommand, TitleChangeCommand, ModelChangeCommand, PasteCommand,
+)
 
 
 class _ExecutionSignals(QObject):
@@ -75,6 +80,13 @@ class WorkflowCanvas(QGraphicsView):
         self._pan_start = QPointF()
         self._pan_button: Optional[Qt.MouseButton] = None
 
+        # Undo/redo
+        self._undo_stack = QUndoStack(self)
+        self._undo_stack.setUndoLimit(100)
+        self._undo_in_progress: bool = False
+        self._drag_start_positions: Dict[str, QPointF] = {}
+        self._title_committed: Dict[str, str] = {}
+
         # Keep scene bounds large enough to pan back to moved nodes.
         self._scene.changed.connect(self._expand_scene_rect_to_fit_items)
         self._scene.selectionChanged.connect(self.selection_changed)
@@ -132,6 +144,74 @@ class WorkflowCanvas(QGraphicsView):
         return node
 
     # ------------------------------------------------------------------
+    # Undo/redo raw operations (no stack push — used by commands only)
+    # ------------------------------------------------------------------
+
+    def _undo_add_bubble(self, snapshot: dict, label_index: int) -> Optional[BubbleNode]:
+        """Reconstruct a node from snapshot and add it to the scene."""
+        bubble_id = snapshot.get("id")
+        if bubble_id and bubble_id in self._bubbles:
+            return self._bubbles[bubble_id]  # already present (safety guard)
+
+        node = BubbleNode(bubble_id=bubble_id, label_index=label_index)
+        node.from_dict(snapshot)
+        # from_dict may overwrite bubble_id/label_index via data fields; restore
+        if bubble_id:
+            node.bubble_id = bubble_id
+        node.label_index = label_index
+        self._scene.addItem(node)
+        self._bubbles[node.bubble_id] = node
+        self._connect_node_signals(node)
+        return node
+
+    def _undo_remove_bubble(self, bubble_id: str):
+        """Remove a node (and all its connections) from the scene."""
+        node = self._bubbles.get(bubble_id)
+        if node is None:
+            return
+        for conn in list(node.connections()):
+            self._undo_remove_connection_item(conn)
+        self._scene.removeItem(node)
+        self._bubbles.pop(bubble_id, None)
+        self._title_committed.pop(bubble_id, None)
+
+    def _undo_add_connection(self, src: BubbleNode, tgt: BubbleNode) -> ConnectionItem:
+        """Create a ConnectionItem and register it."""
+        conn = ConnectionItem(src, tgt)
+        self._scene.addItem(conn)
+        conn.update_path()
+        self._connections.append(conn)
+        return conn
+
+    def _undo_remove_connection_item(self, conn: ConnectionItem):
+        """Detach and remove a ConnectionItem."""
+        conn.detach()
+        self._scene.removeItem(conn)
+        if conn in self._connections:
+            self._connections.remove(conn)
+
+    def _find_connection(self, src_id: str, tgt_id: str) -> Optional[ConnectionItem]:
+        """Find a ConnectionItem by endpoint IDs."""
+        for conn in self._connections:
+            s = conn.source_bubble.bubble_id
+            t = conn.target_bubble.bubble_id
+            if s == src_id and t == tgt_id:
+                return conn
+        return None
+
+    def _connect_node_signals(self, node: BubbleNode):
+        """Wire title/model signals for a node so changes push undo commands."""
+        bubble_id = node.bubble_id
+        self._title_committed[bubble_id] = node.title
+        title_edit = node._widget.title_edit
+        title_edit.editingFinished.connect(
+            lambda _bid=bubble_id, _te=title_edit: self._on_title_editing_finished(_bid, _te)
+        )
+        node._widget.model_selector.model_changed.connect(
+            lambda old, new, _bid=bubble_id: self._on_model_changed(_bid, old, new)
+        )
+
+    # ------------------------------------------------------------------
     # Bubble management
     # ------------------------------------------------------------------
 
@@ -141,27 +221,33 @@ class WorkflowCanvas(QGraphicsView):
 
     def add_bubble(self) -> BubbleNode:
         self._bubble_counter += 1
-        node = BubbleNode(label_index=self._bubble_counter)
-        # Place at center of current view
+        label_index = self._bubble_counter
         center = self.mapToScene(self.viewport().rect().center())
-        node.setPos(center.x() - 210, center.y() - 150)
-        self._scene.addItem(node)
-        self._bubbles[node.bubble_id] = node
-        return node
+        # Build a snapshot that describes the node-to-be
+        snapshot = {
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 150,
+            "name": f"Bubble {label_index}",
+            "model": "",
+            "prompt": "",
+        }
+        cmd = AddBubbleCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        return self._bubbles[snapshot["id"]]
 
     def remove_bubble(self, node: BubbleNode):
         if getattr(node, 'bubble_id', None) == "start":
             return
-        for conn in list(node.connections()):
-            self._remove_connection(conn)
-        self._scene.removeItem(node)
-        self._bubbles.pop(node.bubble_id, None)
+        cmd = RemoveBubbleCommand(self, node)
+        self._undo_stack.push(cmd)
 
     def _remove_connection(self, conn: ConnectionItem):
-        conn.detach()
-        self._scene.removeItem(conn)
-        if conn in self._connections:
-            self._connections.remove(conn)
+        src_id = conn.source_bubble.bubble_id
+        tgt_id = conn.target_bubble.bubble_id
+        cmd = RemoveConnectionCommand(self, src_id, tgt_id)
+        self._undo_stack.push(cmd)
 
     # ------------------------------------------------------------------
     # Mouse events — connection drawing + pan
@@ -189,6 +275,22 @@ class WorkflowCanvas(QGraphicsView):
             return
 
         super().mousePressEvent(event)
+
+        # Capture drag baselines after super() so Qt has updated selection.
+        # Also include the item under the cursor in case it wasn't yet selected
+        # (click-on-unselected-node-then-drag is the most common move gesture).
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_positions.clear()
+            candidates = set(self._scene.selectedItems())
+            item_under = self._scene.itemAt(
+                self.mapToScene(event.pos()), self.transform()
+            )
+            if isinstance(item_under, (BubbleNode, StartNode)):
+                candidates.add(item_under)
+            for item in candidates:
+                if isinstance(item, (BubbleNode, StartNode)):
+                    bid = item.bubble_id
+                    self._drag_start_positions[bid] = QPointF(item.pos())
 
     def mouseMoveEvent(self, event):
         if self._panning:
@@ -224,6 +326,29 @@ class WorkflowCanvas(QGraphicsView):
             return
 
         super().mouseReleaseEvent(event)
+
+        # After super() processes release, check if any tracked node actually moved
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start_positions:
+            moved = []
+            for bid, old_pos in self._drag_start_positions.items():
+                if bid == "start":
+                    node = self._start_node
+                else:
+                    node = self._bubbles.get(bid)
+                if node and (node.pos() - old_pos).manhattanLength() > 0.5:
+                    moved.append((bid, old_pos, node.pos(), bid == "start"))
+
+            if moved:
+                if len(moved) > 1:
+                    self._undo_stack.beginMacro("Move Nodes")
+                for bid, old_pos, new_pos, is_start in moved:
+                    self._undo_stack.push(
+                        MoveBubbleCommand(self, bid, old_pos, new_pos, is_start)
+                    )
+                if len(moved) > 1:
+                    self._undo_stack.endMacro()
+
+            self._drag_start_positions.clear()
 
     def _start_connection(self, source: BubbleNode, scene_pos: QPointF):
         self._drawing_connection = True
@@ -285,10 +410,8 @@ class WorkflowCanvas(QGraphicsView):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        conn = ConnectionItem(source, target_node)
-        self._scene.addItem(conn)
-        conn.update_path()
-        self._connections.append(conn)
+        cmd = AddConnectionCommand(self, source.bubble_id, target_node.bubble_id)
+        self._undo_stack.push(cmd)
 
     # ------------------------------------------------------------------
     # Keyboard
@@ -296,13 +419,21 @@ class WorkflowCanvas(QGraphicsView):
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Delete:
-            for item in self._scene.selectedItems():
-                if getattr(item, 'bubble_id', None) == "start":
-                    continue
-                if isinstance(item, ConnectionItem):
-                    self._remove_connection(item)
-                elif isinstance(item, BubbleNode):
-                    self.remove_bubble(item)
+            deletable = [
+                item for item in self._scene.selectedItems()
+                if not (getattr(item, 'bubble_id', None) == "start")
+                and isinstance(item, (ConnectionItem, BubbleNode))
+            ]
+            if deletable:
+                if len(deletable) > 1:
+                    self._undo_stack.beginMacro("Delete")
+                for item in deletable:
+                    if isinstance(item, ConnectionItem):
+                        self._remove_connection(item)
+                    elif isinstance(item, BubbleNode):
+                        self.remove_bubble(item)
+                if len(deletable) > 1:
+                    self._undo_stack.endMacro()
             return
 
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -312,6 +443,12 @@ class WorkflowCanvas(QGraphicsView):
                 or isinstance(self._scene.focusItem(), QGraphicsProxyWidget)
             )
             if not text_focused:
+                if event.key() == Qt.Key.Key_Z:
+                    self._undo_stack.undo()
+                    return
+                if event.key() == Qt.Key.Key_Y:
+                    self._undo_stack.redo()
+                    return
                 if event.key() == Qt.Key.Key_C:
                     self._copy_selected()
                     return
@@ -352,43 +489,26 @@ class WorkflowCanvas(QGraphicsView):
         self._paste_count += 1
         offset = 40 * self._paste_count
 
-        # Build old_id -> new_id mapping and create nodes
-        id_map: Dict[str, str] = {}
-        new_nodes: List[BubbleNode] = []
+        cmd = PasteCommand(self, self._clipboard, self._clipboard_conns, offset)
+        self._undo_stack.push(cmd)
 
-        for data in self._clipboard:
-            self._bubble_counter += 1
-            new_id = str(uuid4())
-            id_map[data["id"]] = new_id
+    # ------------------------------------------------------------------
+    # Undo signal handlers
+    # ------------------------------------------------------------------
 
-            node = BubbleNode(bubble_id=new_id, label_index=self._bubble_counter)
-            node.from_dict(data)
-            # Override identity fields overwritten by from_dict
-            node.bubble_id = new_id
-            node.label_index = self._bubble_counter
-            node.setPos(data.get("x", 0) + offset, data.get("y", 0) + offset)
+    def _on_title_editing_finished(self, bubble_id: str, title_edit: QLineEdit):
+        if self._undo_in_progress:
+            return
+        new_title = title_edit.text()
+        old_title = self._title_committed.get(bubble_id, "")
+        if new_title != old_title:
+            self._undo_stack.push(TitleChangeCommand(self, bubble_id, old_title, new_title))
+            self._title_committed[bubble_id] = new_title
 
-            self._scene.addItem(node)
-            self._bubbles[node.bubble_id] = node
-            new_nodes.append(node)
-
-        # Deselect all, then select only the pasted nodes
-        self._scene.clearSelection()
-        for node in new_nodes:
-            node.setSelected(True)
-
-        # Recreate connections between pasted nodes
-        for conn_data in self._clipboard_conns:
-            src_id = id_map.get(conn_data["from"])
-            tgt_id = id_map.get(conn_data["to"])
-            if src_id and tgt_id:
-                src = self._bubbles.get(src_id)
-                tgt = self._bubbles.get(tgt_id)
-                if src and tgt:
-                    conn = ConnectionItem(src, tgt)
-                    self._scene.addItem(conn)
-                    conn.update_path()
-                    self._connections.append(conn)
+    def _on_model_changed(self, bubble_id: str, old_model_id: str, new_model_id: str):
+        if self._undo_in_progress:
+            return
+        self._undo_stack.push(ModelChangeCommand(self, bubble_id, old_model_id, new_model_id))
 
     # ------------------------------------------------------------------
     # Zoom
@@ -685,6 +805,8 @@ class WorkflowCanvas(QGraphicsView):
         self._connections.clear()
         self._bubble_counter = 0
         self._start_node = self._add_start_node()
+        self._undo_stack.clear()
+        self._title_committed.clear()
 
     # ------------------------------------------------------------------
     # Save / Load
@@ -711,6 +833,7 @@ class WorkflowCanvas(QGraphicsView):
             node.from_dict(b_data)
             self._scene.addItem(node)
             self._bubbles[node.bubble_id] = node
+            self._connect_node_signals(node)
 
         for c_data in data.get("connections", []):
             if c_data.get("to") == "start":
@@ -722,3 +845,4 @@ class WorkflowCanvas(QGraphicsView):
                 self._scene.addItem(conn)
                 self._connections.append(conn)
         self._expand_scene_rect_to_fit_items()
+        self._undo_stack.clear()

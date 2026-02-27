@@ -120,6 +120,11 @@ class MainWindow(QMainWindow):
         act("■ Stop", self.canvas.stop_all, tip="Cancel running workers")
         tb.addSeparator()
         act("🗑 Clear", self._clear, tip="Clear the canvas")
+        tb.addSeparator()
+        undo_action = self.canvas._undo_stack.createUndoAction(self, "Undo")
+        tb.addAction(undo_action)
+        redo_action = self.canvas._undo_stack.createRedoAction(self, "Redo")
+        tb.addAction(redo_action)
 
     # ------------------------------------------------------------------
 

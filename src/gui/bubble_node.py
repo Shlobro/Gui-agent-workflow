@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
-from PySide6.QtCore import QRectF, Qt, QPointF, QPoint, QSize, QRect
+from PySide6.QtCore import QRectF, Qt, QPointF, QPoint, QSize, QRect, Signal
 from PySide6.QtGui import (
     QColor,
     QPainter,
@@ -81,6 +81,10 @@ class _ModelListWidget(QListWidget):
 
 class ModelSelector(QWidget):
     """Compact model selector with dropdown overlay on the canvas viewport."""
+
+    # Emitted when the user selects a different model (old_id, new_id).
+    # Not emitted during initial auto-selection (old_id would be None).
+    model_changed = Signal(str, str)
 
     LIST_STYLESHEET = """
         QListWidget {
@@ -181,11 +185,14 @@ class ModelSelector(QWidget):
         self._close_dropdown()
 
     def _select_item(self, item: QListWidgetItem):
+        old_id = self._current_model_id
         self._list.setCurrentItem(item)
         self._current_model_id = item.data(Qt.ItemDataRole.UserRole)
         self._current_label = item.text()
         self._toggle_button.setIcon(item.icon())
         self._update_button_label()
+        if old_id is not None and old_id != self._current_model_id:
+            self.model_changed.emit(old_id, self._current_model_id)
 
     def _update_button_label(self):
         self._toggle_button.setText(self._current_label)
