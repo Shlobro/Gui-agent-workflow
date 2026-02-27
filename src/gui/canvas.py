@@ -642,6 +642,10 @@ class WorkflowCanvas(QGraphicsView):
         for worker in list(self._active_workers.values()):
             if worker is not None:
                 worker.cancel()
+        # Reset any nodes still showing "running" so the glow animator stops.
+        for node in self._bubbles.values():
+            if node.status == "running":
+                node.set_status("idle")
         # Do not clear _active_workers here — keep Python refs alive until
         # each thread's finished/error callback fires and removes its entry,
         # preventing QThread destruction while the thread is still running.
