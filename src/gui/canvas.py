@@ -61,6 +61,8 @@ class WorkflowCanvas(QGraphicsView):
         self._running = False
         self._no_fanout: bool = False
         self._active_workers: Dict[int, Optional[LLMWorker]] = {}
+        self._exec_node: Dict[int, str] = {}       # exec_id -> bubble_id
+        self._retired_exec_ids: set = set()        # exec_ids whose node was deleted mid-run
         self._current_run_exec_ids: set = set()   # exec_ids belonging to the active run only
         self._exec_counter: int = 0
         self._run_id: int = 0
@@ -169,6 +171,22 @@ class WorkflowCanvas(QGraphicsView):
         node = self._bubbles.get(bubble_id)
         if node is None:
             return
+        # Cancel any in-flight workers for this node so subprocesses don't
+        # run headless after the node is gone.  Move exec_id to
+        # _retired_exec_ids so _on_invocation_done skips node mutation but
+        # still cleans up _active_workers and calls _check_drain.  We do NOT
+        # remove from _active_workers or _current_run_exec_ids here — keeping
+        # those refs alive prevents a "QThread destroyed while still running"
+        # crash (same invariant enforced by stop_all).
+        for exec_id, bid in list(self._exec_node.items()):
+            if bid == bubble_id:
+                worker = self._active_workers.get(exec_id)
+                if worker is not None:
+                    worker.cancel()
+                self._exec_node.pop(exec_id, None)
+                self._retired_exec_ids.add(exec_id)
+        if node.status == "running":
+            node.set_status("idle")
         for conn in list(node.connections()):
             self._undo_remove_connection_item(conn)
         self._scene.removeItem(node)
@@ -719,6 +737,7 @@ class WorkflowCanvas(QGraphicsView):
     def _fire_invocation(self, node: BubbleNode, exec_id: int):
         """Launch one LLMWorker invocation tagged with exec_id."""
         self._active_workers[exec_id] = None  # reserve slot before any early return
+        self._exec_node[exec_id] = node.bubble_id
         self._current_run_exec_ids.add(exec_id)
         node.set_status("running")
         model_id = node.model_id
@@ -726,6 +745,7 @@ class WorkflowCanvas(QGraphicsView):
             node.append_output("[Error] No model selected.")
             node.set_status("error")
             del self._active_workers[exec_id]
+            self._exec_node.pop(exec_id, None)
             self._current_run_exec_ids.discard(exec_id)
             return
         provider = self._get_provider_for_model(model_id)
@@ -733,6 +753,7 @@ class WorkflowCanvas(QGraphicsView):
             node.append_output(f"[Error] Unknown model: {model_id}")
             node.set_status("error")
             del self._active_workers[exec_id]
+            self._exec_node.pop(exec_id, None)
             self._current_run_exec_ids.discard(exec_id)
             return
 
@@ -743,7 +764,7 @@ class WorkflowCanvas(QGraphicsView):
         run_id = self._run_id
 
         def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
-            if _r == self._run_id and self._running and _e in self._active_workers:
+            if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
                 _n.append_output(line)
 
         def on_finished(full: str, _n=node, _e=exec_id, _r=run_id):
@@ -761,11 +782,18 @@ class WorkflowCanvas(QGraphicsView):
         """Main-thread callback when one invocation finishes or errors."""
         if exec_id not in self._active_workers:
             return                          # double-call guard
+        retired = exec_id in self._retired_exec_ids
+        self._retired_exec_ids.discard(exec_id)
         del self._active_workers[exec_id]
+        self._exec_node.pop(exec_id, None)
         self._current_run_exec_ids.discard(exec_id)
         if run_id != self._run_id or not self._running:
             self._check_drain()             # ref released — drain in case new run is now empty
             return                          # stale callback from a previous run
+        # Skip node mutation if the node was deleted while this exec was in-flight.
+        if retired:
+            self._check_drain()
+            return
 
         if error:
             node.append_output(f"[Error] {result}")

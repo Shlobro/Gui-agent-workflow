@@ -2,6 +2,7 @@
 
 import math
 import uuid
+import weakref
 from typing import List, Optional, TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, Qt, QPointF, QTimer
@@ -53,7 +54,7 @@ class _GlowAnimator:
 
     def __init__(self):
         self._phase: float = 0.0
-        self._nodes: set = set()
+        self._nodes: weakref.WeakSet = weakref.WeakSet()
         self._timer = QTimer()
         self._timer.setInterval(30)        # ~33 fps
         self._timer.timeout.connect(self._tick)
@@ -79,6 +80,9 @@ class _GlowAnimator:
         return self._phase
 
     def _tick(self) -> None:
+        if not self._nodes:
+            self._timer.stop()
+            return
         self._phase = (self._phase + 0.012) % 1.0   # full cycle ≈ 2.5 s
         for node in list(self._nodes):
             node.update()
