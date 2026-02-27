@@ -834,6 +834,7 @@ class StartNode(QGraphicsItem):
         self._connections: List["ConnectionItem"] = []
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
         self.setZValue(1)
@@ -888,6 +889,21 @@ class StartNode(QGraphicsItem):
         path = QPainterPath()
         path.addRoundedRect(QRectF(0, 0, START_NODE_WIDTH, START_NODE_HEIGHT), 12, 12)
         painter.fillPath(path, QBrush(QColor("#1a2e1a")))
+
+        if self.isSelected():
+            glow_rect = QRectF(-2.5, -2.5, START_NODE_WIDTH + 5.0, START_NODE_HEIGHT + 5.0)
+            glow_path = QPainterPath()
+            glow_path.addRoundedRect(glow_rect, 14.5, 14.5)
+
+            outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
+            outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(outer_glow_pen)
+            painter.drawPath(glow_path)
+
+            inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
+            inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(inner_glow_pen)
+            painter.drawPath(glow_path)
 
         border_pen = QPen(QColor("#3aaa5a"), 2)
         border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)

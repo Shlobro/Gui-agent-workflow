@@ -1,0 +1,63 @@
+{
+  "bubbles": [
+    {
+      "id": "d3c6275f-f1ee-4f14-8023-4669f80483d5",
+      "label_index": 1,
+      "x": -739.701875,
+      "y": -178.73310625,
+      "name": "Create story file",
+      "model": "claude-sonnet-4-6",
+      "prompt": "Make me a file called story.md keep it empty"
+    },
+    {
+      "id": "a552cbdc-bcdc-48b4-bd2a-ef363d5011e2",
+      "label_index": 2,
+      "x": -91.52441874999988,
+      "y": -485.51422499999995,
+      "name": "Bubble 2",
+      "model": "gpt-5.3-codex:low",
+      "prompt": "edit story.md and write a short story in it"
+    },
+    {
+      "id": "bb0a04a2-e7a7-45d2-afbc-9e5f9b3f7d39",
+      "label_index": 3,
+      "x": -90.02912500000005,
+      "y": 48.54174999999999,
+      "name": "Bubble 3",
+      "model": "claude-sonnet-4-6",
+      "prompt": "create a file called story2.md and keep it empty"
+    },
+    {
+      "id": "74675e6d-7299-4283-b8f7-7685af2eed32",
+      "label_index": 4,
+      "x": 495.23749999999995,
+      "y": 47.45500000000001,
+      "name": "Bubble 4",
+      "model": "gpt-5.3-codex:low",
+      "prompt": "edit story2.md and write a short story in it"
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "d3c6275f-f1ee-4f14-8023-4669f80483d5"
+    },
+    {
+      "from": "d3c6275f-f1ee-4f14-8023-4669f80483d5",
+      "to": "a552cbdc-bcdc-48b4-bd2a-ef363d5011e2"
+    },
+    {
+      "from": "d3c6275f-f1ee-4f14-8023-4669f80483d5",
+      "to": "bb0a04a2-e7a7-45d2-afbc-9e5f9b3f7d39"
+    },
+    {
+      "from": "bb0a04a2-e7a7-45d2-afbc-9e5f9b3f7d39",
+      "to": "74675e6d-7299-4283-b8f7-7685af2eed32"
+    }
+  ],
+  "bubble_counter": 4,
+  "start_pos": [
+    -1031.7456,
+    -76.74105625000001
+  ]
+}
