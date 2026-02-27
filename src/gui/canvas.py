@@ -2,7 +2,7 @@
 
 import os
 from collections import deque
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Callable, Dict, List, Optional, Sequence, Union
 from uuid import uuid4
 
 from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF, QTimer
@@ -10,7 +10,6 @@ from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent, QPen, QUndoS
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsView, QGraphicsScene, QGraphicsLineItem,
-    QGraphicsProxyWidget,
     QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QTextEdit,
 )
 
@@ -24,9 +23,11 @@ from .undo_commands import (
     AddConnectionCommand, RemoveConnectionCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand, PasteCommand,
 )
+from .workflow_io import parse_workflow_data, build_workflow_data, get_provider_for_model
 
 GraphNode = WorkflowNode
 SourceNode = Union[StartNode, WorkflowNode]
+PREFERRED_DEFAULT_LLM_MODEL_ID = "gemini-3-pro-preview"
 
 
 class _ExecutionSignals(QObject):
@@ -96,11 +97,11 @@ class WorkflowCanvas(QGraphicsView):
         self._drag_start_positions: Dict[str, QPointF] = {}
         self._title_committed: Dict[str, str] = {}
 
-        # Keep scene bounds large enough to pan back to moved nodes.
+        # Output callbacks — set by MainWindow to forward node output to the properties panel
+        self.on_output_line: Optional[Callable] = None    # callable(node, line)
+        self.on_output_cleared: Optional[Callable] = None  # callable(node)
         self._scene.changed.connect(self._expand_scene_rect_to_fit_items)
         self._scene.selectionChanged.connect(self.selection_changed)
-
-        # Permanent start node — created after scene is ready
         self._start_node: StartNode = self._add_start_node()
 
     def drawBackground(self, painter: QPainter, rect):
@@ -160,7 +161,7 @@ class WorkflowCanvas(QGraphicsView):
             node.label_index = label_index
             self._scene.addItem(node)
             self._nodes[node.node_id] = node
-            self._connect_file_op_signals(node)
+            self._title_committed[node.node_id] = node.title
         else:
             node = LLMNode(node_id=node_id, label_index=label_index)
             node.from_dict(snapshot)
@@ -169,7 +170,7 @@ class WorkflowCanvas(QGraphicsView):
             node.label_index = label_index
             self._scene.addItem(node)
             self._nodes[node.node_id] = node
-            self._connect_node_signals(node)
+            self._title_committed[node.node_id] = node.title
         return node
 
     def _undo_remove_node(self, node_id: str):
@@ -216,42 +217,43 @@ class WorkflowCanvas(QGraphicsView):
                 return conn
         return None
 
-    def _connect_node_signals(self, node: LLMNode):
-        """Wire title/model signals for an LLMNode so changes push undo commands."""
-        node_id = node.node_id
-        self._title_committed[node_id] = node.title
-        title_edit = node._widget.title_edit
-        title_edit.editingFinished.connect(
-            lambda _nid=node_id, _te=title_edit: self._on_title_editing_finished(_nid, _te)
-        )
-        node._widget.model_selector.model_changed.connect(
-            lambda old, new, _nid=node_id: self._on_model_changed(_nid, old, new)
-        )
+    def notify_node_changed(self, node_id: str) -> None:
+        """Re-emit selection_changed if the given node is currently selected.
 
-    def _connect_file_op_signals(self, node: FileOpNode):
-        """Wire title signal for a FileOpNode so title changes push undo commands."""
-        node_id = node.node_id
-        self._title_committed[node_id] = node.title
-        title_edit = node._widget.title_edit
-        title_edit.editingFinished.connect(
-            lambda _nid=node_id, _te=title_edit: self._on_title_editing_finished(_nid, _te)
-        )
+        Called after undo/redo alters a node's title or model so the panel
+        refreshes its displayed values.
+        """
+        node = self._nodes.get(node_id)
+        if node is not None and node in self._scene.selectedItems():
+            self.selection_changed.emit()
 
     def set_working_directory(self, path: str) -> None:
         """Set the project folder used as cwd for all LLM subprocess calls."""
         self._working_directory = path
 
+    def _resolve_default_llm_model_id(self) -> str:
+        """Pick a valid default model ID for newly created LLM nodes."""
+        if get_provider_for_model(PREFERRED_DEFAULT_LLM_MODEL_ID) is not None:
+            return PREFERRED_DEFAULT_LLM_MODEL_ID
+
+        for provider in LLMProviderRegistry.all():
+            models = provider.get_models()
+            if models:
+                return models[0][0]
+        return ""
+
     def add_llm_node(self) -> LLMNode:
         self._node_counter += 1
         label_index = self._node_counter
         center = self.mapToScene(self.viewport().rect().center())
+        default_model_id = self._resolve_default_llm_model_id()
         snapshot = {
             "id": str(uuid4()),
             "label_index": label_index,
             "x": center.x() - 210,
-            "y": center.y() - 150,
+            "y": center.y() - 32,
             "name": f"LLM {label_index}",
-            "model": "",
+            "model": default_model_id,
             "prompt": "",
         }
         cmd = AddNodeCommand(self, snapshot, label_index)
@@ -271,7 +273,7 @@ class WorkflowCanvas(QGraphicsView):
             "id": str(uuid4()),
             "label_index": label_index,
             "x": center.x() - 210,
-            "y": center.y() - 80,
+            "y": center.y() - 32,
             "name": f"{cls.node_type.replace('_', ' ').title()} {label_index}",
             "filename": "",
         }
@@ -486,10 +488,7 @@ class WorkflowCanvas(QGraphicsView):
 
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             focused = QApplication.focusWidget()
-            text_focused = (
-                isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit))
-                or isinstance(self._scene.focusItem(), QGraphicsProxyWidget)
-            )
+            text_focused = isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit))
             if not text_focused:
                 if event.key() == Qt.Key.Key_Z:
                     self._undo_stack.undo()
@@ -536,10 +535,12 @@ class WorkflowCanvas(QGraphicsView):
         cmd = PasteCommand(self, self._clipboard, self._clipboard_conns, offset)
         self._undo_stack.push(cmd)
 
-    def _on_title_editing_finished(self, node_id: str, title_edit: QLineEdit):
+    def _on_title_editing_finished(self, node_id: str, new_title: str):
         if self._undo_in_progress:
             return
-        new_title = title_edit.text()
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
         old_title = self._title_committed.get(node_id, "")
         if new_title != old_title:
             self._undo_stack.push(TitleChangeCommand(self, node_id, old_title, new_title))
@@ -548,12 +549,20 @@ class WorkflowCanvas(QGraphicsView):
     def _on_model_changed(self, node_id: str, old_model_id: str, new_model_id: str):
         if self._undo_in_progress:
             return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_model_id == new_model_id:
+            return
         self._undo_stack.push(ModelChangeCommand(self, node_id, old_model_id, new_model_id))
 
     def _visible_model_dropdown(self) -> Optional[QListWidget]:
-        for list_widget in self.viewport().findChildren(QListWidget, "model_selector_dropdown"):
-            if list_widget.isVisible():
-                return list_widget
+        # Search in the active window (panel may be the parent now)
+        active_window = QApplication.activeWindow()
+        if active_window is not None:
+            for list_widget in active_window.findChildren(QListWidget, "model_selector_dropdown"):
+                if list_widget.isVisible():
+                    return list_widget
         return None
 
     @staticmethod
@@ -717,6 +726,8 @@ class WorkflowCanvas(QGraphicsView):
                     errors.append(f'\u2022 "{title}" has no prompt.')
                 if not node.model_id:
                     errors.append(f'\u2022 "{title}" has no model selected.')
+                elif get_provider_for_model(node.model_id) is None:
+                    errors.append(f'\u2022 "{title}" has unknown model "{node.model_id}".')
         return errors
 
     def _direct_children(self, node: SourceNode) -> List[GraphNode]:
@@ -732,6 +743,8 @@ class WorkflowCanvas(QGraphicsView):
         for node in nodes:
             node.set_status("idle")
             node.clear_output()
+            if self.on_output_cleared:
+                self.on_output_cleared(node)
         self._running = True
         self.run_state_changed.emit(True)
         self._no_fanout = no_fanout
@@ -767,14 +780,19 @@ class WorkflowCanvas(QGraphicsView):
         model_id = node.model_id
         if not model_id:
             node.append_output("[Error] No model selected.")
+            if self.on_output_line:
+                self.on_output_line(node, "[Error] No model selected.")
             node.set_status("error")
             del self._active_workers[exec_id]
             self._exec_node.pop(exec_id, None)
             self._current_run_exec_ids.discard(exec_id)
             return
-        provider = self._get_provider_for_model(model_id)
+        provider = get_provider_for_model(model_id)
         if provider is None:
-            node.append_output(f"[Error] Unknown model: {model_id}")
+            msg = f"[Error] Unknown model: {model_id}"
+            node.append_output(msg)
+            if self.on_output_line:
+                self.on_output_line(node, msg)
             node.set_status("error")
             del self._active_workers[exec_id]
             self._exec_node.pop(exec_id, None)
@@ -790,6 +808,8 @@ class WorkflowCanvas(QGraphicsView):
         def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
             if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
                 _n.append_output(line)
+                if self.on_output_line:
+                    self.on_output_line(_n, line)
 
         def on_finished(full: str, _n=node, _e=exec_id, _r=run_id):
             self._on_invocation_done(_n, _e, full, error=False, run_id=_r)
@@ -905,13 +925,20 @@ class WorkflowCanvas(QGraphicsView):
             return
 
         if error:
-            node.append_output(f"[Error] {result}")
+            msg = f"[Error] {result}"
+            node.append_output(msg)
+            if self.on_output_line:
+                self.on_output_line(node, msg)
             node.set_status("error")
             # Dead end — do not trigger children on error
         else:
             if isinstance(node, FileOpNode):
                 node.clear_output()
+                if self.on_output_cleared:
+                    self.on_output_cleared(node)
                 node.append_output(result)
+                if self.on_output_line:
+                    self.on_output_line(node, result)
             else:
                 node.output_text = result
             node.set_status("done")
@@ -931,13 +958,6 @@ class WorkflowCanvas(QGraphicsView):
             self.run_state_changed.emit(False)
             self.status_update.emit("Done.")
 
-    def _get_provider_for_model(self, model_id: str):
-        for provider in LLMProviderRegistry.all():
-            for mid, _ in provider.get_models():
-                if mid == model_id:
-                    return provider
-        return None
-
     def clear_canvas(self):
         self.stop_all()
         for conn in list(self._connections):
@@ -952,21 +972,20 @@ class WorkflowCanvas(QGraphicsView):
         self._title_committed.clear()
 
     def get_workflow_data(self) -> dict:
-        sp = self._start_node.pos()
-        return {
-            "nodes": [n.to_dict() for n in self._nodes.values()],
-            "connections": [c.to_dict() for c in self._connections],
-            "node_counter": self._node_counter,
-            "start_pos": [sp.x(), sp.y()],
-        }
+        return build_workflow_data(
+            self._nodes.values(), self._connections, self._node_counter, self._start_node
+        )
 
     def load_workflow_data(self, data: dict):
+        parsed = parse_workflow_data(data)
         self.clear_canvas()
-        self._node_counter = data.get("node_counter", 0)
-        sp = data.get("start_pos")
-        if sp:
+        self._node_counter = parsed["node_counter"]
+
+        sp = parsed["start_pos"]
+        if sp is not None:
             self._start_node.setPos(sp[0], sp[1])
-        for b_data in data.get("nodes", []):
+
+        for b_data in parsed["nodes"]:
             idx = b_data.get("label_index", 1)
             node_type = b_data.get("node_type", "llm")
             node: GraphNode
@@ -975,19 +994,19 @@ class WorkflowCanvas(QGraphicsView):
                 node.from_dict(b_data)
                 self._scene.addItem(node)
                 self._nodes[node.node_id] = node
-                self._connect_file_op_signals(node)
+                self._title_committed[node.node_id] = node.title
             else:
                 node = LLMNode(node_id=b_data.get("id"), label_index=idx)
                 node.from_dict(b_data)
                 self._scene.addItem(node)
                 self._nodes[node.node_id] = node
-                self._connect_node_signals(node)
+                self._title_committed[node.node_id] = node.title
 
-        for c_data in data.get("connections", []):
-            if c_data.get("to") == "start":
-                continue  # Start has no input port; skip invalid edges
-            src = self._start_node if c_data["from"] == "start" else self._nodes.get(c_data["from"])
-            tgt = self._nodes.get(c_data["to"])
+        for c_data in parsed["connections"]:
+            src_id = c_data.get("from")
+            tgt_id = c_data.get("to")
+            src = self._start_node if src_id == "start" else self._nodes.get(src_id)
+            tgt = self._nodes.get(tgt_id)
             if src and tgt:
                 conn = ConnectionItem(src, tgt)
                 self._scene.addItem(conn)

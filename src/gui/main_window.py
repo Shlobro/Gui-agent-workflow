@@ -3,16 +3,22 @@
 import json
 import os
 
+from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QKeySequence, QAction
 from PySide6.QtWidgets import (
-    QMainWindow, QToolBar, QStatusBar, QFileDialog,
+    QMainWindow,
     QMessageBox,
+    QFileDialog,
+    QStatusBar,
+    QToolBar,
+    QWidget,
 )
 
 from .canvas import WorkflowCanvas
 from .llm_node import LLMNode
 from .file_op_node import FileOpNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
+from .properties_panel import PropertiesPanel
 
 
 class MainWindow(QMainWindow):
@@ -23,9 +29,27 @@ class MainWindow(QMainWindow):
         self._setup_style()
 
         self.canvas = WorkflowCanvas()
+        self._panel = PropertiesPanel(parent=self.canvas)
+        self._panel.raise_()
         self.setCentralWidget(self.canvas)
+
+        # Keep the panel pinned to the top-right corner of the canvas viewport.
+        self.canvas.installEventFilter(self)
+        # Reposition whenever the panel animates (width changes).
+        self._panel._anim.valueChanged.connect(lambda _: self._reposition_panel())
+
         self.canvas.status_update.connect(self._on_status)
         self.canvas.selection_changed.connect(self._on_selection_changed)
+
+        # Wire panel signals → canvas undo handlers
+        self._panel.title_committed.connect(self._on_panel_title_committed)
+        self._panel.model_changed.connect(self._on_panel_model_changed)
+        self._panel.prompt_committed.connect(self._on_panel_prompt_committed)
+        self._panel.filename_committed.connect(self._on_panel_filename_committed)
+
+        # Wire canvas output callbacks → panel
+        self.canvas.on_output_line = lambda node, line: self._panel.maybe_append_output(node, line)
+        self.canvas.on_output_cleared = lambda node: self._panel.maybe_clear_output(node)
 
         self._run_from_here_action: QAction | None = None  # set in _build_toolbar
         self._open_folder_action: QAction | None = None    # set in _build_menu
@@ -40,6 +64,24 @@ class MainWindow(QMainWindow):
             self._apply_project_folder(project_folder)
         else:
             self._status_bar.showMessage("Ready. No project folder selected.")
+
+    # ------------------------------------------------------------------
+
+    def _reposition_panel(self) -> None:
+        """Pin the panel to the top-right corner of the canvas viewport.
+
+        Since the panel is absolutely positioned (not in a layout), we drive its
+        width directly from maximumWidth so the animation value is respected.
+        """
+        cw = self.canvas.width()
+        ch = self.canvas.height()
+        pw = self._panel.maximumWidth()
+        self._panel.setGeometry(cw - pw, 0, pw, ch)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj is self.canvas and event.type() == QEvent.Type.Resize:
+            self._reposition_panel()
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
 
@@ -112,12 +154,12 @@ class MainWindow(QMainWindow):
         act("＋ Truncate File", self.canvas.add_truncate_file_node, tip="Add a Truncate File node")
         act("＋ Delete File", self.canvas.add_delete_file_node, tip="Add a Delete File node")
         tb.addSeparator()
-        act("▶ Run All", self.canvas.run_all, shortcut="F5",
+        act("▶ Run All", self._run_all, shortcut="F5",
             tip="Run all nodes reachable from Start")
-        act("▶ Run Selected", self.canvas.run_selected_only,
+        act("▶ Run Selected", self._run_selected_only,
             tip="Run only the selected node(s) without fan-out")
         self._run_from_here_action = act(
-            "▶ Run From Here", self.canvas.run_from_here,
+            "▶ Run From Here", self._run_from_here,
             tip="Run the selected node and all its descendants",
         )
         self._run_from_here_action.setEnabled(False)
@@ -125,9 +167,24 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         act("🗑 Clear", self._clear, tip="Clear the canvas")
         tb.addSeparator()
-        undo_action = self.canvas._undo_stack.createUndoAction(self, "Undo")
+        undo_action = QAction("Undo", self)
+        undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        undo_action.triggered.connect(self._undo)
+        self.canvas._undo_stack.canUndoChanged.connect(undo_action.setEnabled)
+        self.canvas._undo_stack.undoTextChanged.connect(
+            lambda text: undo_action.setText(f"Undo {text}" if text else "Undo")
+        )
+        undo_action.setEnabled(self.canvas._undo_stack.canUndo())
         tb.addAction(undo_action)
-        redo_action = self.canvas._undo_stack.createRedoAction(self, "Redo")
+
+        redo_action = QAction("Redo", self)
+        redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        redo_action.triggered.connect(self._redo)
+        self.canvas._undo_stack.canRedoChanged.connect(redo_action.setEnabled)
+        self.canvas._undo_stack.redoTextChanged.connect(
+            lambda text: redo_action.setText(f"Redo {text}" if text else "Redo")
+        )
+        redo_action.setEnabled(self.canvas._undo_stack.canRedo())
         tb.addAction(redo_action)
 
     # ------------------------------------------------------------------
@@ -160,19 +217,71 @@ class MainWindow(QMainWindow):
                 "Choose the folder LLM calls will run in"
             )
 
+    def _undo(self):
+        self._panel.commit_pending_edits()
+        self.canvas._undo_stack.undo()
+
+    def _redo(self):
+        self._panel.commit_pending_edits()
+        self.canvas._undo_stack.redo()
+
     def _on_status(self, msg: str):
         self._status_bar.showMessage(msg)
 
     def _on_selection_changed(self):
-        if self._run_from_here_action is None:
-            return
-        selected_nodes = [
+        selected = [
             i for i in self.canvas._scene.selectedItems()
             if isinstance(i, (LLMNode, FileOpNode)) and not getattr(i, 'is_start', False)
         ]
-        self._run_from_here_action.setEnabled(len(selected_nodes) == 1)
+        if len(selected) == 1:
+            self._panel.show_for_node(selected[0])
+        else:
+            self._panel.hide_panel()
+        if self._run_from_here_action is not None:
+            self._run_from_here_action.setEnabled(len(selected) == 1)
+
+    # ------------------------------------------------------------------
+    # Panel signal handlers
+    # ------------------------------------------------------------------
+
+    def _on_panel_title_committed(self, node_id: str, old_title: str, new_title: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is None:
+            return
+        self.canvas._on_title_editing_finished(node_id, new_title)
+
+    def _on_panel_model_changed(self, node_id: str, old_model_id: str, new_model_id: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is None:
+            return
+        self.canvas._on_model_changed(node_id, old_model_id, new_model_id)
+
+    def _on_panel_prompt_committed(self, node_id: str, text: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, LLMNode):
+            node.prompt_text = text
+
+    def _on_panel_filename_committed(self, node_id: str, text: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, FileOpNode):
+            node.filename = text
+
+    # ------------------------------------------------------------------
+
+    def _run_all(self):
+        self._panel.commit_pending_edits()
+        self.canvas.run_all()
+
+    def _run_selected_only(self):
+        self._panel.commit_pending_edits()
+        self.canvas.run_selected_only()
+
+    def _run_from_here(self):
+        self._panel.commit_pending_edits()
+        self.canvas.run_from_here()
 
     def _save(self):
+        self._panel.commit_pending_edits()
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Workflow", "", "JSON Files (*.json)"
         )
@@ -197,9 +306,11 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            # Commit and detach panel before destructive canvas mutations.
+            self._panel.hide_panel()
             self.canvas.load_workflow_data(data)
             self._status_bar.showMessage(f"Loaded from {path}")
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
             QMessageBox.critical(self, "Load Error", str(e))
 
     def _clear(self):
@@ -209,5 +320,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            # Commit and detach panel before destructive canvas mutations.
+            self._panel.hide_panel()
             self.canvas.clear_canvas()
             self._status_bar.showMessage("Canvas cleared.")

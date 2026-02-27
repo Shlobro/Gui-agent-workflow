@@ -192,17 +192,23 @@ class TitleChangeCommand(QUndoCommand):
         node = self._node()
         if node:
             self._canvas._undo_in_progress = True
-            node.title = self._new_title
-            self._canvas._title_committed[self._node_id] = self._new_title
-            self._canvas._undo_in_progress = False
+            try:
+                node.title = self._new_title
+                self._canvas._title_committed[self._node_id] = self._new_title
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
 
     def undo(self):
         node = self._node()
         if node:
             self._canvas._undo_in_progress = True
-            node.title = self._old_title
-            self._canvas._title_committed[self._node_id] = self._old_title
-            self._canvas._undo_in_progress = False
+            try:
+                node.title = self._old_title
+                self._canvas._title_committed[self._node_id] = self._old_title
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
 
 
 class ModelChangeCommand(QUndoCommand):
@@ -225,15 +231,21 @@ class ModelChangeCommand(QUndoCommand):
         node = self._node()
         if node:
             self._canvas._undo_in_progress = True
-            node.model_id = self._new_model_id
-            self._canvas._undo_in_progress = False
+            try:
+                node.model_id = self._new_model_id
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
 
     def undo(self):
         node = self._node()
         if node:
             self._canvas._undo_in_progress = True
-            node.model_id = self._old_model_id
-            self._canvas._undo_in_progress = False
+            try:
+                node.model_id = self._old_model_id
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
 
 
 class PasteCommand(QUndoCommand):

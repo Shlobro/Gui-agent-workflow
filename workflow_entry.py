@@ -20,7 +20,6 @@ def create_application(argv: list[str]) -> QApplication:
     app.setApplicationName("LLM Workflow")
     app.setOrganizationName("GUI Workflow")
     app.setApplicationDisplayName("LLM Workflow")
-    app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
     return app
 
 

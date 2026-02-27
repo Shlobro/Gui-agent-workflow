@@ -13,15 +13,6 @@ from PySide6.QtGui import (
     QFont,
     QConicalGradient,
 )
-from PySide6.QtWidgets import (
-    QFrame,
-    QGraphicsProxyWidget,
-    QLabel,
-    QLineEdit,
-    QPlainTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
 
 from .llm_node import (
     WorkflowNode,
@@ -46,75 +37,10 @@ NODE_TYPE_DISPLAY_NAMES = {
 }
 
 CORNER_RADIUS = 12
-NODE_HEIGHT = 160
 _HEADER_HEIGHT = 28
 
-
-# ---------------------------------------------------------------------------
-# Embedded widget
-# ---------------------------------------------------------------------------
-
-class FileOpWidget(QWidget):
-    """Slim widget embedded inside a FileOpNode — title + filename input + output area."""
-
-    _STYLESHEET = """
-        QWidget#file_op_widget_root {
-            background: transparent;
-            color: #e8e8e8;
-            font-size: 12px;
-        }
-        QLineEdit {
-            background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
-            padding: 3px 6px; color: #e8e8e8; font-weight: bold; font-size: 13px;
-        }
-        QPlainTextEdit {
-            background: #1e1e1e; border: 1px solid #444; border-radius: 4px;
-            padding: 4px; color: #e8e8e8; font-family: monospace; font-size: 11px;
-        }
-        QLabel { color: #aaaaaa; font-size: 10px; }
-    """
-
-    def __init__(self, op_label: str, parent=None):
-        super().__init__(parent)
-        self.setObjectName("file_op_widget_root")
-        self.setStyleSheet(self._STYLESHEET)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(5)
-
-        # Title (node name, editable)
-        name_label = QLabel("Name")
-        layout.addWidget(name_label)
-        self.title_edit = QLineEdit(op_label)
-        self.title_edit.setPlaceholderText("Node name…")
-        layout.addWidget(self.title_edit)
-
-        # Filename input
-        fn_label = QLabel("Filename")
-        layout.addWidget(fn_label)
-        self.filename_edit = QLineEdit()
-        self.filename_edit.setPlaceholderText("e.g. output.txt")
-        layout.addWidget(self.filename_edit)
-
-        # Output area (hidden until execution)
-        self._output_frame = QFrame()
-        self._output_frame.setVisible(False)
-        out_layout = QVBoxLayout(self._output_frame)
-        out_layout.setContentsMargins(0, 0, 0, 0)
-        out_layout.setSpacing(2)
-        out_label = QLabel("Result")
-        out_layout.addWidget(out_label)
-        self.output_edit = QPlainTextEdit()
-        self.output_edit.setReadOnly(True)
-        self.output_edit.setFixedHeight(52)
-        out_layout.addWidget(self.output_edit)
-        layout.addWidget(self._output_frame)
-
-        self.setFixedWidth(NODE_WIDTH - 20)
-
-    def show_output(self, visible: bool = True):
-        self._output_frame.setVisible(visible)
+# Compact node height (header + title row + padding)
+_COMPACT_FILE_NODE_HEIGHT = 64
 
 
 # ---------------------------------------------------------------------------
@@ -130,14 +56,9 @@ class FileOpNode(WorkflowNode):
         super().__init__(node_id=node_id, label_index=label_index)
 
         op_label = NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op")
-        self._widget = FileOpWidget(op_label)
-        self._widget.title_edit.setText(f"{op_label} {label_index}")
-        self._proxy = QGraphicsProxyWidget(self)
-        self._proxy.setWidget(self._widget)
-        self._proxy.setPos(0, _HEADER_HEIGHT)  # below the painted header strip
-
-        self._widget.adjustSize()
-        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
+        self._title: str = f"{op_label} {label_index}"
+        self._filename: str = ""
+        self._height = _COMPACT_FILE_NODE_HEIGHT
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -145,19 +66,20 @@ class FileOpNode(WorkflowNode):
 
     @property
     def title(self) -> str:
-        return self._widget.title_edit.text()
+        return self._title
 
     @title.setter
     def title(self, value: str):
-        self._widget.title_edit.setText(value)
+        self._title = value
+        self.update()
 
     @property
     def filename(self) -> str:
-        return self._widget.filename_edit.text()
+        return self._filename
 
     @filename.setter
     def filename(self, value: str):
-        self._widget.filename_edit.setText(value)
+        self._filename = value
 
     # Compatibility shims so canvas code that reads model_id / prompt_text
     # on all nodes doesn't crash (FileOpNode skips LLM validation instead).
@@ -178,24 +100,10 @@ class FileOpNode(WorkflowNode):
         self.update()
 
     def append_output(self, line: str):
-        self._widget.show_output(True)
-        self._widget.output_edit.appendPlainText(line)
         self.output_text += line + "\n"
-        self._update_height()
 
     def clear_output(self):
         self.output_text = ""
-        self._widget.output_edit.clear()
-        self._widget.show_output(False)
-        self._update_height()
-
-    def _update_height(self):
-        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
-        if new_h != self._height:
-            self.prepareGeometryChange()
-            self._height = new_h
-            self._update_connections()
-            self._update_scene_connection_routes()
 
     # ------------------------------------------------------------------
     # Port positions
@@ -265,6 +173,16 @@ class FileOpNode(WorkflowNode):
             NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op").upper(),
         )
 
+        # Title in body below header
+        title_font = QFont("Segoe UI", 10)
+        painter.setFont(title_font)
+        painter.setPen(QColor("#c0c0c0"))
+        painter.drawText(
+            QRectF(12, _HEADER_HEIGHT + 2, NODE_WIDTH - 24, self._height - _HEADER_HEIGHT - 4),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            self._title,
+        )
+
         if self.isSelected():
             glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
             glow_path = QPainterPath()
@@ -320,16 +238,16 @@ class FileOpNode(WorkflowNode):
             "label_index": self.label_index,
             "x": pos.x(),
             "y": pos.y(),
-            "name": self.title,
-            "filename": self.filename,
+            "name": self._title,
+            "filename": self._filename,
         }
 
     def from_dict(self, data: dict):
         self.node_id = data.get("id", self.node_id)
         self.label_index = data.get("label_index", self.label_index)
         self.setPos(data.get("x", 0), data.get("y", 0))
-        self.title = data.get("name", self.title)
-        self.filename = data.get("filename", "")
+        self._title = data.get("name", self._title)
+        self._filename = data.get("filename", "")
 
 
 # ---------------------------------------------------------------------------

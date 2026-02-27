@@ -15,12 +15,9 @@ from PySide6.QtGui import (
     QFont,
     QConicalGradient,
 )
-from PySide6.QtWidgets import (
-    QGraphicsItem,
-    QGraphicsProxyWidget,
-)
+from PySide6.QtWidgets import QGraphicsItem
 
-from .llm_widget import LLMWidget, NODE_WIDTH
+from .llm_widget import NODE_WIDTH
 
 if TYPE_CHECKING:
     from .connection_item import ConnectionItem
@@ -33,7 +30,6 @@ STATUS_COLORS = {
     "error":   QColor("#e05252"),
 }
 
-NODE_HEIGHT = 300
 PORT_RADIUS = 7
 CORNER_RADIUS = 12
 INPUT_PORT_EDGE_COLOR = QColor("#6bc6ff")
@@ -47,6 +43,9 @@ OUTPUT_PORT_LABEL_COLOR = QColor("#ffd7ab")
 _HEADER_COLOR = QColor("#1a3a5c")
 _HEADER_TEXT_COLOR = QColor("#8bbfff")
 _HEADER_HEIGHT = 28
+
+# Compact node height (header + title row + padding)
+_COMPACT_NODE_HEIGHT = 64
 
 
 # ---------------------------------------------------------------------------
@@ -209,19 +208,15 @@ class WorkflowNode(QGraphicsItem):
 # ---------------------------------------------------------------------------
 
 class LLMNode(WorkflowNode):
-    """A draggable workflow LLM-call node."""
+    """A draggable workflow LLM-call node. Compact painted node; editing via properties panel."""
 
     def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
         super().__init__(node_id=node_id, label_index=label_index)
 
-        self._widget = LLMWidget(on_layout_change=self._update_height)
-        self._widget.title_edit.setText(f"LLM {label_index}")
-        self._proxy = QGraphicsProxyWidget(self)
-        self._proxy.setWidget(self._widget)
-        self._proxy.setPos(0, _HEADER_HEIGHT)
-
-        self._widget.adjustSize()
-        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
+        self._title: str = f"LLM {label_index}"
+        self._model_id: Optional[str] = None
+        self._prompt_text: str = ""
+        self._height = _COMPACT_NODE_HEIGHT
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -229,27 +224,29 @@ class LLMNode(WorkflowNode):
 
     @property
     def title(self) -> str:
-        return self._widget.title_edit.text()
+        return self._title
 
     @title.setter
     def title(self, value: str):
-        self._widget.title_edit.setText(value)
+        self._title = value
+        self.update()
 
     @property
     def model_id(self) -> Optional[str]:
-        return self._widget.get_model_id()
+        return self._model_id
 
     @model_id.setter
     def model_id(self, value: str):
-        self._widget.set_model_id(value)
+        self._model_id = value
+        self.update()
 
     @property
     def prompt_text(self) -> str:
-        return self._widget.prompt_edit.toPlainText()
+        return self._prompt_text
 
     @prompt_text.setter
     def prompt_text(self, value: str):
-        self._widget.prompt_edit.setPlainText(value)
+        self._prompt_text = value
 
     # ------------------------------------------------------------------
     # Status / output
@@ -266,24 +263,10 @@ class LLMNode(WorkflowNode):
         self.update()
 
     def append_output(self, line: str) -> None:
-        self._widget.show_output(True)
-        self._widget.output_edit.appendPlainText(line)
         self.output_text += line + "\n"
-        self._update_height()
 
     def clear_output(self) -> None:
         self.output_text = ""
-        self._widget.output_edit.clear()
-        self._widget.show_output(False)
-        self._update_height()
-
-    def _update_height(self) -> None:
-        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
-        if new_h != self._height:
-            self.prepareGeometryChange()
-            self._height = new_h
-            self._update_connections()
-            self._update_scene_connection_routes()
 
     # ------------------------------------------------------------------
     # Port positions
@@ -357,6 +340,16 @@ class LLMNode(WorkflowNode):
             "LLM CALL",
         )
 
+        # Title in body below header
+        title_font = QFont("Segoe UI", 10)
+        painter.setFont(title_font)
+        painter.setPen(QColor("#c0c0c0"))
+        painter.drawText(
+            QRectF(12, _HEADER_HEIGHT + 2, NODE_WIDTH - 24, self._height - _HEADER_HEIGHT - 4),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            self._title,
+        )
+
         if self.isSelected():
             glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
             glow_path = QPainterPath()
@@ -411,19 +404,19 @@ class LLMNode(WorkflowNode):
             "label_index": self.label_index,
             "x": pos.x(),
             "y": pos.y(),
-            "name": self.title,
-            "model": self.model_id or "",
-            "prompt": self.prompt_text,
+            "name": self._title,
+            "model": self._model_id or "",
+            "prompt": self._prompt_text,
         }
 
     def from_dict(self, data: dict) -> None:
         self.node_id = data.get("id", self.node_id)
         self.label_index = data.get("label_index", self.label_index)
         self.setPos(data.get("x", 0), data.get("y", 0))
-        self.title = data.get("name", f"LLM {self.label_index}")
+        self._title = data.get("name", f"LLM {self.label_index}")
         if data.get("model"):
-            self.model_id = data["model"]
-        self.prompt_text = data.get("prompt", "")
+            self._model_id = data["model"]
+        self._prompt_text = data.get("prompt", "")
 
 
 # ---------------------------------------------------------------------------
