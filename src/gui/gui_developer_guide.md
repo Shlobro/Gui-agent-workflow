@@ -5,7 +5,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 
 ## Contents
 - `main_window.py`: Main shell (File menu, toolbar, status bar, clear action) and `WorkflowCanvas` host.
-- `canvas.py`: `QGraphicsView` orchestration, pan/zoom controls, connection creation, trigger-driven run execution with permanent Start node, pre-run validation, draw-time graph warnings, and workflow save/load serialization.
+- `canvas.py`: `QGraphicsView` orchestration, pan/zoom controls, connection creation, trigger-driven run execution with permanent Start node, pre-run validation, draw-time graph warnings, workflow save/load serialization, and in-memory node clipboard (Ctrl+C / Ctrl+V).
 - `bubble_node.py`: `BubbleNode` — draggable node with embedded editor, model selector, and output panel. `StartNode` — permanent pure-trigger root node with output port only.
 - `connection_item.py`: Directed Bezier edge between bubble ports.
 - `project_chooser.py`: Startup dialog for selecting the project folder; persists recently used folders in `.recent_folders.json` at the repo root.
@@ -38,4 +38,5 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Connection items use an expanded hit-test shape (line + arrowhead) so selecting arrows for delete is easier without rendering thicker lines.
 - Selected bubbles render an additional light-blue neon frame so active selection is visually obvious.
 - Connections only define execution order; node outputs are displayed per node and are not injected into downstream prompts.
+- **Copy/paste**: Ctrl+C snapshots all selected `BubbleNode`s (Start excluded) and any connections whose both endpoints are in the selection into an in-memory clipboard (`_clipboard` / `_clipboard_conns`), and resets a `_paste_count` counter to 0. Ctrl+V recreates each node with a fresh `uuid4` bubble ID and a new `_bubble_counter` label index; position is the original coordinates plus `40 * _paste_count` on both axes (incremented each paste, so successive pastes of the same clipboard land at distinct cascading offsets). Internal connections are recreated between the new nodes. Pasted nodes are selected and originals are deselected. Both shortcuts are suppressed when a `QLineEdit`, `QTextEdit`, or `QPlainTextEdit` has keyboard focus so normal text editing is unaffected. The clipboard persists only for the session and is not saved with workflow JSON.
 - Model selection uses a compact selector row that opens an overlay dropdown on the canvas viewport (not a Qt popup window), keeps node height unchanged while open, anchors dropdown position from scene coordinates so it stays aligned with moved/zoomed nodes, clamps geometry to visible viewport bounds (opening upward when needed), shows provider logos from `assets/` (Anthropic/OpenAI/Gemini), normalizes them to a 16x16 icon canvas, auto-selects the first available model, and lazy-loads provider modules if needed.

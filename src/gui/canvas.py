@@ -2,12 +2,15 @@
 
 from collections import deque
 from typing import Dict, List, Optional
+from uuid import uuid4
 
 from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
 from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsView, QGraphicsScene, QGraphicsLineItem,
-    QListWidget, QMessageBox,
+    QGraphicsProxyWidget,
+    QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QTextEdit,
 )
 
 from src.llm.base_provider import LLMProviderRegistry
@@ -58,6 +61,11 @@ class WorkflowCanvas(QGraphicsView):
         self._run_id: int = 0
         self._exec_signals = _ExecutionSignals()
         self._exec_signals.status_update.connect(self.status_update)
+
+        # Clipboard (in-memory; persists only for the session)
+        self._clipboard: List[dict] = []
+        self._clipboard_conns: List[dict] = []
+        self._paste_count: int = 0  # resets on each new copy; drives cumulative offset
 
         # Project working directory (set externally; passed to LLMWorker)
         self._working_directory: Optional[str] = None
@@ -296,7 +304,91 @@ class WorkflowCanvas(QGraphicsView):
                 elif isinstance(item, BubbleNode):
                     self.remove_bubble(item)
             return
+
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            focused = QApplication.focusWidget()
+            text_focused = (
+                isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit))
+                or isinstance(self._scene.focusItem(), QGraphicsProxyWidget)
+            )
+            if not text_focused:
+                if event.key() == Qt.Key.Key_C:
+                    self._copy_selected()
+                    return
+                if event.key() == Qt.Key.Key_V:
+                    self._paste()
+                    return
+
         super().keyPressEvent(event)
+
+    # ------------------------------------------------------------------
+    # Copy / Paste
+    # ------------------------------------------------------------------
+
+    def _copy_selected(self):
+        """Snapshot selected BubbleNodes (excluding Start) into the clipboard."""
+        selected_nodes = [
+            item for item in self._scene.selectedItems()
+            if isinstance(item, BubbleNode) and not getattr(item, 'is_start', False)
+        ]
+        if not selected_nodes:
+            return
+
+        selected_ids = {node.bubble_id for node in selected_nodes}
+        self._clipboard = [node.to_dict() for node in selected_nodes]
+        self._paste_count = 0
+        self._clipboard_conns = [
+            {"from": conn.source_bubble.bubble_id, "to": conn.target_bubble.bubble_id}
+            for conn in self._connections
+            if conn.source_bubble.bubble_id in selected_ids
+            and conn.target_bubble.bubble_id in selected_ids
+        ]
+
+    def _paste(self):
+        """Paste clipboard nodes and their internal connections into the canvas."""
+        if not self._clipboard:
+            return
+
+        self._paste_count += 1
+        offset = 40 * self._paste_count
+
+        # Build old_id -> new_id mapping and create nodes
+        id_map: Dict[str, str] = {}
+        new_nodes: List[BubbleNode] = []
+
+        for data in self._clipboard:
+            self._bubble_counter += 1
+            new_id = str(uuid4())
+            id_map[data["id"]] = new_id
+
+            node = BubbleNode(bubble_id=new_id, label_index=self._bubble_counter)
+            node.from_dict(data)
+            # Override identity fields overwritten by from_dict
+            node.bubble_id = new_id
+            node.label_index = self._bubble_counter
+            node.setPos(data.get("x", 0) + offset, data.get("y", 0) + offset)
+
+            self._scene.addItem(node)
+            self._bubbles[node.bubble_id] = node
+            new_nodes.append(node)
+
+        # Deselect all, then select only the pasted nodes
+        self._scene.clearSelection()
+        for node in new_nodes:
+            node.setSelected(True)
+
+        # Recreate connections between pasted nodes
+        for conn_data in self._clipboard_conns:
+            src_id = id_map.get(conn_data["from"])
+            tgt_id = id_map.get(conn_data["to"])
+            if src_id and tgt_id:
+                src = self._bubbles.get(src_id)
+                tgt = self._bubbles.get(tgt_id)
+                if src and tgt:
+                    conn = ConnectionItem(src, tgt)
+                    self._scene.addItem(conn)
+                    conn.update_path()
+                    self._connections.append(conn)
 
     # ------------------------------------------------------------------
     # Zoom
