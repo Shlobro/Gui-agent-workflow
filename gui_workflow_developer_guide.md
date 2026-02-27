@@ -29,7 +29,6 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 - Workflow graphs are user-saved JSON files chosen from File → Save/Load Workflow dialogs. Workflow files are saved wherever the user chooses (not necessarily in the project folder).
 - Node output is held in-memory during runtime and displayed in each node.
 - All LLM subprocess calls run with the selected project folder as their working directory (`cwd`).
-- Codex runs may write `.codex_last_message.txt` inside the project folder.
 - Recently opened project folders are stored in `.recent_folders.json` at the repo root (gitignored).
 
 ## Change Map

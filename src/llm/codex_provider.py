@@ -6,7 +6,6 @@ from .base_provider import BaseLLMProvider, LLMProviderRegistry
 
 
 class CodexProvider(BaseLLMProvider):
-    OUTPUT_FILENAME = ".codex_last_message.txt"
     MODELS = [
         ("gpt-5.3-codex", "GPT-5.3 Codex (Medium)"),
         ("gpt-5.3-codex:low", "GPT-5.3 Codex (Low)"),
@@ -42,10 +41,6 @@ class CodexProvider(BaseLLMProvider):
         reasoning_effort = None
         if model and ":" in model:
             actual_model, reasoning_effort = model.split(":", 1)
-
-        if normalized_wd:
-            output_path = str(Path(normalized_wd) / self.OUTPUT_FILENAME)
-            cmd.extend(["--output-last-message", output_path])
 
         if actual_model:
             cmd.extend(["--model", actual_model])
