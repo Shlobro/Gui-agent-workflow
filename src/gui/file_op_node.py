@@ -1,7 +1,7 @@
 """FileOpNode — file-operation nodes (create, truncate, delete) for the workflow canvas."""
 
-import uuid
-from typing import List, Optional, TYPE_CHECKING
+import math as _math
+from typing import Optional
 
 from PySide6.QtCore import QRectF, Qt, QPointF
 from PySide6.QtGui import (
@@ -15,7 +15,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFrame,
-    QGraphicsItem,
     QGraphicsProxyWidget,
     QLabel,
     QLineEdit,
@@ -24,28 +23,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .bubble_widget import NODE_WIDTH
-
-if TYPE_CHECKING:
-    from .connection_item import ConnectionItem
-
-# Status colors (shared with BubbleNode)
-STATUS_COLORS = {
-    "idle":    QColor("#555555"),
-    "running": QColor("#3a8ef5"),
-    "done":    QColor("#3aaa5a"),
-    "error":   QColor("#e05252"),
-}
-
-NODE_HEIGHT = 160
-PORT_RADIUS = 7
-CORNER_RADIUS = 12
-INPUT_PORT_EDGE_COLOR = QColor("#6bc6ff")
-INPUT_PORT_FILL_COLOR = QColor("#133241")
-INPUT_PORT_LABEL_COLOR = QColor("#8ddcff")
-OUTPUT_PORT_EDGE_COLOR = QColor("#ffb96f")
-OUTPUT_PORT_FILL_COLOR = QColor("#3b2714")
-OUTPUT_PORT_LABEL_COLOR = QColor("#ffd7ab")
+from .llm_node import (
+    WorkflowNode,
+    STATUS_COLORS,
+    PORT_RADIUS,
+    INPUT_PORT_EDGE_COLOR, INPUT_PORT_FILL_COLOR, INPUT_PORT_LABEL_COLOR,
+    OUTPUT_PORT_EDGE_COLOR, OUTPUT_PORT_FILL_COLOR, OUTPUT_PORT_LABEL_COLOR,
+)
+from .llm_widget import NODE_WIDTH
 
 # Accent color per operation type (header strip)
 _OP_ACCENT = {
@@ -59,6 +44,10 @@ NODE_TYPE_DISPLAY_NAMES = {
     "truncate_file": "Truncate File",
     "delete_file":   "Delete File",
 }
+
+CORNER_RADIUS = 12
+NODE_HEIGHT = 160
+_HEADER_HEIGHT = 28
 
 
 # ---------------------------------------------------------------------------
@@ -132,35 +121,23 @@ class FileOpWidget(QWidget):
 # Base graphics item
 # ---------------------------------------------------------------------------
 
-class FileOpNode(QGraphicsItem):
+class FileOpNode(WorkflowNode):
     """Base class for file-operation nodes. Subclasses set `node_type`."""
 
     node_type: str = ""   # overridden by subclasses
 
-    def __init__(self, bubble_id: Optional[str] = None, label_index: int = 1):
-        super().__init__()
-        self.bubble_id = bubble_id or str(uuid.uuid4())
-        self.label_index = label_index
-        self.status = "idle"
-        self.output_text = ""
-        self._connections: List["ConnectionItem"] = []
-
-        self.setFlags(
-            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
-            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
-            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
-        )
-        self.setZValue(1)
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
+        super().__init__(node_id=node_id, label_index=label_index)
 
         op_label = NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op")
         self._widget = FileOpWidget(op_label)
         self._widget.title_edit.setText(f"{op_label} {label_index}")
         self._proxy = QGraphicsProxyWidget(self)
         self._proxy.setWidget(self._widget)
-        self._proxy.setPos(0, 28)  # below the painted header strip
+        self._proxy.setPos(0, _HEADER_HEIGHT)  # below the painted header strip
 
         self._widget.adjustSize()
-        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + 28 + 8)
+        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -213,7 +190,7 @@ class FileOpNode(QGraphicsItem):
         self._update_height()
 
     def _update_height(self):
-        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + 28 + 8)
+        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
         if new_h != self._height:
             self.prepareGeometryChange()
             self._height = new_h
@@ -230,63 +207,11 @@ class FileOpNode(QGraphicsItem):
     def input_port_scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(0, self._height / 2))
 
-    def is_near_output_port(self, scene_pos: QPointF) -> bool:
-        return (scene_pos - self.output_port_scene_pos()).manhattanLength() < PORT_RADIUS * 3
-
-    def is_near_input_port(self, scene_pos: QPointF) -> bool:
-        return (scene_pos - self.input_port_scene_pos()).manhattanLength() < PORT_RADIUS * 3
-
     # ------------------------------------------------------------------
-    # Connections bookkeeping
+    # Paint
     # ------------------------------------------------------------------
-
-    def add_connection(self, conn: "ConnectionItem"):
-        self._connections.append(conn)
-        self.update()
-
-    def remove_connection(self, conn: "ConnectionItem"):
-        if conn in self._connections:
-            self._connections.remove(conn)
-            self.update()
-
-    def connections(self) -> List["ConnectionItem"]:
-        return list(self._connections)
-
-    def _update_connections(self):
-        for conn in self._connections:
-            conn.update_path()
-
-    def _update_scene_connection_routes(self):
-        scene = self.scene()
-        if scene is None:
-            return
-        from .connection_item import ConnectionItem as CI
-        for item in scene.items():
-            if isinstance(item, CI) and item not in self._connections:
-                item.update_path()
-
-    def _has_input_connection(self) -> bool:
-        return any(conn.target_bubble is self for conn in self._connections)
-
-    def _has_output_connection(self) -> bool:
-        return any(conn.source_bubble is self for conn in self._connections)
-
-    # ------------------------------------------------------------------
-    # QGraphicsItem overrides
-    # ------------------------------------------------------------------
-
-    def boundingRect(self) -> QRectF:
-        return QRectF(-PORT_RADIUS, -PORT_RADIUS,
-                      NODE_WIDTH + PORT_RADIUS * 2, self._height + PORT_RADIUS * 2)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._update_connections()
-            self._update_scene_connection_routes()
-        return super().itemChange(change, value)
 
     def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath):
-        import math as _math
         phase = (id(self) * 0.001) % 1.0   # static stand-in; canvas drives repaints via set_status
         cx = NODE_WIDTH / 2
         cy = self._height / 2
@@ -312,15 +237,6 @@ class FileOpNode(QGraphicsItem):
         painter.setPen(base_pen)
         painter.drawPath(border_path)
 
-    @staticmethod
-    def _draw_port_direction_arrow(painter, start_x, tip_x, y, color):
-        arrow_pen = QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-        painter.setPen(arrow_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawLine(QPointF(start_x, y), QPointF(tip_x, y))
-        painter.drawLine(QPointF(tip_x - 5.0, y - 3.7), QPointF(tip_x, y))
-        painter.drawLine(QPointF(tip_x - 5.0, y + 3.7), QPointF(tip_x, y))
-
     def paint(self, painter: QPainter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -329,13 +245,13 @@ class FileOpNode(QGraphicsItem):
         painter.fillPath(path, QBrush(QColor("#252525")))
 
         # Accent header strip — rounded top corners, flat bottom edge.
-        # Use a clip rect so the rounded rect's bottom corners are cut off cleanly
-        # without any colour bleed below the strip.
         accent = _OP_ACCENT.get(self.node_type, QColor("#444444"))
         painter.save()
-        painter.setClipRect(QRectF(0, 0, NODE_WIDTH, 28))
+        painter.setClipRect(QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT))
         header_path = QPainterPath()
-        header_path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, 28), CORNER_RADIUS, CORNER_RADIUS)
+        header_path.addRoundedRect(
+            QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT), CORNER_RADIUS, CORNER_RADIUS
+        )
         painter.fillPath(header_path, QBrush(accent))
         painter.restore()
 
@@ -344,7 +260,7 @@ class FileOpNode(QGraphicsItem):
         painter.setFont(font)
         painter.setPen(QColor("#dddddd"))
         painter.drawText(
-            QRectF(8, 0, NODE_WIDTH - 16, 28),
+            QRectF(8, 0, NODE_WIDTH - 16, _HEADER_HEIGHT),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op").upper(),
         )
@@ -400,7 +316,7 @@ class FileOpNode(QGraphicsItem):
         pos = self.pos()
         return {
             "node_type": self.node_type,
-            "id": self.bubble_id,
+            "id": self.node_id,
             "label_index": self.label_index,
             "x": pos.x(),
             "y": pos.y(),
@@ -409,7 +325,7 @@ class FileOpNode(QGraphicsItem):
         }
 
     def from_dict(self, data: dict):
-        self.bubble_id = data.get("id", self.bubble_id)
+        self.node_id = data.get("id", self.node_id)
         self.label_index = data.get("label_index", self.label_index)
         self.setPos(data.get("x", 0), data.get("y", 0))
         self.title = data.get("name", self.title)

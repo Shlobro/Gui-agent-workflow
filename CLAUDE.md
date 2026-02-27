@@ -9,3 +9,4 @@
 - always ask whether a commit message is good before committing.
 - `.md` files are ignored when counting files in a folder. keep each folder at 10 code files or fewer.
 - always verify code changes by running linting/static checks and a compile/run sanity check before finalizing.
+- never worry about backward compatibility or legacy functionality. always assume everyone has up to date files

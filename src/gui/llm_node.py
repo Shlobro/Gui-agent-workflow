@@ -1,4 +1,4 @@
-"""BubbleNode — a draggable node on the workflow canvas."""
+"""LLMNode and WorkflowNode base — draggable nodes on the workflow canvas."""
 
 import math
 import uuid
@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
     QGraphicsProxyWidget,
 )
 
-from .bubble_widget import BubbleWidget, NODE_WIDTH
+from .llm_widget import LLMWidget, NODE_WIDTH
 
 if TYPE_CHECKING:
     from .connection_item import ConnectionItem
 
-# Status colors
+# Shared status colors
 STATUS_COLORS = {
     "idle":    QColor("#555555"),
     "running": QColor("#3a8ef5"),
@@ -43,12 +43,18 @@ OUTPUT_PORT_EDGE_COLOR = QColor("#ffb96f")
 OUTPUT_PORT_FILL_COLOR = QColor("#3b2714")
 OUTPUT_PORT_LABEL_COLOR = QColor("#ffd7ab")
 
+# LLM node header
+_HEADER_COLOR = QColor("#1a3a5c")
+_HEADER_TEXT_COLOR = QColor("#8bbfff")
+_HEADER_HEIGHT = 28
+
+
 # ---------------------------------------------------------------------------
-# Glow animation singleton — drives "running" border animation for all nodes
+# Glow animation singleton — drives "running" border animation for LLMNode
 # ---------------------------------------------------------------------------
 
 class _GlowAnimator:
-    """Singleton timer that advances a shared glow phase for running nodes."""
+    """Singleton timer that advances a shared glow phase for running LLMNodes."""
 
     _instance: Optional["_GlowAnimator"] = None
 
@@ -88,16 +94,29 @@ class _GlowAnimator:
             node.update()
 
 
-class BubbleNode(QGraphicsItem):
-    """A draggable workflow bubble node."""
+# ---------------------------------------------------------------------------
+# WorkflowNode — shared base for LLMNode and FileOpNode
+# ---------------------------------------------------------------------------
 
-    def __init__(self, bubble_id: Optional[str] = None, label_index: int = 1):
+class WorkflowNode(QGraphicsItem):
+    """Base class for all movable workflow nodes.
+
+    Owns: node_id, label_index, status, output_text, connection bookkeeping,
+    port proximity tests, itemChange, boundingRect (standard port-padded rect),
+    and the shared port-direction-arrow painter helper.
+
+    Subclasses must implement: paint(), set_status(), append_output(),
+    clear_output(), output_port_scene_pos(), input_port_scene_pos().
+    """
+
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
         super().__init__()
-        self.bubble_id = bubble_id or str(uuid.uuid4())
-        self.label_index = label_index
-        self.status = "idle"
-        self.output_text = ""
+        self.node_id: str = node_id or str(uuid.uuid4())
+        self.label_index: int = label_index
+        self.status: str = "idle"
+        self.output_text: str = ""
         self._connections: List["ConnectionItem"] = []
+        self._height: int = 0   # subclasses set this before first paint
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -106,14 +125,103 @@ class BubbleNode(QGraphicsItem):
         )
         self.setZValue(1)
 
-        self._widget = BubbleWidget(on_layout_change=self._update_height)
-        self._widget.title_edit.setText(f"Bubble {label_index}")
+    # ------------------------------------------------------------------
+    # Connection bookkeeping
+    # ------------------------------------------------------------------
+
+    def add_connection(self, conn: "ConnectionItem") -> None:
+        self._connections.append(conn)
+        self.update()
+
+    def remove_connection(self, conn: "ConnectionItem") -> None:
+        if conn in self._connections:
+            self._connections.remove(conn)
+            self.update()
+
+    def connections(self) -> List["ConnectionItem"]:
+        return list(self._connections)
+
+    def _update_connections(self) -> None:
+        for conn in self._connections:
+            conn.update_path()
+
+    def _update_scene_connection_routes(self) -> None:
+        scene = self.scene()
+        if scene is None:
+            return
+        from .connection_item import ConnectionItem
+        for item in scene.items():
+            if isinstance(item, ConnectionItem) and item not in self._connections:
+                item.update_path()
+
+    def _has_input_connection(self) -> bool:
+        return any(conn.target_node is self for conn in self._connections)
+
+    def _has_output_connection(self) -> bool:
+        return any(conn.source_node is self for conn in self._connections)
+
+    # ------------------------------------------------------------------
+    # Port proximity tests (delegates to subclass port positions)
+    # ------------------------------------------------------------------
+
+    def is_near_output_port(self, scene_pos: QPointF) -> bool:
+        return (scene_pos - self.output_port_scene_pos()).manhattanLength() < PORT_RADIUS * 3
+
+    def is_near_input_port(self, scene_pos: QPointF) -> bool:
+        return (scene_pos - self.input_port_scene_pos()).manhattanLength() < PORT_RADIUS * 3
+
+    # ------------------------------------------------------------------
+    # QGraphicsItem overrides
+    # ------------------------------------------------------------------
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(-PORT_RADIUS, -PORT_RADIUS,
+                      NODE_WIDTH + PORT_RADIUS * 2, self._height + PORT_RADIUS * 2)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._update_connections()
+            self._update_scene_connection_routes()
+        return super().itemChange(change, value)
+
+    # ------------------------------------------------------------------
+    # Shared paint helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _draw_port_direction_arrow(
+        painter: QPainter,
+        start_x: float,
+        tip_x: float,
+        y: float,
+        color: QColor,
+    ) -> None:
+        arrow_pen = QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(arrow_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(QPointF(start_x, y), QPointF(tip_x, y))
+        painter.drawLine(QPointF(tip_x - 5.0, y - 3.7), QPointF(tip_x, y))
+        painter.drawLine(QPointF(tip_x - 5.0, y + 3.7), QPointF(tip_x, y))
+
+
+# ---------------------------------------------------------------------------
+# LLMNode
+# ---------------------------------------------------------------------------
+
+class LLMNode(WorkflowNode):
+    """A draggable workflow LLM-call node."""
+
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
+        super().__init__(node_id=node_id, label_index=label_index)
+
+        self._widget = LLMWidget(on_layout_change=self._update_height)
+        self._widget.title_edit.setText(f"LLM {label_index}")
         self._proxy = QGraphicsProxyWidget(self)
         self._proxy.setWidget(self._widget)
-        self._proxy.setPos(0, 0)
+        self._proxy.setPos(0, _HEADER_HEIGHT)
 
         self._widget.adjustSize()
-        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + 20)
+        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -147,7 +255,7 @@ class BubbleNode(QGraphicsItem):
     # Status / output
     # ------------------------------------------------------------------
 
-    def set_status(self, status: str):
+    def set_status(self, status: str) -> None:
         was_running = self.status == "running"
         self.status = status
         animator = _GlowAnimator.get()
@@ -157,20 +265,20 @@ class BubbleNode(QGraphicsItem):
             animator.unregister(self)
         self.update()
 
-    def append_output(self, line: str):
+    def append_output(self, line: str) -> None:
         self._widget.show_output(True)
         self._widget.output_edit.appendPlainText(line)
         self.output_text += line + "\n"
         self._update_height()
 
-    def clear_output(self):
+    def clear_output(self) -> None:
         self.output_text = ""
         self._widget.output_edit.clear()
         self._widget.show_output(False)
         self._update_height()
 
-    def _update_height(self):
-        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + 20)
+    def _update_height(self) -> None:
+        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + _HEADER_HEIGHT + 8)
         if new_h != self._height:
             self.prepareGeometryChange()
             self._height = new_h
@@ -187,87 +295,15 @@ class BubbleNode(QGraphicsItem):
     def input_port_scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(0, self._height / 2))
 
-    def is_near_output_port(self, scene_pos: QPointF) -> bool:
-        port = self.output_port_scene_pos()
-        return (scene_pos - port).manhattanLength() < PORT_RADIUS * 3
-
-    def is_near_input_port(self, scene_pos: QPointF) -> bool:
-        port = self.input_port_scene_pos()
-        return (scene_pos - port).manhattanLength() < PORT_RADIUS * 3
-
     # ------------------------------------------------------------------
-    # Connections bookkeeping
+    # Paint
     # ------------------------------------------------------------------
 
-    def add_connection(self, conn: "ConnectionItem"):
-        self._connections.append(conn)
-        self.update()
-
-    def remove_connection(self, conn: "ConnectionItem"):
-        if conn in self._connections:
-            self._connections.remove(conn)
-            self.update()
-
-    def connections(self) -> List["ConnectionItem"]:
-        return list(self._connections)
-
-    def _update_connections(self):
-        for conn in self._connections:
-            conn.update_path()
-
-    def _update_scene_connection_routes(self):
-        scene = self.scene()
-        if scene is None:
-            return
-
-        from .connection_item import ConnectionItem
-
-        for item in scene.items():
-            if isinstance(item, ConnectionItem) and item not in self._connections:
-                item.update_path()
-
-    def _has_input_connection(self) -> bool:
-        return any(conn.target_bubble is self for conn in self._connections)
-
-    def _has_output_connection(self) -> bool:
-        return any(conn.source_bubble is self for conn in self._connections)
-
-    @staticmethod
-    def _draw_port_direction_arrow(
-        painter: QPainter,
-        start_x: float,
-        tip_x: float,
-        y: float,
-        color: QColor,
-    ):
-        arrow_pen = QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-        painter.setPen(arrow_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawLine(QPointF(start_x, y), QPointF(tip_x, y))
-        painter.drawLine(QPointF(tip_x - 5.0, y - 3.7), QPointF(tip_x, y))
-        painter.drawLine(QPointF(tip_x - 5.0, y + 3.7), QPointF(tip_x, y))
-
-    # ------------------------------------------------------------------
-    # QGraphicsItem overrides
-    # ------------------------------------------------------------------
-
-    def boundingRect(self) -> QRectF:
-        return QRectF(-PORT_RADIUS, -PORT_RADIUS,
-                      NODE_WIDTH + PORT_RADIUS * 2, self._height + PORT_RADIUS * 2)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._update_connections()
-            self._update_scene_connection_routes()
-        return super().itemChange(change, value)
-
-    def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath):
-        """Draw an animated sweeping glow around the border when status is 'running'."""
+    def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath) -> None:
         phase = _GlowAnimator.get().phase
         cx = NODE_WIDTH / 2
         cy = self._height / 2
 
-        # Outer soft halo — pulses in opacity
         pulse = 0.55 + 0.45 * math.sin(phase * 2 * math.pi)
         halo_rect = QRectF(-5, -5, NODE_WIDTH + 10, self._height + 10)
         halo_path = QPainterPath()
@@ -277,7 +313,6 @@ class BubbleNode(QGraphicsItem):
         painter.setPen(halo_pen)
         painter.drawPath(halo_path)
 
-        # Rotating bright spot via conical gradient
         angle_deg = phase * 360.0
         grad = QConicalGradient(cx, cy, angle_deg)
         grad.setColorAt(0.00, QColor(120, 200, 255, 240))
@@ -291,29 +326,45 @@ class BubbleNode(QGraphicsItem):
         painter.setPen(sweep_pen)
         painter.drawPath(border_path)
 
-        # Thin solid base border so shape stays crisp
         base_pen = QPen(QColor(58, 142, 245, 140), 1.2)
         base_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(base_pen)
         painter.drawPath(border_path)
 
-    def paint(self, painter: QPainter, option, widget=None):
+    def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         path = QPainterPath()
         path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, self._height), CORNER_RADIUS, CORNER_RADIUS)
         painter.fillPath(path, QBrush(QColor("#252525")))
 
+        # Header strip
+        painter.save()
+        painter.setClipRect(QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT))
+        header_path = QPainterPath()
+        header_path.addRoundedRect(
+            QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT), CORNER_RADIUS, CORNER_RADIUS
+        )
+        painter.fillPath(header_path, QBrush(_HEADER_COLOR))
+        painter.restore()
+
+        font = QFont("Segoe UI", 8, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.setPen(_HEADER_TEXT_COLOR)
+        painter.drawText(
+            QRectF(8, 0, NODE_WIDTH - 16, _HEADER_HEIGHT),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            "LLM CALL",
+        )
+
         if self.isSelected():
             glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
             glow_path = QPainterPath()
             glow_path.addRoundedRect(glow_rect, CORNER_RADIUS + 2.5, CORNER_RADIUS + 2.5)
-
             outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
             outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(outer_glow_pen)
             painter.drawPath(glow_path)
-
             inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
             inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(inner_glow_pen)
@@ -343,7 +394,6 @@ class BubbleNode(QGraphicsItem):
                 painter, start_x=-6.0, tip_x=6.0, y=port_center_y,
                 color=INPUT_PORT_LABEL_COLOR,
             )
-
         if not self._has_output_connection():
             self._draw_port_direction_arrow(
                 painter, start_x=NODE_WIDTH - 6.0, tip_x=NODE_WIDTH + 6.0,
@@ -357,7 +407,7 @@ class BubbleNode(QGraphicsItem):
     def to_dict(self) -> dict:
         pos = self.pos()
         return {
-            "id": self.bubble_id,
+            "id": self.node_id,
             "label_index": self.label_index,
             "x": pos.x(),
             "y": pos.y(),
@@ -366,11 +416,11 @@ class BubbleNode(QGraphicsItem):
             "prompt": self.prompt_text,
         }
 
-    def from_dict(self, data: dict):
-        self.bubble_id = data.get("id", self.bubble_id)
+    def from_dict(self, data: dict) -> None:
+        self.node_id = data.get("id", self.node_id)
         self.label_index = data.get("label_index", self.label_index)
         self.setPos(data.get("x", 0), data.get("y", 0))
-        self.title = data.get("name", f"Bubble {self.label_index}")
+        self.title = data.get("name", f"LLM {self.label_index}")
         if data.get("model"):
             self.model_id = data["model"]
         self.prompt_text = data.get("prompt", "")
@@ -388,7 +438,7 @@ class StartNode(QGraphicsItem):
     """Permanent pure-trigger root node. Has no model/prompt; fires children immediately."""
 
     is_start = True
-    bubble_id = "start"
+    node_id = "start"
 
     def __init__(self):
         super().__init__()
@@ -407,11 +457,11 @@ class StartNode(QGraphicsItem):
         port = self.output_port_scene_pos()
         return (scene_pos - port).manhattanLength() < PORT_RADIUS * 3
 
-    def add_connection(self, conn: "ConnectionItem"):
+    def add_connection(self, conn: "ConnectionItem") -> None:
         self._connections.append(conn)
         self.update()
 
-    def remove_connection(self, conn: "ConnectionItem"):
+    def remove_connection(self, conn: "ConnectionItem") -> None:
         if conn in self._connections:
             self._connections.remove(conn)
             self.update()
@@ -432,7 +482,7 @@ class StartNode(QGraphicsItem):
                 conn.update_path()
         return super().itemChange(change, value)
 
-    def paint(self, painter: QPainter, option, widget=None):
+    def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         path = QPainterPath()
@@ -443,12 +493,10 @@ class StartNode(QGraphicsItem):
             glow_rect = QRectF(-2.5, -2.5, START_NODE_WIDTH + 5.0, START_NODE_HEIGHT + 5.0)
             glow_path = QPainterPath()
             glow_path.addRoundedRect(glow_rect, 14.5, 14.5)
-
             outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
             outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(outer_glow_pen)
             painter.drawPath(glow_path)
-
             inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
             inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(inner_glow_pen)
@@ -473,8 +521,8 @@ class StartNode(QGraphicsItem):
         painter.setBrush(QBrush(OUTPUT_PORT_FILL_COLOR))
         painter.drawEllipse(QPointF(START_NODE_WIDTH, cy), PORT_RADIUS, PORT_RADIUS)
 
-        if not any(conn.source_bubble is self for conn in self._connections):
-            BubbleNode._draw_port_direction_arrow(
+        if not any(conn.source_node is self for conn in self._connections):
+            WorkflowNode._draw_port_direction_arrow(
                 painter,
                 start_x=START_NODE_WIDTH - 6.0,
                 tip_x=START_NODE_WIDTH + 6.0,

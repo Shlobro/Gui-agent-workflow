@@ -16,8 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QGraphicsPathItem
 
-from .bubble_node import BubbleNode, StartNode, PORT_RADIUS
-from .file_op_node import FileOpNode
+from .llm_node import StartNode, WorkflowNode, PORT_RADIUS
 
 ARROW_SIZE = 10
 VISUAL_STROKE_WIDTH = 2
@@ -31,8 +30,8 @@ MAX_GRID_DIMENSION = 180
 ROUTE_PADDING = 120.0
 CORRIDOR_MARGIN = 260.0
 GridCell = Tuple[int, int]
-GraphNode = Union[BubbleNode, FileOpNode]
-SourceNode = Union[StartNode, GraphNode]
+GraphNode = WorkflowNode
+SourceNode = Union[StartNode, WorkflowNode]
 
 
 class ConnectionItem(QGraphicsPathItem):
@@ -40,8 +39,8 @@ class ConnectionItem(QGraphicsPathItem):
 
     def __init__(self, source: SourceNode, target: GraphNode):
         super().__init__()
-        self.source_bubble = source
-        self.target_bubble = target
+        self.source_node = source
+        self.target_node = target
         self._arrow_tip = QPointF()
         self._arrow_angle = 0.0
         self._hit_path = QPainterPath()
@@ -56,8 +55,8 @@ class ConnectionItem(QGraphicsPathItem):
         self.update_path()
 
     def update_path(self):
-        src_center = self.source_bubble.output_port_scene_pos()
-        dst_center = self.target_bubble.input_port_scene_pos()
+        src_center = self.source_node.output_port_scene_pos()
+        dst_center = self.target_node.input_port_scene_pos()
 
         src_edge = src_center + QPointF(PORT_EDGE_OFFSET, 0)
         dst_edge = dst_center - QPointF(PORT_EDGE_OFFSET, 0)
@@ -89,7 +88,7 @@ class ConnectionItem(QGraphicsPathItem):
 
         obstacles: List[QRectF] = []
         for item in scene.items():
-            if not isinstance(item, (BubbleNode, StartNode, FileOpNode)):
+            if not isinstance(item, (WorkflowNode, StartNode)):
                 continue
             rect = item.mapRectToScene(item.boundingRect())
             if rect.isNull():
@@ -359,12 +358,12 @@ class ConnectionItem(QGraphicsPathItem):
         painter.drawPolygon(arrow)
 
     def detach(self):
-        """Remove this connection from both bubble bookkeeping lists."""
-        self.source_bubble.remove_connection(self)
-        self.target_bubble.remove_connection(self)
+        """Remove this connection from both endpoint node bookkeeping lists."""
+        self.source_node.remove_connection(self)
+        self.target_node.remove_connection(self)
 
     def to_dict(self) -> dict:
         return {
-            "from": self.source_bubble.bubble_id,
-            "to": self.target_bubble.bubble_id,
+            "from": self.source_node.node_id,
+            "to": self.target_node.node_id,
         }

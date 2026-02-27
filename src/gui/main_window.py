@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from .canvas import WorkflowCanvas
-from .bubble_node import BubbleNode
+from .llm_node import LLMNode
 from .file_op_node import FileOpNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 
@@ -107,7 +107,7 @@ class MainWindow(QMainWindow):
             tb.addAction(a)
             return a
 
-        act("＋ Add Bubble", self.canvas.add_bubble, tip="Add a new bubble node")
+        act("＋ LLM Call", self.canvas.add_llm_node, tip="Add a new LLM call node")
         act("＋ Create File", self.canvas.add_create_file_node, tip="Add a Create File node")
         act("＋ Truncate File", self.canvas.add_truncate_file_node, tip="Add a Truncate File node")
         act("＋ Delete File", self.canvas.add_delete_file_node, tip="Add a Delete File node")
@@ -168,7 +168,7 @@ class MainWindow(QMainWindow):
             return
         selected_nodes = [
             i for i in self.canvas._scene.selectedItems()
-            if isinstance(i, (BubbleNode, FileOpNode)) and not getattr(i, 'is_start', False)
+            if isinstance(i, (LLMNode, FileOpNode)) and not getattr(i, 'is_start', False)
         ]
         self._run_from_here_action.setEnabled(len(selected_nodes) == 1)
 

@@ -1,4 +1,4 @@
-"""BubbleWidget — embedded Qt widget inside a BubbleNode graphics item."""
+"""LLMWidget — embedded Qt widget inside an LLMNode graphics item."""
 
 from pathlib import Path
 from typing import Optional
@@ -322,14 +322,14 @@ class ModelSelector(QWidget):
         self._close_dropdown()
 
 
-class BubbleWidget(QWidget):
-    """Inner Qt widget embedded in the graphics item."""
+class LLMWidget(QWidget):
+    """Inner Qt widget embedded in the LLMNode graphics item."""
 
     def __init__(self, on_layout_change=None, parent=None):
         super().__init__(parent)
-        self.setObjectName("bubble_widget_root")
+        self.setObjectName("llm_widget_root")
         self.setStyleSheet("""
-            QWidget#bubble_widget_root {
+            QWidget#llm_widget_root {
                 background: transparent;
                 color: #e8e8e8;
                 font-size: 12px;
@@ -373,7 +373,9 @@ class BubbleWidget(QWidget):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(5)
 
-        self.title_edit = QLineEdit("Bubble")
+        name_label = QLabel("Name")
+        layout.addWidget(name_label)
+        self.title_edit = QLineEdit("LLM")
         self.title_edit.setPlaceholderText("Node name…")
         layout.addWidget(self.title_edit)
 
@@ -459,12 +461,12 @@ class BubbleWidget(QWidget):
             if logo_path.exists():
                 source = QPixmap(str(logo_path))
                 if not source.isNull():
-                    normalized = BubbleWidget._normalized_logo_pixmap(source)
+                    normalized = LLMWidget._normalized_logo_pixmap(source)
                     icon = QIcon(normalized)
                     PROVIDER_ICON_CACHE[provider_name] = icon
                     return icon
 
-        icon = BubbleWidget._fallback_provider_icon(provider_name)
+        icon = LLMWidget._fallback_provider_icon(provider_name)
         PROVIDER_ICON_CACHE[provider_name] = icon
         return icon
 
@@ -513,7 +515,7 @@ class BubbleWidget(QWidget):
         else:
             fill_brush = QBrush(QColor("#1d1d1d"))
             border = QColor("#a0a0a0")
-            label = BubbleWidget._provider_company(provider_name)[:1].upper()
+            label = LLMWidget._provider_company(provider_name)[:1].upper()
 
         painter.setPen(QPen(border, 1))
         painter.setBrush(fill_brush)
@@ -536,3 +538,5 @@ class BubbleWidget(QWidget):
 
     def show_output(self, visible: bool = True):
         self._output_frame.setVisible(visible)
+
+

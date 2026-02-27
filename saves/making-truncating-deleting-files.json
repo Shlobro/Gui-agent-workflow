@@ -1,5 +1,5 @@
 {
-  "bubbles": [
+  "nodes": [
     {
       "node_type": "create_file",
       "id": "85b06b88-8bf7-4a78-85e5-e8fef4bbd7a3",
@@ -15,7 +15,7 @@
       "x": 393.05999999999995,
       "y": -52.13499999999998,
       "name": "Write Story 2",
-      "model": "gemini-2.5-pro",
+      "model": "gemini-3-flash-preview",
       "prompt": "put a short story in story.txt"
     },
     {
@@ -24,7 +24,7 @@
       "x": 913.1274999999999,
       "y": -47.842499999999944,
       "name": "Append Story 4",
-      "model": "gemini-2.5-pro",
+      "model": "gemini-3-flash-preview",
       "prompt": "add to the story in story.txt"
     },
     {
@@ -42,7 +42,7 @@
       "x": 2049.889475171874,
       "y": 6.369486125000009,
       "name": "Rewrite Story 6",
-      "model": "gemini-2.5-pro",
+      "model": "gemini-3-flash-preview",
       "prompt": "put a short story in story.txt"
     },
     {
@@ -81,7 +81,7 @@
       "to": "eadbc880-bf9b-42af-8c66-f1f864ac37d3"
     }
   ],
-  "bubble_counter": 7,
+  "node_counter": 7,
   "start_pos": [
     -410.0,
     -56.0
