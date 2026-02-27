@@ -10,6 +10,9 @@ __pycache__/
 venv/
 env/
 
+# User state files
+.recent_folders.json
+
 # Logs and editor/runtime artifacts
 *.log
 .DS_Store

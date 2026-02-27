@@ -4,10 +4,11 @@
 Implements the interactive Qt UI for composing and running LLM workflows.
 
 ## Contents
-- `main_window.py`: Main shell (toolbar, status bar, save/load/clear actions) and `WorkflowCanvas` host.
+- `main_window.py`: Main shell (File menu, toolbar, status bar, clear action) and `WorkflowCanvas` host.
 - `canvas.py`: `QGraphicsView` orchestration, pan/zoom controls, connection creation, trigger-driven run execution with permanent Start node, pre-run validation, draw-time graph warnings, and workflow save/load serialization.
 - `bubble_node.py`: `BubbleNode` — draggable node with embedded editor, model selector, and output panel. `StartNode` — permanent pure-trigger root node with output port only.
 - `connection_item.py`: Directed Bezier edge between bubble ports.
+- `project_chooser.py`: Startup dialog for selecting the project folder; persists recently used folders in `.recent_folders.json` at the repo root.
 - `assets/`: Static logo files used by the model selector.
 - `__init__.py`: Package marker.
 
@@ -16,7 +17,8 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Before any run, all reachable nodes are validated: a node with an empty prompt or no model selected blocks the run with a warning dialog listing every problem.
 - `WorkflowCanvas` creates `LLMWorker` instances and routes streamed output into the corresponding `BubbleNode`.
 - `BubbleNode` holds user-editable metadata (title, prompt, model) used by execution and save/load.
-- `MainWindow` delegates all graph behavior to the canvas and focuses on app-level controls.
+- `MainWindow` accepts an optional `project_folder` string at construction, passes it to `WorkflowCanvas.set_working_directory()`, and delegates all graph behavior to the canvas. The **File** menu hosts Save Workflow, Load Workflow, and Open Project Folder actions; the toolbar no longer contains these.
+- `ProjectChooserDialog` is shown at startup before the main window opens; the chosen folder is forwarded to `MainWindow`. The user can cancel the chooser and still open the window without a project folder, then pick one later via File → Open Project Folder.
 
 ## Behavior Notes
 - The Start node is permanent: it cannot be deleted with the Delete key and is recreated after Clear Canvas. Its position is saved and restored with the workflow JSON.

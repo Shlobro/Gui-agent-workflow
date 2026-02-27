@@ -1,6 +1,7 @@
 """Main application window."""
 
 import json
+import os
 
 from PySide6.QtGui import QKeySequence, QAction
 from PySide6.QtWidgets import (
@@ -10,10 +11,11 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .bubble_node import BubbleNode
+from .project_chooser import ProjectChooserDialog, add_to_recent
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, project_folder: str | None = None):
         super().__init__()
         self.setWindowTitle("LLM Workflow")
         self.resize(1280, 800)
@@ -25,16 +27,35 @@ class MainWindow(QMainWindow):
         self.canvas.selection_changed.connect(self._on_selection_changed)
 
         self._run_from_here_action: QAction = None  # set in _build_toolbar
+        self._open_folder_action: QAction = None    # set in _build_menu
+        self._build_menu()
         self._build_toolbar()
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        self._status_bar.showMessage("Ready.")
+
+        self.canvas.run_state_changed.connect(self._on_run_state_changed)
+
+        if project_folder:
+            self._apply_project_folder(project_folder)
+        else:
+            self._status_bar.showMessage("Ready. No project folder selected.")
 
     # ------------------------------------------------------------------
 
     def _setup_style(self):
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #1a1a1a; color: #e8e8e8; }
+            QMenuBar {
+                background: #252525; color: #e8e8e8;
+                border-bottom: 1px solid #333;
+            }
+            QMenuBar::item:selected { background: #3a3a3a; }
+            QMenu {
+                background: #252525; color: #e8e8e8;
+                border: 1px solid #444;
+            }
+            QMenu::item:selected { background: #1e4d7a; }
+            QMenu::separator { height: 1px; background: #444; margin: 3px 0; }
             QToolBar { background: #252525; border-bottom: 1px solid #333; spacing: 6px; padding: 4px; }
             QToolButton {
                 background: #333; color: #e8e8e8; border: 1px solid #444;
@@ -44,6 +65,31 @@ class MainWindow(QMainWindow):
             QToolButton:pressed { background: #222; }
             QStatusBar { background: #252525; color: #aaaaaa; }
         """)
+
+    def _build_menu(self):
+        menu_bar = self.menuBar()
+
+        file_menu = menu_bar.addMenu("File")
+        file_menu.setToolTipsVisible(True)
+
+        open_action = QAction("Open Project Folder…", self)
+        open_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        open_action.setToolTip("Choose the folder LLM calls will run in")
+        open_action.triggered.connect(self._open_folder)
+        file_menu.addAction(open_action)
+        self._open_folder_action = open_action
+
+        file_menu.addSeparator()
+
+        save_action = QAction("Save Workflow…", self)
+        save_action.setShortcut(QKeySequence("Ctrl+S"))
+        save_action.triggered.connect(self._save)
+        file_menu.addAction(save_action)
+
+        load_action = QAction("Load Workflow…", self)
+        load_action.setShortcut(QKeySequence("Ctrl+O"))
+        load_action.triggered.connect(self._load)
+        file_menu.addAction(load_action)
 
     def _build_toolbar(self):
         tb = QToolBar("Main")
@@ -73,12 +119,37 @@ class MainWindow(QMainWindow):
         self._run_from_here_action.setEnabled(False)
         act("■ Stop", self.canvas.stop_all, tip="Cancel running workers")
         tb.addSeparator()
-        act("💾 Save", self._save, shortcut="Ctrl+S", tip="Save workflow to JSON")
-        act("📂 Load", self._load, shortcut="Ctrl+O", tip="Load workflow from JSON")
-        tb.addSeparator()
         act("🗑 Clear", self._clear, tip="Clear the canvas")
 
     # ------------------------------------------------------------------
+
+    def _apply_project_folder(self, folder: str) -> None:
+        folder = os.path.normpath(folder)
+        self.canvas.set_working_directory(folder)
+        add_to_recent(folder)
+        name = os.path.basename(folder)
+        self.setWindowTitle(f"LLM Workflow — {name}")
+        self._status_bar.showMessage(f"Project folder: {folder}")
+
+    def _open_folder(self):
+        dlg = ProjectChooserDialog(self)
+        if dlg.exec() == ProjectChooserDialog.DialogCode.Accepted and dlg.chosen_folder:
+            self._apply_project_folder(dlg.chosen_folder)
+
+    # ------------------------------------------------------------------
+
+    def _on_run_state_changed(self, running: bool) -> None:
+        if self._open_folder_action is None:
+            return
+        self._open_folder_action.setEnabled(not running)
+        if running:
+            self._open_folder_action.setToolTip(
+                "Cannot open a project folder during an active workflow"
+            )
+        else:
+            self._open_folder_action.setToolTip(
+                "Choose the folder LLM calls will run in"
+            )
 
     def _on_status(self, msg: str):
         self._status_bar.showMessage(msg)

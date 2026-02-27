@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd C:\\\\Users\\\\shlob\\\\Pycharm Projects\\\\GUI workflow:*)"
+      "Bash(cd C:\\\\Users\\\\shlob\\\\Pycharm Projects\\\\GUI workflow:*)",
+      "Bash(python:*)"
     ]
   }
 }

@@ -24,6 +24,7 @@ class _ExecutionSignals(QObject):
 class WorkflowCanvas(QGraphicsView):
     status_update = Signal(str)
     selection_changed = Signal()
+    run_state_changed = Signal(bool)   # emitted with True when run starts, False when it ends
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,6 +58,9 @@ class WorkflowCanvas(QGraphicsView):
         self._run_id: int = 0
         self._exec_signals = _ExecutionSignals()
         self._exec_signals.status_update.connect(self.status_update)
+
+        # Project working directory (set externally; passed to LLMWorker)
+        self._working_directory: Optional[str] = None
 
         # Pan state
         self._panning = False
@@ -122,6 +126,10 @@ class WorkflowCanvas(QGraphicsView):
     # ------------------------------------------------------------------
     # Bubble management
     # ------------------------------------------------------------------
+
+    def set_working_directory(self, path: str) -> None:
+        """Set the project folder used as cwd for all LLM subprocess calls."""
+        self._working_directory = path
 
     def add_bubble(self) -> BubbleNode:
         self._bubble_counter += 1
@@ -338,7 +346,20 @@ class WorkflowCanvas(QGraphicsView):
     # Execution
     # ------------------------------------------------------------------
 
+    def _check_project_folder(self) -> bool:
+        """Return True if a project folder is set; otherwise show a warning and return False."""
+        if self._working_directory:
+            return True
+        QMessageBox.warning(
+            self, "No Project Folder",
+            "Please open a project folder before running a workflow.\n\n"
+            "Use File → Open Project Folder… to choose one.",
+        )
+        return False
+
     def run_all(self):
+        if not self._check_project_folder():
+            return
         reachable = self._reachable_from(self._start_node)
         nodes = [n for n in reachable if not getattr(n, 'is_start', False)]
         if not nodes:
@@ -354,6 +375,8 @@ class WorkflowCanvas(QGraphicsView):
         self._run_workflow(nodes, roots=self._direct_children(self._start_node))
 
     def run_selected_only(self):
+        if not self._check_project_folder():
+            return
         selected = [
             i for i in self._scene.selectedItems()
             if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
@@ -380,6 +403,8 @@ class WorkflowCanvas(QGraphicsView):
         self._run_workflow(selected, roots=list(selected), no_fanout=True)
 
     def run_from_here(self):
+        if not self._check_project_folder():
+            return
         selected = [
             i for i in self._scene.selectedItems()
             if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
@@ -400,6 +425,7 @@ class WorkflowCanvas(QGraphicsView):
 
     def stop_all(self):
         self._running = False
+        self.run_state_changed.emit(False)
         self._no_fanout = False
         for worker in list(self._active_workers.values()):
             if worker is not None:
@@ -457,6 +483,7 @@ class WorkflowCanvas(QGraphicsView):
             node.set_status("idle")
             node.clear_output()
         self._running = True
+        self.run_state_changed.emit(True)
         self._no_fanout = no_fanout
         self._run_id += 1
         self._current_run_exec_ids.clear()
@@ -493,7 +520,8 @@ class WorkflowCanvas(QGraphicsView):
             self._current_run_exec_ids.discard(exec_id)
             return
 
-        worker = LLMWorker(provider, node.prompt_text, model=model_id)
+        worker = LLMWorker(provider, node.prompt_text, model=model_id,
+                           working_directory=self._working_directory)
         self._active_workers[exec_id] = worker
 
         run_id = self._run_id
@@ -541,6 +569,7 @@ class WorkflowCanvas(QGraphicsView):
         """Emit Done and clear _running when all current-run workers are gone."""
         if self._running and not self._current_run_exec_ids:
             self._running = False
+            self.run_state_changed.emit(False)
             self.status_update.emit("Done.")
 
     def _get_provider_for_model(self, model_id: str):
