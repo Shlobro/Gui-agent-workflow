@@ -248,6 +248,45 @@ class ModelChangeCommand(QUndoCommand):
             self._canvas.notify_node_changed(self._node_id)
 
 
+class FileOpTypeChangeCommand(QUndoCommand):
+    """Push when the user changes the operation type of a FileOpNode."""
+
+    def __init__(self, canvas: "WorkflowCanvas", node_id: str,
+                 old_type: str, new_type: str):
+        super().__init__("Change File Op Type")
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_type = old_type
+        self._new_type = new_type
+
+    def _node(self) -> Optional["FileOpNode"]:
+        from .file_op_node import FileOpNode
+        node = self._canvas._nodes.get(self._node_id)
+        return node if isinstance(node, FileOpNode) else None
+
+    def redo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.node_type = self._new_type
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+    def undo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.node_type = self._old_type
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+
 class PasteCommand(QUndoCommand):
     """Push when clipboard nodes are pasted."""
 

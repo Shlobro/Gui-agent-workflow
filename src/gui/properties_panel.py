@@ -9,6 +9,7 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QLabel,
     QLineEdit,
@@ -60,6 +61,16 @@ _PANEL_STYLE = """
         padding: 4px; color: #e8e8e8; font-family: monospace; font-size: 11px;
     }
     QPlainTextEdit:focus { border: 1px solid #3a8ef5; }
+    QComboBox {
+        background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
+        padding: 4px 6px; color: #e8e8e8; font-size: 13px;
+    }
+    QComboBox:focus { border: 1px solid #3a8ef5; }
+    QComboBox::drop-down { border: none; width: 20px; }
+    QComboBox QAbstractItemView {
+        background: #2a2a2a; color: #e8e8e8;
+        border: 1px solid #555; selection-background-color: #3a8ef5;
+    }
     QScrollArea { background: transparent; border: none; }
     QScrollBar:vertical {
         background: #1e1e1e; width: 8px; border-radius: 4px;
@@ -140,8 +151,18 @@ class _LLMForm(QWidget):
 # FileOp form
 # ---------------------------------------------------------------------------
 
+_OP_TYPE_OPTIONS = [
+    ("create_file",   "Create File"),
+    ("truncate_file", "Truncate File"),
+    ("delete_file",   "Delete File"),
+]
+
+
 class _FileOpForm(QWidget):
     """Form widget for editing a FileOpNode's properties."""
+
+    # Emitted when the user picks a different op type (old_type, new_type).
+    op_type_changed = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -150,9 +171,18 @@ class _FileOpForm(QWidget):
         layout.setContentsMargins(16, 12, 16, 16)
         layout.setSpacing(6)
 
-        self._type_label = QLabel("FILE OP")
-        self._type_label.setObjectName("section_label")
-        layout.addWidget(self._type_label)
+        type_label = QLabel("FILE OP")
+        type_label.setObjectName("section_label")
+        layout.addWidget(type_label)
+
+        layout.addSpacing(4)
+
+        op_label = QLabel("Operation")
+        layout.addWidget(op_label)
+        self.op_type_combo = QComboBox()
+        for key, display in _OP_TYPE_OPTIONS:
+            self.op_type_combo.addItem(display, userData=key)
+        layout.addWidget(self.op_type_combo)
 
         layout.addSpacing(4)
 
@@ -187,8 +217,25 @@ class _FileOpForm(QWidget):
 
         layout.addStretch(1)
 
-    def set_op_type_label(self, label: str):
-        self._type_label.setText(label)
+        self._current_op_type: str = "create_file"
+        self.op_type_combo.currentIndexChanged.connect(self._on_op_type_index_changed)
+
+    def _on_op_type_index_changed(self, index: int):
+        new_type = self.op_type_combo.itemData(index)
+        if new_type and new_type != self._current_op_type:
+            old = self._current_op_type
+            self._current_op_type = new_type
+            self.op_type_changed.emit(old, new_type)
+
+    def set_op_type(self, node_type: str):
+        """Set combobox selection without emitting op_type_changed."""
+        self.op_type_combo.blockSignals(True)
+        for i in range(self.op_type_combo.count()):
+            if self.op_type_combo.itemData(i) == node_type:
+                self.op_type_combo.setCurrentIndex(i)
+                break
+        self._current_op_type = node_type
+        self.op_type_combo.blockSignals(False)
 
     def show_output(self, visible: bool):
         self._output_frame.setVisible(visible)
@@ -206,6 +253,7 @@ class PropertiesPanel(QWidget):
     model_changed = Signal(str, str, str)        # node_id, old_model_id, new_model_id
     prompt_committed = Signal(str, str)          # node_id, text
     filename_committed = Signal(str, str)        # node_id, text
+    op_type_changed = Signal(str, str, str)     # node_id, old_type, new_type
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -271,6 +319,7 @@ class PropertiesPanel(QWidget):
         self._file_form.filename_edit.editingFinished.connect(self._on_filename_committed)
         self._file_form.filename_edit.textChanged.connect(self._on_filename_changed)
         self._file_form.filename_edit.installEventFilter(self)
+        self._file_form.op_type_changed.connect(self._on_op_type_changed)
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
@@ -329,6 +378,11 @@ class PropertiesPanel(QWidget):
         text = self._file_form.filename_edit.text()
         self.filename_committed.emit(self._current_node.node_id, text)
         self._filename_dirty = False
+
+    def _on_op_type_changed(self, old_type: str, new_type: str):
+        if self._current_node is None:
+            return
+        self.op_type_changed.emit(self._current_node.node_id, old_type, new_type)
 
     # ------------------------------------------------------------------
     # Public API
@@ -441,14 +495,11 @@ class PropertiesPanel(QWidget):
         self._prompt_dirty = False
 
     def _load_file_form(self, node) -> None:
-        from .file_op_node import NODE_TYPE_DISPLAY_NAMES
         form = self._file_form
         form.title_edit.blockSignals(True)
         form.filename_edit.blockSignals(True)
 
-        form.set_op_type_label(
-            NODE_TYPE_DISPLAY_NAMES.get(node.node_type, "FILE OP").upper()
-        )
+        form.set_op_type(node.node_type)
         form.title_edit.setText(node.title)
         form.filename_edit.setText(node.filename)
 

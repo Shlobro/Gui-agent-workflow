@@ -48,13 +48,13 @@ _COMPACT_FILE_NODE_HEIGHT = 64
 # ---------------------------------------------------------------------------
 
 class FileOpNode(WorkflowNode):
-    """Base class for file-operation nodes. Subclasses set `node_type`."""
+    """A file-operation node whose operation type is a mutable instance attribute."""
 
-    node_type: str = ""   # overridden by subclasses
-
-    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1,
+                 node_type: str = "create_file"):
         super().__init__(node_id=node_id, label_index=label_index)
 
+        self.node_type: str = node_type
         op_label = NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op")
         self._title: str = f"{op_label} {label_index}"
         self._filename: str = ""
@@ -248,22 +248,24 @@ class FileOpNode(WorkflowNode):
         self.setPos(data.get("x", 0), data.get("y", 0))
         self._title = data.get("name", self._title)
         self._filename = data.get("filename", "")
+        if "node_type" in data:
+            self.node_type = data["node_type"]
 
 
 # ---------------------------------------------------------------------------
-# Concrete subclasses
+# Backward-compat aliases (load/paste still reference these names)
 # ---------------------------------------------------------------------------
 
-class CreateFileNode(FileOpNode):
-    node_type = "create_file"
+def CreateFileNode(node_id=None, label_index=1):
+    return FileOpNode(node_id=node_id, label_index=label_index, node_type="create_file")
 
 
-class TruncateFileNode(FileOpNode):
-    node_type = "truncate_file"
+def TruncateFileNode(node_id=None, label_index=1):
+    return FileOpNode(node_id=node_id, label_index=label_index, node_type="truncate_file")
 
 
-class DeleteFileNode(FileOpNode):
-    node_type = "delete_file"
+def DeleteFileNode(node_id=None, label_index=1):
+    return FileOpNode(node_id=node_id, label_index=label_index, node_type="delete_file")
 
 
 # ---------------------------------------------------------------------------
