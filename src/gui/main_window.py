@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .bubble_node import BubbleNode
+from .file_op_node import FileOpNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 
 
@@ -26,8 +27,8 @@ class MainWindow(QMainWindow):
         self.canvas.status_update.connect(self._on_status)
         self.canvas.selection_changed.connect(self._on_selection_changed)
 
-        self._run_from_here_action: QAction = None  # set in _build_toolbar
-        self._open_folder_action: QAction = None    # set in _build_menu
+        self._run_from_here_action: QAction | None = None  # set in _build_toolbar
+        self._open_folder_action: QAction | None = None    # set in _build_menu
         self._build_menu()
         self._build_toolbar()
         self._status_bar = QStatusBar()
@@ -107,6 +108,9 @@ class MainWindow(QMainWindow):
             return a
 
         act("＋ Add Bubble", self.canvas.add_bubble, tip="Add a new bubble node")
+        act("＋ Create File", self.canvas.add_create_file_node, tip="Add a Create File node")
+        act("＋ Truncate File", self.canvas.add_truncate_file_node, tip="Add a Truncate File node")
+        act("＋ Delete File", self.canvas.add_delete_file_node, tip="Add a Delete File node")
         tb.addSeparator()
         act("▶ Run All", self.canvas.run_all, shortcut="F5",
             tip="Run all nodes reachable from Start")
@@ -162,11 +166,11 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self):
         if self._run_from_here_action is None:
             return
-        selected_bubbles = [
+        selected_nodes = [
             i for i in self.canvas._scene.selectedItems()
-            if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
+            if isinstance(i, (BubbleNode, FileOpNode)) and not getattr(i, 'is_start', False)
         ]
-        self._run_from_here_action.setEnabled(len(selected_bubbles) == 1)
+        self._run_from_here_action.setEnabled(len(selected_nodes) == 1)
 
     def _save(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -201,7 +205,7 @@ class MainWindow(QMainWindow):
     def _clear(self):
         reply = QMessageBox.question(
             self, "Clear Canvas",
-            "Remove all bubbles and connections?",
+            "Remove all nodes and connections?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

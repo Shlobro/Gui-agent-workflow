@@ -1,0 +1,89 @@
+{
+  "bubbles": [
+    {
+      "node_type": "create_file",
+      "id": "85b06b88-8bf7-4a78-85e5-e8fef4bbd7a3",
+      "label_index": 1,
+      "x": -165.0650000000001,
+      "y": -26.872500000000016,
+      "name": "Create File 1",
+      "filename": "story.txt"
+    },
+    {
+      "id": "fc187ae6-f307-4649-9ed8-f4c96ae5a301",
+      "label_index": 2,
+      "x": 393.05999999999995,
+      "y": -52.13499999999998,
+      "name": "Write Story 2",
+      "model": "gemini-2.5-pro",
+      "prompt": "put a short story in story.txt"
+    },
+    {
+      "id": "d44e38a7-b7e7-478d-8ba0-8de1e3bbaf44",
+      "label_index": 4,
+      "x": 913.1274999999999,
+      "y": -47.842499999999944,
+      "name": "Append Story 4",
+      "model": "gemini-2.5-pro",
+      "prompt": "add to the story in story.txt"
+    },
+    {
+      "node_type": "truncate_file",
+      "id": "c5b3182b-3257-409a-b2eb-940b52fec6c0",
+      "label_index": 5,
+      "x": 1464.812068849061,
+      "y": 32.86465519182311,
+      "name": "Truncate File 5",
+      "filename": "story.txt"
+    },
+    {
+      "id": "b498bd5c-35f6-4853-9d5d-37990c20230e",
+      "label_index": 6,
+      "x": 2049.889475171874,
+      "y": 6.369486125000009,
+      "name": "Rewrite Story 6",
+      "model": "gemini-2.5-pro",
+      "prompt": "put a short story in story.txt"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "eadbc880-bf9b-42af-8c66-f1f864ac37d3",
+      "label_index": 7,
+      "x": 2709.0826862187487,
+      "y": 49.53140287499991,
+      "name": "Delete File 7",
+      "filename": "story.txt"
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "85b06b88-8bf7-4a78-85e5-e8fef4bbd7a3"
+    },
+    {
+      "from": "85b06b88-8bf7-4a78-85e5-e8fef4bbd7a3",
+      "to": "fc187ae6-f307-4649-9ed8-f4c96ae5a301"
+    },
+    {
+      "from": "fc187ae6-f307-4649-9ed8-f4c96ae5a301",
+      "to": "d44e38a7-b7e7-478d-8ba0-8de1e3bbaf44"
+    },
+    {
+      "from": "d44e38a7-b7e7-478d-8ba0-8de1e3bbaf44",
+      "to": "c5b3182b-3257-409a-b2eb-940b52fec6c0"
+    },
+    {
+      "from": "c5b3182b-3257-409a-b2eb-940b52fec6c0",
+      "to": "b498bd5c-35f6-4853-9d5d-37990c20230e"
+    },
+    {
+      "from": "b498bd5c-35f6-4853-9d5d-37990c20230e",
+      "to": "eadbc880-bf9b-42af-8c66-f1f864ac37d3"
+    }
+  ],
+  "bubble_counter": 7,
+  "start_pos": [
+    -410.0,
+    -56.0
+  ]
+}

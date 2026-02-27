@@ -1,10 +1,11 @@
 """WorkflowCanvas — QGraphicsView with node graph interaction."""
 
+import os
 from collections import deque
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Union
 from uuid import uuid4
 
-from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
+from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF, QTimer
 from PySide6.QtGui import QColor, QPainter, QWheelEvent, QKeyEvent, QPen, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,11 +18,15 @@ from src.llm.base_provider import LLMProviderRegistry
 from src.workers.llm_worker import LLMWorker
 from .bubble_node import BubbleNode, StartNode
 from .connection_item import ConnectionItem
+from .file_op_node import FileOpNode, CreateFileNode, TruncateFileNode, DeleteFileNode, NODE_TYPE_MAP
 from .undo_commands import (
     AddBubbleCommand, RemoveBubbleCommand,
     AddConnectionCommand, RemoveConnectionCommand,
     MoveBubbleCommand, TitleChangeCommand, ModelChangeCommand, PasteCommand,
 )
+
+GraphNode = Union[BubbleNode, FileOpNode]
+SourceNode = Union[StartNode, GraphNode]
 
 
 class _ExecutionSignals(QObject):
@@ -48,13 +53,13 @@ class WorkflowCanvas(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setBackgroundBrush(QColor("#1a1a1a"))
 
-        self._bubbles: Dict[str, BubbleNode] = {}          # id -> node
+        self._bubbles: Dict[str, Union[BubbleNode, FileOpNode]] = {}  # id -> node
         self._connections: List[ConnectionItem] = []
         self._bubble_counter = 0
 
         # Connection-drawing state
         self._drawing_connection = False
-        self._conn_source: Optional[BubbleNode] = None
+        self._conn_source: Optional[SourceNode] = None
         self._rubber_line: Optional[QGraphicsLineItem] = None
 
         # Execution state
@@ -64,6 +69,8 @@ class WorkflowCanvas(QGraphicsView):
         self._exec_node: Dict[int, str] = {}       # exec_id -> bubble_id
         self._retired_exec_ids: set = set()        # exec_ids whose node was deleted mid-run
         self._current_run_exec_ids: set = set()   # exec_ids belonging to the active run only
+        self._pending_child_triggers: int = 0
+        self._seeding_roots: bool = False
         self._exec_counter: int = 0
         self._run_id: int = 0
         self._exec_signals = _ExecutionSignals()
@@ -95,10 +102,6 @@ class WorkflowCanvas(QGraphicsView):
 
         # Permanent start node — created after scene is ready
         self._start_node: StartNode = self._add_start_node()
-
-    # ------------------------------------------------------------------
-    # Background grid
-    # ------------------------------------------------------------------
 
     def drawBackground(self, painter: QPainter, rect):
         super().drawBackground(painter, rect)
@@ -135,35 +138,38 @@ class WorkflowCanvas(QGraphicsView):
         if not current_rect.contains(required_rect):
             self._scene.setSceneRect(current_rect.united(required_rect))
 
-    # ------------------------------------------------------------------
-    # Start node
-    # ------------------------------------------------------------------
-
     def _add_start_node(self) -> StartNode:
         node = StartNode()
         node.setPos(-300, -40)
         self._scene.addItem(node)
         return node
 
-    # ------------------------------------------------------------------
-    # Undo/redo raw operations (no stack push — used by commands only)
-    # ------------------------------------------------------------------
-
-    def _undo_add_bubble(self, snapshot: dict, label_index: int) -> Optional[BubbleNode]:
+    def _undo_add_bubble(self, snapshot: dict, label_index: int):
         """Reconstruct a node from snapshot and add it to the scene."""
         bubble_id = snapshot.get("id")
         if bubble_id and bubble_id in self._bubbles:
             return self._bubbles[bubble_id]  # already present (safety guard)
 
-        node = BubbleNode(bubble_id=bubble_id, label_index=label_index)
-        node.from_dict(snapshot)
-        # from_dict may overwrite bubble_id/label_index via data fields; restore
-        if bubble_id:
-            node.bubble_id = bubble_id
-        node.label_index = label_index
-        self._scene.addItem(node)
-        self._bubbles[node.bubble_id] = node
-        self._connect_node_signals(node)
+        node_type = snapshot.get("node_type", "bubble")
+        node: GraphNode
+        if node_type in NODE_TYPE_MAP:
+            node = NODE_TYPE_MAP[node_type](bubble_id=bubble_id, label_index=label_index)
+            node.from_dict(snapshot)
+            if bubble_id:
+                node.bubble_id = bubble_id
+            node.label_index = label_index
+            self._scene.addItem(node)
+            self._bubbles[node.bubble_id] = node
+            self._connect_file_op_signals(node)
+        else:
+            node = BubbleNode(bubble_id=bubble_id, label_index=label_index)
+            node.from_dict(snapshot)
+            if bubble_id:
+                node.bubble_id = bubble_id
+            node.label_index = label_index
+            self._scene.addItem(node)
+            self._bubbles[node.bubble_id] = node
+            self._connect_node_signals(node)
         return node
 
     def _undo_remove_bubble(self, bubble_id: str):
@@ -171,13 +177,6 @@ class WorkflowCanvas(QGraphicsView):
         node = self._bubbles.get(bubble_id)
         if node is None:
             return
-        # Cancel any in-flight workers for this node so subprocesses don't
-        # run headless after the node is gone.  Move exec_id to
-        # _retired_exec_ids so _on_invocation_done skips node mutation but
-        # still cleans up _active_workers and calls _check_drain.  We do NOT
-        # remove from _active_workers or _current_run_exec_ids here — keeping
-        # those refs alive prevents a "QThread destroyed while still running"
-        # crash (same invariant enforced by stop_all).
         for exec_id, bid in list(self._exec_node.items()):
             if bid == bubble_id:
                 worker = self._active_workers.get(exec_id)
@@ -193,7 +192,7 @@ class WorkflowCanvas(QGraphicsView):
         self._bubbles.pop(bubble_id, None)
         self._title_committed.pop(bubble_id, None)
 
-    def _undo_add_connection(self, src: BubbleNode, tgt: BubbleNode) -> ConnectionItem:
+    def _undo_add_connection(self, src: SourceNode, tgt: GraphNode) -> ConnectionItem:
         """Create a ConnectionItem and register it."""
         conn = ConnectionItem(src, tgt)
         self._scene.addItem(conn)
@@ -218,7 +217,7 @@ class WorkflowCanvas(QGraphicsView):
         return None
 
     def _connect_node_signals(self, node: BubbleNode):
-        """Wire title/model signals for a node so changes push undo commands."""
+        """Wire title/model signals for a BubbleNode so changes push undo commands."""
         bubble_id = node.bubble_id
         self._title_committed[bubble_id] = node.title
         title_edit = node._widget.title_edit
@@ -229,9 +228,14 @@ class WorkflowCanvas(QGraphicsView):
             lambda old, new, _bid=bubble_id: self._on_model_changed(_bid, old, new)
         )
 
-    # ------------------------------------------------------------------
-    # Bubble management
-    # ------------------------------------------------------------------
+    def _connect_file_op_signals(self, node: FileOpNode):
+        """Wire title signal for a FileOpNode so title changes push undo commands."""
+        bubble_id = node.bubble_id
+        self._title_committed[bubble_id] = node.title
+        title_edit = node._widget.title_edit
+        title_edit.editingFinished.connect(
+            lambda _bid=bubble_id, _te=title_edit: self._on_title_editing_finished(_bid, _te)
+        )
 
     def set_working_directory(self, path: str) -> None:
         """Set the project folder used as cwd for all LLM subprocess calls."""
@@ -241,7 +245,6 @@ class WorkflowCanvas(QGraphicsView):
         self._bubble_counter += 1
         label_index = self._bubble_counter
         center = self.mapToScene(self.viewport().rect().center())
-        # Build a snapshot that describes the node-to-be
         snapshot = {
             "id": str(uuid4()),
             "label_index": label_index,
@@ -253,9 +256,42 @@ class WorkflowCanvas(QGraphicsView):
         }
         cmd = AddBubbleCommand(self, snapshot, label_index)
         self._undo_stack.push(cmd)
-        return self._bubbles[snapshot["id"]]
+        node = self._bubbles[snapshot["id"]]
+        if not isinstance(node, BubbleNode):
+            raise RuntimeError("Expected a BubbleNode after add command.")
+        return node
 
-    def remove_bubble(self, node: BubbleNode):
+    def _add_file_op_node(self, cls: type[FileOpNode]) -> FileOpNode:
+        """Generic helper: create and register a FileOpNode subclass via undo stack."""
+        self._bubble_counter += 1
+        label_index = self._bubble_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": cls.node_type,
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 80,
+            "name": f"{cls.node_type.replace('_', ' ').title()} {label_index}",
+            "filename": "",
+        }
+        cmd = AddBubbleCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._bubbles[snapshot["id"]]
+        if not isinstance(node, FileOpNode):
+            raise RuntimeError("Expected a FileOpNode after add command.")
+        return node
+
+    def add_create_file_node(self) -> FileOpNode:
+        return self._add_file_op_node(CreateFileNode)
+
+    def add_truncate_file_node(self) -> FileOpNode:
+        return self._add_file_op_node(TruncateFileNode)
+
+    def add_delete_file_node(self) -> FileOpNode:
+        return self._add_file_op_node(DeleteFileNode)
+
+    def remove_bubble(self, node: GraphNode):
         if getattr(node, 'bubble_id', None) == "start":
             return
         cmd = RemoveBubbleCommand(self, node)
@@ -267,15 +303,11 @@ class WorkflowCanvas(QGraphicsView):
         cmd = RemoveConnectionCommand(self, src_id, tgt_id)
         self._undo_stack.push(cmd)
 
-    # ------------------------------------------------------------------
-    # Mouse events — connection drawing + pan
-    # ------------------------------------------------------------------
-
     def mousePressEvent(self, event):
         scene_pos = self.mapToScene(event.pos())
 
         if event.button() == Qt.MouseButton.LeftButton:
-            # Check start node output port first, then regular bubbles
+            # Check start node output port first, then regular bubbles (including file op nodes)
             if self._start_node.is_near_output_port(scene_pos):
                 self._start_connection(self._start_node, scene_pos)
                 return
@@ -303,10 +335,10 @@ class WorkflowCanvas(QGraphicsView):
             item_under = self._scene.itemAt(
                 self.mapToScene(event.pos()), self.transform()
             )
-            if isinstance(item_under, (BubbleNode, StartNode)):
+            if isinstance(item_under, (BubbleNode, StartNode, FileOpNode)):
                 candidates.add(item_under)
             for item in candidates:
-                if isinstance(item, (BubbleNode, StartNode)):
+                if isinstance(item, (BubbleNode, StartNode, FileOpNode)):
                     bid = item.bubble_id
                     self._drag_start_positions[bid] = QPointF(item.pos())
 
@@ -368,7 +400,7 @@ class WorkflowCanvas(QGraphicsView):
 
             self._drag_start_positions.clear()
 
-    def _start_connection(self, source: BubbleNode, scene_pos: QPointF):
+    def _start_connection(self, source: SourceNode, scene_pos: QPointF):
         self._drawing_connection = True
         self._conn_source = source
         port = source.output_port_scene_pos()
@@ -382,7 +414,7 @@ class WorkflowCanvas(QGraphicsView):
             self._scene.removeItem(self._rubber_line)
             self._rubber_line = None
 
-        target_node: Optional[BubbleNode] = None
+        target_node: Optional[GraphNode] = None
         for node in self._bubbles.values():
             if node is not self._conn_source and node.is_near_input_port(scene_pos):
                 target_node = node
@@ -401,6 +433,8 @@ class WorkflowCanvas(QGraphicsView):
         # Capture and clear source before any dialog to prevent re-entrancy.
         source = self._conn_source
         self._conn_source = None
+        if source is None:
+            return
 
         # Draw-time warnings (cycle takes priority over fan-out).
         src_label = getattr(source, "title", "Start")
@@ -431,16 +465,12 @@ class WorkflowCanvas(QGraphicsView):
         cmd = AddConnectionCommand(self, source.bubble_id, target_node.bubble_id)
         self._undo_stack.push(cmd)
 
-    # ------------------------------------------------------------------
-    # Keyboard
-    # ------------------------------------------------------------------
-
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Delete:
             deletable = [
                 item for item in self._scene.selectedItems()
                 if not (getattr(item, 'bubble_id', None) == "start")
-                and isinstance(item, (ConnectionItem, BubbleNode))
+                and isinstance(item, (ConnectionItem, BubbleNode, FileOpNode))
             ]
             if deletable:
                 if len(deletable) > 1:
@@ -448,7 +478,7 @@ class WorkflowCanvas(QGraphicsView):
                 for item in deletable:
                     if isinstance(item, ConnectionItem):
                         self._remove_connection(item)
-                    elif isinstance(item, BubbleNode):
+                    elif isinstance(item, (BubbleNode, FileOpNode)):
                         self.remove_bubble(item)
                 if len(deletable) > 1:
                     self._undo_stack.endMacro()
@@ -476,15 +506,11 @@ class WorkflowCanvas(QGraphicsView):
 
         super().keyPressEvent(event)
 
-    # ------------------------------------------------------------------
-    # Copy / Paste
-    # ------------------------------------------------------------------
-
     def _copy_selected(self):
-        """Snapshot selected BubbleNodes (excluding Start) into the clipboard."""
+        """Snapshot selected nodes (BubbleNode + FileOpNode, excluding Start) into the clipboard."""
         selected_nodes = [
             item for item in self._scene.selectedItems()
-            if isinstance(item, BubbleNode) and not getattr(item, 'is_start', False)
+            if isinstance(item, (BubbleNode, FileOpNode)) and not getattr(item, 'is_start', False)
         ]
         if not selected_nodes:
             return
@@ -510,10 +536,6 @@ class WorkflowCanvas(QGraphicsView):
         cmd = PasteCommand(self, self._clipboard, self._clipboard_conns, offset)
         self._undo_stack.push(cmd)
 
-    # ------------------------------------------------------------------
-    # Undo signal handlers
-    # ------------------------------------------------------------------
-
     def _on_title_editing_finished(self, bubble_id: str, title_edit: QLineEdit):
         if self._undo_in_progress:
             return
@@ -527,10 +549,6 @@ class WorkflowCanvas(QGraphicsView):
         if self._undo_in_progress:
             return
         self._undo_stack.push(ModelChangeCommand(self, bubble_id, old_model_id, new_model_id))
-
-    # ------------------------------------------------------------------
-    # Zoom
-    # ------------------------------------------------------------------
 
     def _visible_model_dropdown(self) -> Optional[QListWidget]:
         for list_widget in self.viewport().findChildren(QListWidget, "model_selector_dropdown"):
@@ -572,10 +590,6 @@ class WorkflowCanvas(QGraphicsView):
             self.scale(factor, factor)
         event.accept()
 
-    # ------------------------------------------------------------------
-    # Execution
-    # ------------------------------------------------------------------
-
     def _check_project_folder(self) -> bool:
         """Return True if a project folder is set; otherwise show a warning and return False."""
         if self._working_directory:
@@ -609,10 +623,10 @@ class WorkflowCanvas(QGraphicsView):
             return
         selected = [
             i for i in self._scene.selectedItems()
-            if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
+            if isinstance(i, (BubbleNode, FileOpNode)) and not getattr(i, 'is_start', False)
         ]
         if not selected:
-            QMessageBox.information(self, "No Selection", "Select at least one bubble first.")
+            QMessageBox.information(self, "No Selection", "Select at least one node first.")
             return
         if len(selected) > 1:
             reply = QMessageBox.question(
@@ -637,7 +651,7 @@ class WorkflowCanvas(QGraphicsView):
             return
         selected = [
             i for i in self._scene.selectedItems()
-            if isinstance(i, BubbleNode) and not getattr(i, 'is_start', False)
+            if isinstance(i, (BubbleNode, FileOpNode)) and not getattr(i, 'is_start', False)
         ]
         if len(selected) != 1:
             return
@@ -657,19 +671,17 @@ class WorkflowCanvas(QGraphicsView):
         self._running = False
         self.run_state_changed.emit(False)
         self._no_fanout = False
+        self._pending_child_triggers = 0
+        self._seeding_roots = False
         for worker in list(self._active_workers.values()):
             if worker is not None:
                 worker.cancel()
-        # Reset any nodes still showing "running" so the glow animator stops.
         for node in self._bubbles.values():
             if node.status == "running":
                 node.set_status("idle")
-        # Do not clear _active_workers here — keep Python refs alive until
-        # each thread's finished/error callback fires and removes its entry,
-        # preventing QThread destruction while the thread is still running.
         self.status_update.emit("Stopped.")
 
-    def _reachable_from(self, start: BubbleNode) -> List[BubbleNode]:
+    def _reachable_from(self, start: SourceNode) -> List[SourceNode]:
         visited = []
         queue = deque([start])
         seen = {start.bubble_id}
@@ -684,33 +696,37 @@ class WorkflowCanvas(QGraphicsView):
                         queue.append(nxt)
         return visited
 
-    def _would_create_cycle(self, source: BubbleNode, target: BubbleNode) -> bool:
+    def _would_create_cycle(self, source: SourceNode, target: GraphNode) -> bool:
         """Return True if adding source→target would create a cycle."""
         return source in self._reachable_from(target)
 
-    def _source_has_outgoing(self, source: BubbleNode) -> bool:
+    def _source_has_outgoing(self, source: SourceNode) -> bool:
         """Return True if source already has at least one outgoing connection."""
         return any(conn.source_bubble is source for conn in self._connections)
 
-    def _validate_nodes(self, nodes: List[BubbleNode]) -> List[str]:
-        """Return error strings for nodes missing a prompt or model."""
+    def _validate_nodes(self, nodes: Sequence[GraphNode]) -> List[str]:
+        """Return error strings for nodes that are misconfigured."""
         errors = []
         for node in nodes:
             title = getattr(node, 'title', node.bubble_id)
-            if not node.prompt_text.strip():
-                errors.append(f'\u2022 "{title}" has no prompt.')
-            if not node.model_id:
-                errors.append(f'\u2022 "{title}" has no model selected.')
+            if isinstance(node, FileOpNode):
+                if not node.filename.strip():
+                    errors.append(f'\u2022 "{title}" has no filename set.')
+            else:
+                if not node.prompt_text.strip():
+                    errors.append(f'\u2022 "{title}" has no prompt.')
+                if not node.model_id:
+                    errors.append(f'\u2022 "{title}" has no model selected.')
         return errors
 
-    def _direct_children(self, node) -> List[BubbleNode]:
+    def _direct_children(self, node: SourceNode) -> List[GraphNode]:
         """Return immediate downstream neighbours of node."""
         return [
             conn.target_bubble for conn in self._connections
             if conn.source_bubble is node
         ]
 
-    def _run_workflow(self, nodes: List[BubbleNode], roots: List[BubbleNode], no_fanout: bool = False):
+    def _run_workflow(self, nodes: List[GraphNode], roots: List[GraphNode], no_fanout: bool = False):
         if self._running:
             return
         for node in nodes:
@@ -721,25 +737,33 @@ class WorkflowCanvas(QGraphicsView):
         self._no_fanout = no_fanout
         self._run_id += 1
         self._current_run_exec_ids.clear()
+        self._pending_child_triggers = 0
+        self._seeding_roots = True
         n = len(roots)
         self.status_update.emit(f"Running\u2026 ({n} node{'s' if n != 1 else ''} triggered)")
-        for node in roots:
-            self._trigger_node(node)
-        self._check_drain()  # handles zero-roots case
+        try:
+            for node in roots:
+                self._trigger_node(node)
+        finally:
+            self._seeding_roots = False
+        self._check_drain()
 
-    def _trigger_node(self, node: BubbleNode):
+    def _trigger_node(self, node: GraphNode):
         """Schedule one new invocation of node if execution is active."""
         if not self._running:
             return
         self._exec_counter += 1
         self._fire_invocation(node, self._exec_counter)
 
-    def _fire_invocation(self, node: BubbleNode, exec_id: int):
-        """Launch one LLMWorker invocation tagged with exec_id."""
+    def _fire_invocation(self, node: GraphNode, exec_id: int):
+        """Launch one invocation tagged with exec_id (LLM or file op)."""
         self._active_workers[exec_id] = None  # reserve slot before any early return
         self._exec_node[exec_id] = node.bubble_id
         self._current_run_exec_ids.add(exec_id)
         node.set_status("running")
+        if isinstance(node, FileOpNode):
+            self._fire_file_op(node, exec_id)
+            return
         model_id = node.model_id
         if not model_id:
             node.append_output("[Error] No model selected.")
@@ -778,19 +802,104 @@ class WorkflowCanvas(QGraphicsView):
         worker.error.connect(on_error)
         worker.start()
 
-    def _on_invocation_done(self, node: BubbleNode, exec_id: int, result: str, error: bool, run_id: int = 0):
+    def _resolve_file_op_path(self, filename: str) -> str:
+        """Resolve a file-op filename under the project folder and reject escapes."""
+        if not self._working_directory:
+            raise ValueError("No project folder selected.")
+        raw = filename.strip()
+        if not raw:
+            raise ValueError("Filename is empty.")
+        drive, _ = os.path.splitdrive(raw)
+        if os.path.isabs(raw) or drive:
+            raise ValueError("Filename must be relative to the selected project folder.")
+
+        project_root = os.path.realpath(self._working_directory)
+        target = os.path.realpath(os.path.join(project_root, raw))
+        try:
+            common = os.path.commonpath([project_root, target])
+        except ValueError as exc:
+            raise ValueError("Filename escapes the selected project folder.") from exc
+        if os.path.normcase(common) != os.path.normcase(project_root):
+            raise ValueError("Filename escapes the selected project folder.")
+        if os.path.normcase(target) == os.path.normcase(project_root):
+            raise ValueError("Filename must point to a file inside the project folder.")
+        return target
+
+    def _fire_file_op(self, node: FileOpNode, exec_id: int):
+        """Execute a file operation synchronously and complete the invocation."""
+        run_id = self._run_id
+        filename = node.filename.strip()
+        try:
+            filepath = self._resolve_file_op_path(filename)
+            op = node.node_type
+            if op == "create_file":
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                if os.path.exists(filepath):
+                    if not os.path.isfile(filepath):
+                        raise IsADirectoryError(f"Cannot create file at non-file path: {filepath}")
+                    result = f"Already exists: {filepath}"
+                else:
+                    with open(filepath, "w", encoding="utf-8"):
+                        pass
+                    result = f"Created: {filepath}"
+            elif op == "truncate_file":
+                with open(filepath, "w", encoding="utf-8"):
+                    pass
+                result = f"Truncated: {filepath}"
+            elif op == "delete_file":
+                os.remove(filepath)
+                result = f"Deleted: {filepath}"
+            else:
+                raise ValueError(f"Unknown file op: {op}")
+            self._on_invocation_done(node, exec_id, result, error=False, run_id=run_id)
+        except Exception as exc:
+            self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id)
+
+    def _queue_child_triggers(self, node: GraphNode, run_id: int):
+        """Queue child invocations onto the event loop to avoid sync recursion."""
+        edge_pairs = [
+            (conn.source_bubble.bubble_id, conn.target_bubble.bubble_id)
+            for conn in self._connections
+            if conn.source_bubble is node
+        ]
+        self._pending_child_triggers += len(edge_pairs)
+        for source_id, target_id in edge_pairs:
+            QTimer.singleShot(
+                0,
+                lambda _src=source_id, _tgt=target_id, _run_id=run_id: self._trigger_node_if_active(_src, _tgt, _run_id),
+            )
+
+    def _trigger_node_if_active(self, source_id: str, target_id: str, run_id: int):
+        try:
+            if run_id != self._run_id or not self._running or self._no_fanout:
+                return
+            edge_still_exists = any(
+                conn.source_bubble.bubble_id == source_id and conn.target_bubble.bubble_id == target_id
+                for conn in self._connections
+            )
+            if not edge_still_exists:
+                return
+            node = self._bubbles.get(target_id)
+            if node is None:
+                return
+            self._trigger_node(node)
+        finally:
+            if run_id == self._run_id and self._pending_child_triggers > 0:
+                self._pending_child_triggers -= 1
+            self._check_drain()
+
+    def _on_invocation_done(self, node: GraphNode, exec_id: int, result: str, error: bool, run_id: int = 0):
         """Main-thread callback when one invocation finishes or errors."""
         if exec_id not in self._active_workers:
-            return                          # double-call guard
+            return
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
         del self._active_workers[exec_id]
         self._exec_node.pop(exec_id, None)
         self._current_run_exec_ids.discard(exec_id)
         if run_id != self._run_id or not self._running:
-            self._check_drain()             # ref released — drain in case new run is now empty
-            return                          # stale callback from a previous run
-        # Skip node mutation if the node was deleted while this exec was in-flight.
+            self._check_drain()
+            return
         if retired:
             self._check_drain()
             return
@@ -800,18 +909,24 @@ class WorkflowCanvas(QGraphicsView):
             node.set_status("error")
             # Dead end — do not trigger children on error
         else:
-            node.output_text = result
+            if isinstance(node, FileOpNode):
+                node.clear_output()
+                node.append_output(result)
+            else:
+                node.output_text = result
             node.set_status("done")
             if not self._no_fanout:
-                for conn in self._connections:
-                    if conn.source_bubble is node:
-                        self._trigger_node(conn.target_bubble)
+                self._queue_child_triggers(node, run_id)
 
         self._check_drain()
 
     def _check_drain(self):
-        """Emit Done and clear _running when all current-run workers are gone."""
-        if self._running and not self._current_run_exec_ids:
+        if (
+            self._running
+            and not self._seeding_roots
+            and not self._current_run_exec_ids
+            and self._pending_child_triggers == 0
+        ):
             self._running = False
             self.run_state_changed.emit(False)
             self.status_update.emit("Done.")
@@ -822,10 +937,6 @@ class WorkflowCanvas(QGraphicsView):
                 if mid == model_id:
                     return provider
         return None
-
-    # ------------------------------------------------------------------
-    # Clear
-    # ------------------------------------------------------------------
 
     def clear_canvas(self):
         self.stop_all()
@@ -839,10 +950,6 @@ class WorkflowCanvas(QGraphicsView):
         self._start_node = self._add_start_node()
         self._undo_stack.clear()
         self._title_committed.clear()
-
-    # ------------------------------------------------------------------
-    # Save / Load
-    # ------------------------------------------------------------------
 
     def get_workflow_data(self) -> dict:
         sp = self._start_node.pos()
@@ -861,11 +968,20 @@ class WorkflowCanvas(QGraphicsView):
             self._start_node.setPos(sp[0], sp[1])
         for b_data in data.get("bubbles", []):
             idx = b_data.get("label_index", 1)
-            node = BubbleNode(bubble_id=b_data.get("id"), label_index=idx)
-            node.from_dict(b_data)
-            self._scene.addItem(node)
-            self._bubbles[node.bubble_id] = node
-            self._connect_node_signals(node)
+            node_type = b_data.get("node_type", "bubble")
+            node: GraphNode
+            if node_type in NODE_TYPE_MAP:
+                node = NODE_TYPE_MAP[node_type](bubble_id=b_data.get("id"), label_index=idx)
+                node.from_dict(b_data)
+                self._scene.addItem(node)
+                self._bubbles[node.bubble_id] = node
+                self._connect_file_op_signals(node)
+            else:
+                node = BubbleNode(bubble_id=b_data.get("id"), label_index=idx)
+                node.from_dict(b_data)
+                self._scene.addItem(node)
+                self._bubbles[node.bubble_id] = node
+                self._connect_node_signals(node)
 
         for c_data in data.get("connections", []):
             if c_data.get("to") == "start":

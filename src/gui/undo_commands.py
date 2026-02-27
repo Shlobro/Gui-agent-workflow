@@ -8,20 +8,32 @@ from uuid import uuid4
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QUndoCommand
 
+from .file_op_node import NODE_TYPE_DISPLAY_NAMES
+
 if TYPE_CHECKING:
     from .canvas import WorkflowCanvas
-    from .bubble_node import BubbleNode
-    from .connection_item import ConnectionItem
+    from .bubble_node import BubbleNode, StartNode
+    from .file_op_node import FileOpNode
 
 # Command IDs for merge support
 _MOVE_CMD_ID = 1001
 
 
+def _command_node_label(snapshot: dict) -> str:
+    """Return a human-readable node label for undo/redo command text."""
+    node_type = snapshot.get("node_type", "bubble")
+    if node_type == "bubble":
+        base = "Bubble"
+    else:
+        base = NODE_TYPE_DISPLAY_NAMES.get(str(node_type), str(node_type).replace("_", " ").title())
+    return f"{base} Node"
+
+
 class AddBubbleCommand(QUndoCommand):
-    """Push when a new BubbleNode is created."""
+    """Push when a new workflow node is created."""
 
     def __init__(self, canvas: "WorkflowCanvas", snapshot: dict, label_index: int):
-        super().__init__("Add Bubble")
+        super().__init__(f"Add {_command_node_label(snapshot)}")
         self._canvas = canvas
         self._snapshot = snapshot
         self._label_index = label_index
@@ -34,12 +46,12 @@ class AddBubbleCommand(QUndoCommand):
 
 
 class RemoveBubbleCommand(QUndoCommand):
-    """Push when a BubbleNode is about to be deleted."""
+    """Push when a workflow node is about to be deleted."""
 
-    def __init__(self, canvas: "WorkflowCanvas", node: "BubbleNode"):
-        super().__init__("Delete Bubble")
+    def __init__(self, canvas: "WorkflowCanvas", node: "BubbleNode | FileOpNode"):
         self._canvas = canvas
         self._snapshot = node.to_dict()
+        super().__init__(f"Delete {_command_node_label(self._snapshot)}")
         self._label_index = node.label_index
         # Capture connected edges before node is removed
         self._conn_snapshots: List[dict] = [
@@ -144,7 +156,7 @@ class MoveBubbleCommand(QUndoCommand):
         self._new_pos = QPointF(other._new_pos)
         return True
 
-    def _node(self) -> Optional["BubbleNode"]:
+    def _node(self) -> Optional["StartNode | BubbleNode | FileOpNode"]:
         if self._is_start:
             return self._canvas._start_node
         return self._canvas._bubbles.get(self._bubble_id)
@@ -165,13 +177,15 @@ class TitleChangeCommand(QUndoCommand):
 
     def __init__(self, canvas: "WorkflowCanvas", bubble_id: str,
                  old_title: str, new_title: str):
-        super().__init__("Rename Bubble")
+        node = canvas._bubbles.get(bubble_id)
+        snapshot = node.to_dict() if node is not None else {"node_type": "bubble"}
+        super().__init__(f"Rename {_command_node_label(snapshot)}")
         self._canvas = canvas
         self._bubble_id = bubble_id
         self._old_title = old_title
         self._new_title = new_title
 
-    def _node(self) -> Optional["BubbleNode"]:
+    def _node(self) -> Optional["BubbleNode | FileOpNode"]:
         return self._canvas._bubbles.get(self._bubble_id)
 
     def redo(self):
@@ -203,7 +217,9 @@ class ModelChangeCommand(QUndoCommand):
         self._new_model_id = new_model_id
 
     def _node(self) -> Optional["BubbleNode"]:
-        return self._canvas._bubbles.get(self._bubble_id)
+        from .bubble_node import BubbleNode
+        node = self._canvas._bubbles.get(self._bubble_id)
+        return node if isinstance(node, BubbleNode) else None
 
     def redo(self):
         node = self._node()

@@ -1,8 +1,8 @@
-"""ConnectionItem — a directed arrow between two BubbleNodes."""
+"""ConnectionItem — a directed arrow between workflow nodes."""
 
 import heapq
 import math
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
@@ -17,6 +17,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QGraphicsPathItem
 
 from .bubble_node import BubbleNode, StartNode, PORT_RADIUS
+from .file_op_node import FileOpNode
 
 ARROW_SIZE = 10
 VISUAL_STROKE_WIDTH = 2
@@ -30,12 +31,14 @@ MAX_GRID_DIMENSION = 180
 ROUTE_PADDING = 120.0
 CORRIDOR_MARGIN = 260.0
 GridCell = Tuple[int, int]
+GraphNode = Union[BubbleNode, FileOpNode]
+SourceNode = Union[StartNode, GraphNode]
 
 
 class ConnectionItem(QGraphicsPathItem):
     """Obstacle-aware routed arrow from source output port to target input port."""
 
-    def __init__(self, source: BubbleNode, target: BubbleNode):
+    def __init__(self, source: SourceNode, target: GraphNode):
         super().__init__()
         self.source_bubble = source
         self.target_bubble = target
@@ -86,7 +89,7 @@ class ConnectionItem(QGraphicsPathItem):
 
         obstacles: List[QRectF] = []
         for item in scene.items():
-            if not isinstance(item, (BubbleNode, StartNode)):
+            if not isinstance(item, (BubbleNode, StartNode, FileOpNode)):
                 continue
             rect = item.mapRectToScene(item.boundingRect())
             if rect.isNull():
@@ -218,9 +221,9 @@ class ConnectionItem(QGraphicsPathItem):
             return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
         open_heap = [(heuristic(start, goal), 0, start)]
-        came_from = {}
-        g_score = {start: 0}
-        closed = set()
+        came_from: dict[GridCell, GridCell] = {}
+        g_score: dict[GridCell, int] = {start: 0}
+        closed: set[GridCell] = set()
         serial = 0
         directions = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
