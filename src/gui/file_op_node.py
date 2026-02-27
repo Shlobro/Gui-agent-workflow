@@ -95,6 +95,8 @@ class FileOpWidget(QWidget):
         layout.setSpacing(5)
 
         # Title (node name, editable)
+        name_label = QLabel("Name")
+        layout.addWidget(name_label)
         self.title_edit = QLineEdit(op_label)
         self.title_edit.setPlaceholderText("Node name…")
         layout.addWidget(self.title_edit)
@@ -155,10 +157,10 @@ class FileOpNode(QGraphicsItem):
         self._widget.title_edit.setText(f"{op_label} {label_index}")
         self._proxy = QGraphicsProxyWidget(self)
         self._proxy.setWidget(self._widget)
-        self._proxy.setPos(0, 0)
+        self._proxy.setPos(0, 28)  # below the painted header strip
 
         self._widget.adjustSize()
-        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + 20)
+        self._height = max(NODE_HEIGHT, self._widget.sizeHint().height() + 28 + 8)
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -211,7 +213,7 @@ class FileOpNode(QGraphicsItem):
         self._update_height()
 
     def _update_height(self):
-        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + 20)
+        new_h = max(NODE_HEIGHT, self._widget.sizeHint().height() + 28 + 8)
         if new_h != self._height:
             self.prepareGeometryChange()
             self._height = new_h
@@ -326,21 +328,23 @@ class FileOpNode(QGraphicsItem):
         path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, self._height), CORNER_RADIUS, CORNER_RADIUS)
         painter.fillPath(path, QBrush(QColor("#252525")))
 
-        # Accent header strip
+        # Accent header strip — rounded top corners, flat bottom edge.
+        # Use a clip rect so the rounded rect's bottom corners are cut off cleanly
+        # without any colour bleed below the strip.
         accent = _OP_ACCENT.get(self.node_type, QColor("#444444"))
+        painter.save()
+        painter.setClipRect(QRectF(0, 0, NODE_WIDTH, 28))
         header_path = QPainterPath()
-        header_rect = QRectF(0, 0, NODE_WIDTH, 24)
-        header_path.addRoundedRect(header_rect, CORNER_RADIUS, CORNER_RADIUS)
-        # Square off the bottom corners of the header
-        header_path.addRect(QRectF(0, 12, NODE_WIDTH, 12))
+        header_path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, 28), CORNER_RADIUS, CORNER_RADIUS)
         painter.fillPath(header_path, QBrush(accent))
+        painter.restore()
 
         # Op type label in header
         font = QFont("Segoe UI", 8, QFont.Weight.Bold)
         painter.setFont(font)
         painter.setPen(QColor("#dddddd"))
         painter.drawText(
-            QRectF(8, 0, NODE_WIDTH - 16, 24),
+            QRectF(8, 0, NODE_WIDTH - 16, 28),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op").upper(),
         )
