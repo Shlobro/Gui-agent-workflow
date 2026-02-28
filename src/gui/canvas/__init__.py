@@ -17,11 +17,12 @@ from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import FileOpNode
 from src.gui.conditional_node import ConditionalNode
+from src.gui.loop_node import LoopNode
 from src.gui.undo_commands import (
     AddNodeCommand, RemoveNodeCommand,
     AddConnectionCommand, RemoveConnectionCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand,
-    FileOpTypeChangeCommand, ConditionTypeChangeCommand,
+    FileOpTypeChangeCommand, ConditionTypeChangeCommand, LoopCountChangeCommand,
 )
 from src.gui.workflow_io import get_provider_for_model
 from src.gui.canvas.execution import _ExecutionMixin
@@ -71,12 +72,14 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         self._no_fanout: bool = False
         self._active_workers: Dict[int, Optional[LLMWorker]] = {}
         self._exec_node: Dict[int, str] = {}
+        self._exec_lineage: Dict[int, str] = {}
         self._retired_exec_ids: set = set()
         self._current_run_exec_ids: set = set()
         self._pending_child_triggers: int = 0
         self._seeding_roots: bool = False
         self._exec_counter: int = 0
         self._run_id: int = 0
+        self._loop_counters: Dict[tuple, int] = {}
         self._exec_signals = _ExecutionSignals()
         self._exec_signals.status_update.connect(self.status_update)
 
@@ -218,6 +221,27 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             raise RuntimeError("Expected a FileOpNode after add command.")
         return node
 
+    def add_loop_node(self) -> LoopNode:
+        """Add a loop node that fires its loop port N times, then its done port once."""
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "loop",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 40,
+            "name": f"Loop {label_index}",
+            "loop_count": 3,
+        }
+        cmd = AddNodeCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, LoopNode):
+            raise RuntimeError("Expected a LoopNode after add command.")
+        return node
+
     def add_conditional_node(self) -> ConditionalNode:
         """Add a conditional routing node (defaults to 'file_empty'; type is editable in the panel)."""
         self._node_counter += 1
@@ -280,6 +304,16 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             return
         self._undo_stack.push(ModelChangeCommand(self, node_id, old_model_id, new_model_id))
 
+    def _on_loop_count_changed(self, node_id: str, old_count: int, new_count: int):
+        if self._undo_in_progress:
+            return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_count == new_count:
+            return
+        self._undo_stack.push(LoopCountChangeCommand(self, node_id, old_count, new_count))
+
     def _on_condition_type_changed(self, node_id: str, old_type: str, new_type: str):
         if self._undo_in_progress:
             return
@@ -318,6 +352,13 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
                         return
                     if node.is_near_false_port(scene_pos):
                         self._start_connection(node, scene_pos, port="false")
+                        return
+                elif isinstance(node, LoopNode):
+                    if node.is_near_loop_port(scene_pos):
+                        self._start_connection(node, scene_pos, port="loop")
+                        return
+                    if node.is_near_done_port(scene_pos):
+                        self._start_connection(node, scene_pos, port="done")
                         return
                 elif node.is_near_output_port(scene_pos):
                     self._start_connection(node, scene_pos)
@@ -446,7 +487,8 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
 
         src_label = getattr(source, "title", "Start")
         tgt_label = getattr(target_node, "title", "Start")
-        if self._would_create_cycle(source, target_node):
+        is_loop_back = isinstance(source, LoopNode) and source_port == "loop"
+        if self._would_create_cycle(source, target_node) and not is_loop_back:
             reply = QMessageBox.warning(
                 self, "Cycle Warning",
                 f'Connecting "{src_label}" \u2192 "{tgt_label}" would create a cycle.\n\n'
@@ -457,7 +499,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        elif self._source_port_has_outgoing(source, source_port):
+        elif self._source_port_has_outgoing(source, source_port) and not is_loop_back:
             reply = QMessageBox.information(
                 self, "Parallel Fan-Out",
                 f'"{src_label}" already has an outgoing connection.\n\n'

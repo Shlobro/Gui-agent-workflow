@@ -79,6 +79,15 @@ def parse_workflow_data(data: dict) -> dict:
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
                 )
 
+        # For loop nodes, validate loop_count is a positive integer.
+        if node_type == "loop":
+            lc = b_data.get("loop_count", 3)
+            if not isinstance(lc, int) or isinstance(lc, bool) or lc < 1 or lc > 9999:
+                raise ValueError(
+                    f"Node record at index {idx_in_list} has invalid loop_count "
+                    f"'{lc}' (must be an integer 1–9999)."
+                )
+
         # For conditional nodes, validate condition_type is a known registry entry.
         if node_type == "conditional":
             ct = b_data.get("condition_type", "")
@@ -138,9 +147,12 @@ def parse_workflow_data(data: dict) -> dict:
         if src_node_type == "conditional":
             if source_port not in ("true", "false"):
                 continue  # invalid port for ConditionalNode; drop
+        elif src_node_type == "loop":
+            if source_port not in ("loop", "done"):
+                continue  # invalid port for LoopNode; drop
         else:
             if source_port != "output":
-                continue  # non-conditional nodes only have "output" port; drop
+                continue  # other nodes only have "output" port; drop
         if source_port != "output":
             conn_record["source_port"] = source_port
         normalized_connections.append(conn_record)

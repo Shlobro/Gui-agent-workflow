@@ -331,6 +331,45 @@ class ConditionTypeChangeCommand(QUndoCommand):
             self._canvas.notify_node_changed(self._node_id)
 
 
+class LoopCountChangeCommand(QUndoCommand):
+    """Push when the user changes the loop iteration count of a LoopNode."""
+
+    def __init__(self, canvas: "WorkflowCanvas", node_id: str,
+                 old_count: int, new_count: int):
+        super().__init__("Change Loop Count")
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_count = old_count
+        self._new_count = new_count
+
+    def _node(self):
+        from .loop_node import LoopNode
+        node = self._canvas._nodes.get(self._node_id)
+        return node if isinstance(node, LoopNode) else None
+
+    def redo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.loop_count = self._new_count
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+    def undo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.loop_count = self._old_count
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+
 class PasteCommand(QUndoCommand):
     """Push when clipboard nodes are pasted."""
 

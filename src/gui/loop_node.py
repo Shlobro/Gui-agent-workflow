@@ -1,4 +1,4 @@
-"""FileOpNode — file-operation nodes (create, truncate, delete) for the workflow canvas."""
+"""LoopNode — fires its loop port N times then fires its done port once."""
 
 import math as _math
 from typing import Optional
@@ -19,46 +19,40 @@ from .llm_node import (
     STATUS_COLORS,
     PORT_RADIUS,
     INPUT_PORT_EDGE_COLOR, INPUT_PORT_FILL_COLOR, INPUT_PORT_LABEL_COLOR,
-    OUTPUT_PORT_EDGE_COLOR, OUTPUT_PORT_FILL_COLOR, OUTPUT_PORT_LABEL_COLOR,
+    CORNER_RADIUS,
 )
 from .llm_widget import NODE_WIDTH
 
-# Accent color per operation type (header strip)
-_OP_ACCENT = {
-    "create_file":   QColor("#2a7a2a"),
-    "truncate_file": QColor("#7a6a1a"),
-    "delete_file":   QColor("#7a2a2a"),
-}
+# Port colors for loop/done output ports
+_LOOP_PORT_EDGE_COLOR = QColor("#3a8ef5")
+_LOOP_PORT_FILL_COLOR = QColor("#0f1a30")
+_DONE_PORT_EDGE_COLOR = QColor("#3aaa5a")
+_DONE_PORT_FILL_COLOR = QColor("#0f3020")
 
-NODE_TYPE_DISPLAY_NAMES = {
-    "create_file":   "Create File",
-    "truncate_file": "Truncate File",
-    "delete_file":   "Delete File",
-}
-
-CORNER_RADIUS = 12
+# Header colors
+_HEADER_COLOR = QColor("#1a3a5a")
+_HEADER_TEXT_COLOR = QColor("#60c0ff")
 _HEADER_HEIGHT = 28
 
-# Compact node height (header + title row + padding)
-_COMPACT_FILE_NODE_HEIGHT = 64
+# Taller than compact LLM nodes to fit two labeled ports
+_LOOP_NODE_HEIGHT = 80
 
 
 # ---------------------------------------------------------------------------
-# Base graphics item
+# LoopNode
 # ---------------------------------------------------------------------------
 
-class FileOpNode(WorkflowNode):
-    """A file-operation node whose operation type is a mutable instance attribute."""
+class LoopNode(WorkflowNode):
+    """A node that fires its loop port N times then fires its done port once."""
 
-    def __init__(self, node_id: Optional[str] = None, label_index: int = 1,
-                 node_type: str = "create_file"):
+    node_type = "loop"  # class-level constant for serialization
+
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
         super().__init__(node_id=node_id, label_index=label_index)
 
-        self.node_type: str = node_type
-        op_label = NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op")
-        self._title: str = f"{op_label} {label_index}"
-        self._filename: str = ""
-        self._height = _COMPACT_FILE_NODE_HEIGHT
+        self._title: str = f"Loop {label_index}"
+        self.loop_count: int = 3
+        self._height = _LOOP_NODE_HEIGHT
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -73,16 +67,7 @@ class FileOpNode(WorkflowNode):
         self._title = value
         self.update()
 
-    @property
-    def filename(self) -> str:
-        return self._filename
-
-    @filename.setter
-    def filename(self, value: str):
-        self._filename = value
-
-    # Compatibility shims so canvas code that reads model_id / prompt_text
-    # on all nodes doesn't crash (FileOpNode skips LLM validation instead).
+    # Compatibility shims — LoopNode is not an LLM node
     @property
     def model_id(self) -> Optional[str]:
         return None
@@ -95,32 +80,74 @@ class FileOpNode(WorkflowNode):
     # Status / output
     # ------------------------------------------------------------------
 
-    def set_status(self, status: str):
+    def set_status(self, status: str) -> None:
         self.status = status
         self.update()
 
-    def append_output(self, line: str):
+    def append_output(self, line: str) -> None:
         self.output_text += line + "\n"
 
-    def clear_output(self):
+    def clear_output(self) -> None:
         self.output_text = ""
 
     # ------------------------------------------------------------------
-    # Port positions
+    # Port positions — two output ports on the right edge
     # ------------------------------------------------------------------
 
     def output_port_scene_pos(self, port: str = "output") -> QPointF:
-        return self.mapToScene(QPointF(NODE_WIDTH, self._height / 2))
+        """Return scene position of the named output port.
+
+        port="loop" → upper-right at 33% height
+        port="done" → lower-right at 67% height
+        port="output" → defaults to loop port position
+        """
+        if port == "done":
+            y = self._height * 0.67
+        else:
+            y = self._height * 0.33  # loop port (default)
+        return self.mapToScene(QPointF(NODE_WIDTH, y))
+
+    def loop_port_scene_pos(self) -> QPointF:
+        return self.output_port_scene_pos("loop")
+
+    def done_port_scene_pos(self) -> QPointF:
+        return self.output_port_scene_pos("done")
 
     def input_port_scene_pos(self) -> QPointF:
         return self.mapToScene(QPointF(0, self._height / 2))
+
+    # ------------------------------------------------------------------
+    # Port proximity helpers — separate methods for each output port
+    # ------------------------------------------------------------------
+
+    def is_near_loop_port(self, scene_pos: QPointF) -> bool:
+        return (scene_pos - self.loop_port_scene_pos()).manhattanLength() < PORT_RADIUS * 3
+
+    def is_near_done_port(self, scene_pos: QPointF) -> bool:
+        return (scene_pos - self.done_port_scene_pos()).manhattanLength() < PORT_RADIUS * 3
+
+    def is_near_output_port(self, scene_pos: QPointF) -> bool:
+        """Returns True if near either output port (for generic node scanning)."""
+        return self.is_near_loop_port(scene_pos) or self.is_near_done_port(scene_pos)
+
+    def _has_loop_connection(self) -> bool:
+        return any(
+            conn.source_node is self and getattr(conn, "source_port", "output") == "loop"
+            for conn in self._connections
+        )
+
+    def _has_done_connection(self) -> bool:
+        return any(
+            conn.source_node is self and getattr(conn, "source_port", "output") == "done"
+            for conn in self._connections
+        )
 
     # ------------------------------------------------------------------
     # Paint
     # ------------------------------------------------------------------
 
     def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath):
-        phase = (id(self) * 0.001) % 1.0   # static stand-in; canvas drives repaints via set_status
+        phase = (id(self) * 0.001) % 1.0
         cx = NODE_WIDTH / 2
         cy = self._height / 2
         pulse = 0.55 + 0.45 * _math.sin(phase * 2 * _math.pi)
@@ -133,52 +160,48 @@ class FileOpNode(WorkflowNode):
         painter.drawPath(halo_path)
         angle_deg = phase * 360.0
         grad = QConicalGradient(cx, cy, angle_deg)
-        grad.setColorAt(0.00, QColor(120, 200, 255, 240))
+        grad.setColorAt(0.00, QColor(96, 192, 255, 240))
         grad.setColorAt(0.25, QColor(30, 80, 160, 60))
-        grad.setColorAt(1.00, QColor(120, 200, 255, 240))
+        grad.setColorAt(1.00, QColor(96, 192, 255, 240))
         sweep_pen = QPen(QBrush(grad), 3)
         sweep_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(sweep_pen)
         painter.drawPath(border_path)
-        base_pen = QPen(QColor(58, 142, 245, 140), 1.2)
-        base_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(base_pen)
-        painter.drawPath(border_path)
 
-    def paint(self, painter: QPainter, option, widget=None):
+    def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         path = QPainterPath()
         path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, self._height), CORNER_RADIUS, CORNER_RADIUS)
         painter.fillPath(path, QBrush(QColor("#252525")))
 
-        # Accent header strip — rounded top corners, flat bottom edge.
-        accent = _OP_ACCENT.get(self.node_type, QColor("#444444"))
+        # Header strip
         painter.save()
         painter.setClipRect(QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT))
         header_path = QPainterPath()
         header_path.addRoundedRect(
             QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT), CORNER_RADIUS, CORNER_RADIUS
         )
-        painter.fillPath(header_path, QBrush(accent))
+        painter.fillPath(header_path, QBrush(_HEADER_COLOR))
         painter.restore()
 
-        # Op type label in header
         font = QFont("Segoe UI", 8, QFont.Weight.Bold)
         painter.setFont(font)
-        painter.setPen(QColor("#dddddd"))
+        painter.setPen(_HEADER_TEXT_COLOR)
         painter.drawText(
             QRectF(8, 0, NODE_WIDTH - 16, _HEADER_HEIGHT),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op").upper(),
+            f"LOOP  ×{self.loop_count}",
         )
 
-        # Title in body below header
+        # Title in body area
         title_font = QFont("Segoe UI", 10)
         painter.setFont(title_font)
         painter.setPen(QColor("#c0c0c0"))
+        body_y = _HEADER_HEIGHT + 2
+        body_h = self._height - _HEADER_HEIGHT - 4
         painter.drawText(
-            QRectF(12, _HEADER_HEIGHT + 2, NODE_WIDTH - 24, self._height - _HEADER_HEIGHT - 4),
+            QRectF(12, body_y, NODE_WIDTH - 40, body_h),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             self._title,
         )
@@ -187,11 +210,11 @@ class FileOpNode(WorkflowNode):
             glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
             glow_path = QPainterPath()
             glow_path.addRoundedRect(glow_rect, CORNER_RADIUS + 2.5, CORNER_RADIUS + 2.5)
-            outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
+            outer_glow_pen = QPen(QColor(58, 142, 245, 90), 8)
             outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(outer_glow_pen)
             painter.drawPath(glow_path)
-            inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
+            inner_glow_pen = QPen(QColor(96, 192, 255, 220), 3)
             inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(inner_glow_pen)
             painter.drawPath(glow_path)
@@ -205,25 +228,63 @@ class FileOpNode(WorkflowNode):
             painter.setPen(border_pen)
             painter.drawPath(path)
 
-        port_center_y = self._height / 2
-
-        painter.setPen(QPen(OUTPUT_PORT_EDGE_COLOR, 1.4))
-        painter.setBrush(QBrush(OUTPUT_PORT_FILL_COLOR))
-        painter.drawEllipse(QPointF(NODE_WIDTH, port_center_y), PORT_RADIUS, PORT_RADIUS)
-
+        # Input port (left center)
+        in_y = self._height / 2
         painter.setPen(QPen(INPUT_PORT_EDGE_COLOR, 1.4))
         painter.setBrush(QBrush(INPUT_PORT_FILL_COLOR))
-        painter.drawEllipse(QPointF(0, port_center_y), PORT_RADIUS, PORT_RADIUS)
-
+        painter.drawEllipse(QPointF(0, in_y), PORT_RADIUS, PORT_RADIUS)
         if not self._has_input_connection():
             self._draw_port_direction_arrow(
-                painter, start_x=-6.0, tip_x=6.0, y=port_center_y,
+                painter, start_x=-6.0, tip_x=6.0, y=in_y,
                 color=INPUT_PORT_LABEL_COLOR,
             )
-        if not self._has_output_connection():
+
+        # Loop port (upper right, ~33%)
+        loop_y = self._height * 0.33
+        painter.setPen(QPen(_LOOP_PORT_EDGE_COLOR, 1.4))
+        painter.setBrush(QBrush(_LOOP_PORT_FILL_COLOR))
+        painter.drawEllipse(QPointF(NODE_WIDTH, loop_y), PORT_RADIUS, PORT_RADIUS)
+
+        # "↺" label next to loop port
+        small_font = QFont("Segoe UI", 7, QFont.Weight.Bold)
+        painter.setFont(small_font)
+        painter.setPen(_LOOP_PORT_EDGE_COLOR)
+        painter.drawText(
+            QRectF(NODE_WIDTH - 22, loop_y - 8, 16, 16),
+            Qt.AlignmentFlag.AlignCenter,
+            "\u21ba",
+        )
+
+        if not self._has_loop_connection():
             self._draw_port_direction_arrow(
-                painter, start_x=NODE_WIDTH - 6.0, tip_x=NODE_WIDTH + 6.0,
-                y=port_center_y, color=OUTPUT_PORT_LABEL_COLOR,
+                painter,
+                start_x=NODE_WIDTH - 6.0,
+                tip_x=NODE_WIDTH + 6.0,
+                y=loop_y,
+                color=_LOOP_PORT_EDGE_COLOR,
+            )
+
+        # Done port (lower right, ~67%)
+        done_y = self._height * 0.67
+        painter.setPen(QPen(_DONE_PORT_EDGE_COLOR, 1.4))
+        painter.setBrush(QBrush(_DONE_PORT_FILL_COLOR))
+        painter.drawEllipse(QPointF(NODE_WIDTH, done_y), PORT_RADIUS, PORT_RADIUS)
+
+        # "✓" label next to done port
+        painter.setPen(_DONE_PORT_EDGE_COLOR)
+        painter.drawText(
+            QRectF(NODE_WIDTH - 22, done_y - 8, 16, 16),
+            Qt.AlignmentFlag.AlignCenter,
+            "\u2713",
+        )
+
+        if not self._has_done_connection():
+            self._draw_port_direction_arrow(
+                painter,
+                start_x=NODE_WIDTH - 6.0,
+                tip_x=NODE_WIDTH + 6.0,
+                y=done_y,
+                color=_DONE_PORT_EDGE_COLOR,
             )
 
     # ------------------------------------------------------------------
@@ -239,53 +300,21 @@ class FileOpNode(WorkflowNode):
             "x": pos.x(),
             "y": pos.y(),
             "name": self._title,
-            "filename": self._filename,
+            "loop_count": self.loop_count,
         }
 
-    def from_dict(self, data: dict):
+    def from_dict(self, data: dict) -> None:
         self.node_id = data.get("id", self.node_id)
         self.label_index = data.get("label_index", self.label_index)
         self.setPos(data.get("x", 0), data.get("y", 0))
         self._title = data.get("name", self._title)
-        self._filename = data.get("filename", "")
-        if "node_type" in data:
-            self.node_type = data["node_type"]
+        raw_count = data.get("loop_count", 3)
+        self.loop_count = min(9999, max(1, int(raw_count))) if isinstance(raw_count, (int, float)) and not isinstance(raw_count, bool) else 3
 
 
 # ---------------------------------------------------------------------------
-# Backward-compat aliases (load/paste still reference these names)
+# Factory function for NODE_TYPE_MAP
 # ---------------------------------------------------------------------------
 
-def CreateFileNode(node_id=None, label_index=1):
-    return FileOpNode(node_id=node_id, label_index=label_index, node_type="create_file")
-
-
-def TruncateFileNode(node_id=None, label_index=1):
-    return FileOpNode(node_id=node_id, label_index=label_index, node_type="truncate_file")
-
-
-def DeleteFileNode(node_id=None, label_index=1):
-    return FileOpNode(node_id=node_id, label_index=label_index, node_type="delete_file")
-
-
-# ---------------------------------------------------------------------------
-# Lookup map used by canvas load/paste
-# ---------------------------------------------------------------------------
-
-def _conditional_factory(node_id=None, label_index=1):
-    from .conditional_node import ConditionalNode
-    return ConditionalNode(node_id=node_id, label_index=label_index)
-
-
-def _loop_factory(node_id=None, label_index=1):
-    from .loop_node import LoopNode
+def LoopNodeFactory(node_id=None, label_index=1):
     return LoopNode(node_id=node_id, label_index=label_index)
-
-
-NODE_TYPE_MAP = {
-    "create_file":   CreateFileNode,
-    "truncate_file": TruncateFileNode,
-    "delete_file":   DeleteFileNode,
-    "conditional":   _conditional_factory,
-    "loop":          _loop_factory,
-}

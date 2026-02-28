@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -330,6 +331,82 @@ class _ConditionalForm(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# Loop form
+# ---------------------------------------------------------------------------
+
+class _LoopForm(QWidget):
+    """Form widget for editing a LoopNode's properties."""
+
+    # Emitted when the user changes the loop count (old_count, new_count).
+    loop_count_changed = Signal(int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(6)
+
+        type_label = QLabel("LOOP")
+        type_label.setObjectName("section_label")
+        layout.addWidget(type_label)
+
+        layout.addSpacing(4)
+
+        name_label = QLabel("Name")
+        layout.addWidget(name_label)
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Node name…")
+        layout.addWidget(self.title_edit)
+
+        layout.addSpacing(4)
+
+        count_label = QLabel("Iterations (N)")
+        layout.addWidget(count_label)
+        self.count_spin = QSpinBox()
+        self.count_spin.setMinimum(1)
+        self.count_spin.setMaximum(9999)
+        self.count_spin.setValue(3)
+        layout.addWidget(self.count_spin)
+
+        layout.addSpacing(4)
+
+        self._output_frame = QFrame()
+        self._output_frame.setVisible(False)
+        out_layout = QVBoxLayout(self._output_frame)
+        out_layout.setContentsMargins(0, 0, 0, 0)
+        out_layout.setSpacing(4)
+        self.output_label = QLabel("Output")
+        out_layout.addWidget(self.output_label)
+        self.output_edit = QPlainTextEdit()
+        self.output_edit.setReadOnly(True)
+        self.output_edit.setMinimumHeight(60)
+        out_layout.addWidget(self.output_edit)
+        layout.addWidget(self._output_frame)
+
+        layout.addStretch(1)
+
+        self._current_count: int = 3
+        self.count_spin.valueChanged.connect(self._on_count_changed)
+
+    def _on_count_changed(self, value: int):
+        if value != self._current_count:
+            old = self._current_count
+            self._current_count = value
+            self.loop_count_changed.emit(old, value)
+
+    def set_loop_count(self, count: int):
+        """Set spinbox value without emitting loop_count_changed."""
+        self.count_spin.blockSignals(True)
+        self.count_spin.setValue(count)
+        self._current_count = self.count_spin.value()  # track clamped value
+        self.count_spin.blockSignals(False)
+
+    def show_output(self, visible: bool):
+        self._output_frame.setVisible(visible)
+
+
+# ---------------------------------------------------------------------------
 # PropertiesPanel
 # ---------------------------------------------------------------------------
 
@@ -343,6 +420,7 @@ class PropertiesPanel(QWidget):
     filename_committed = Signal(str, str)            # node_id, text
     op_type_changed = Signal(str, str, str)          # node_id, old_type, new_type
     condition_type_changed = Signal(str, str, str)   # node_id, old_type, new_type
+    loop_count_changed = Signal(str, int, int)       # node_id, old_count, new_count
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -399,6 +477,14 @@ class PropertiesPanel(QWidget):
         cond_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(cond_scroll)
 
+        # Page 4 — Loop form (inside a scroll area)
+        self._loop_form = _LoopForm()
+        loop_scroll = QScrollArea()
+        loop_scroll.setWidgetResizable(True)
+        loop_scroll.setWidget(self._loop_form)
+        loop_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._stack.addWidget(loop_scroll)
+
         self._wire_signals()
 
     # ------------------------------------------------------------------
@@ -425,6 +511,10 @@ class PropertiesPanel(QWidget):
         self._cond_form.filename_edit.textChanged.connect(self._on_cond_filename_changed)
         self._cond_form.filename_edit.installEventFilter(self)
         self._cond_form.condition_type_changed.connect(self._on_condition_type_changed)
+
+        # Loop form
+        self._loop_form.title_edit.editingFinished.connect(self._on_loop_title_committed)
+        self._loop_form.loop_count_changed.connect(self._on_loop_count_changed)
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
@@ -518,6 +608,19 @@ class PropertiesPanel(QWidget):
             return
         self.condition_type_changed.emit(self._current_node.node_id, old_type, new_type)
 
+    def _on_loop_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._loop_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_loop_count_changed(self, old_count: int, new_count: int):
+        if self._current_node is None:
+            return
+        self.loop_count_changed.emit(self._current_node.node_id, old_count, new_count)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -530,6 +633,7 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
+        from .loop_node import LoopNode
 
         self._is_committing = True
         try:
@@ -547,6 +651,8 @@ class PropertiesPanel(QWidget):
                 if self._cond_filename_dirty:
                     self._flush_cond_filename()
                 self._on_cond_title_committed()
+            elif isinstance(self._current_node, LoopNode):
+                self._on_loop_title_committed()
         finally:
             self._is_committing = False
 
@@ -555,6 +661,7 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
+        from .loop_node import LoopNode
 
         # Commit any pending edits for the previous node before switching.
         if self._current_node is not None and self._current_node is not node:
@@ -568,6 +675,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, ConditionalNode):
             self._load_cond_form(node)
             self._stack.setCurrentIndex(3)
+        elif isinstance(node, LoopNode):
+            self._load_loop_form(node)
+            self._stack.setCurrentIndex(4)
         elif isinstance(node, FileOpNode):
             self._load_file_form(node)
             self._stack.setCurrentIndex(2)
@@ -589,12 +699,16 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
+        from .loop_node import LoopNode
         if isinstance(node, LLMNode):
             self._llm_form.show_output(True)
             self._llm_form.output_edit.appendPlainText(line)
         elif isinstance(node, ConditionalNode):
             self._cond_form.show_output(True)
             self._cond_form.output_edit.appendPlainText(line)
+        elif isinstance(node, LoopNode):
+            self._loop_form.show_output(True)
+            self._loop_form.output_edit.appendPlainText(line)
         elif isinstance(node, FileOpNode):
             self._file_form.show_output(True)
             self._file_form.output_edit.appendPlainText(line)
@@ -606,12 +720,16 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
+        from .loop_node import LoopNode
         if isinstance(node, LLMNode):
             self._llm_form.output_edit.clear()
             self._llm_form.show_output(False)
         elif isinstance(node, ConditionalNode):
             self._cond_form.output_edit.clear()
             self._cond_form.show_output(False)
+        elif isinstance(node, LoopNode):
+            self._loop_form.output_edit.clear()
+            self._loop_form.show_output(False)
         elif isinstance(node, FileOpNode):
             self._file_form.output_edit.clear()
             self._file_form.show_output(False)
@@ -666,6 +784,24 @@ class PropertiesPanel(QWidget):
 
         self._old_title = node.title
         self._filename_dirty = False
+
+    def _load_loop_form(self, node) -> None:
+        form = self._loop_form
+        form.title_edit.blockSignals(True)
+
+        form.title_edit.setText(node.title)
+        form.set_loop_count(node.loop_count)
+
+        if node.output_text:
+            form.show_output(True)
+            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+        else:
+            form.output_edit.clear()
+            form.show_output(False)
+
+        form.title_edit.blockSignals(False)
+
+        self._old_title = node.title
 
     def _load_cond_form(self, node) -> None:
         form = self._cond_form
