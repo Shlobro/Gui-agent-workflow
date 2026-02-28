@@ -6,6 +6,7 @@
 ## Contents
 - `simple_test.json`: baseline workflow fixture for quick load/run checks.
 - `making-truncating-deleting-files.json`: fixture covering create/truncate/delete file-op node flows mixed with LLM nodes.
+- `simple-review-loop.json`: automated review loop fixture that writes `review.txt`/`fixes-made.txt`, condition-checks `review.txt`, and repeats until the review file is empty. The two review LLM stages are intentionally named by role (`Review recent changes (initial)` and `Review recent changes (post-fix)`) to keep node names unique.
 
 ## Usage Notes
 - Keep fixtures deterministic and focused on one scenario per file.

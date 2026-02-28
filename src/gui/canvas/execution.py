@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMessageBox
 
 from src.workers.llm_worker import LLMWorker
+from src.workers.git_worker import GitWorker
 from src.gui.file_op_node import FileOpNode
 from src.gui.conditional_node import ConditionalNode, CONDITION_REGISTRY
 from src.gui.llm_node import StartNode, WorkflowNode
@@ -155,6 +156,9 @@ class _ExecutionMixin:
 
     def _validate_nodes(self: "WorkflowCanvas", nodes: Sequence[GraphNode]) -> List[str]:
         from src.gui.loop_node import LoopNode
+        from src.gui.git_action_node import GitActionNode
+        valid_git_actions = {"git_add", "git_commit", "git_push"}
+        valid_msg_sources = {"static", "from_file"}
         errors = []
         for node in nodes:
             title = getattr(node, "title", node.node_id)
@@ -170,6 +174,22 @@ class _ExecutionMixin:
                     errors.append(f'\u2022 "{title}" has no filename set.')
             elif isinstance(node, LoopNode):
                 pass  # loop_count always valid (min 1, defaults to 3)
+            elif isinstance(node, GitActionNode):
+                if node.git_action not in valid_git_actions:
+                    errors.append(
+                        f'\u2022 "{title}" has unknown git action "{node.git_action}".'
+                    )
+                    continue
+                if node.msg_source not in valid_msg_sources:
+                    errors.append(
+                        f'\u2022 "{title}" has unknown message source "{node.msg_source}".'
+                    )
+                    continue
+                if node.git_action == "git_commit":
+                    if node.msg_source == "static" and not node.commit_msg.strip():
+                        errors.append(f'\u2022 "{title}" has no commit message set.')
+                    elif node.msg_source == "from_file" and not node.commit_msg_file.strip():
+                        errors.append(f'\u2022 "{title}" has no commit message file set.')
             else:
                 if not node.prompt_text.strip():
                     errors.append(f'\u2022 "{title}" has no prompt.')
@@ -239,6 +259,10 @@ class _ExecutionMixin:
             return
         if isinstance(node, FileOpNode):
             self._fire_file_op(node, exec_id, lineage_token, loop_token)
+            return
+        from src.gui.git_action_node import GitActionNode
+        if isinstance(node, GitActionNode):
+            self._fire_git_action(node, exec_id, lineage_token, loop_token)
             return
         model_id = node.model_id
         if not model_id:
@@ -438,6 +462,65 @@ class _ExecutionMixin:
             self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id,
                                      lineage_token=lineage_token, loop_token=loop_token)
 
+    def _fire_git_action(self: "WorkflowCanvas", node, exec_id: int,
+                         lineage_token: str = "", loop_token: str = ""):
+        run_id = self._run_id
+        cwd = self._working_directory or os.getcwd()
+        try:
+            action = node.git_action
+            if action == "git_add":
+                command = ["git", "add", "."]
+            elif action == "git_commit":
+                if node.msg_source == "from_file":
+                    msg_path = self._resolve_file_op_path(node.commit_msg_file)
+                    with open(msg_path, "r", encoding="utf-8") as fh:
+                        message = fh.read().strip()
+                else:
+                    message = node.commit_msg.strip()
+                if not message:
+                    raise ValueError("Commit message is empty.")
+                command = ["git", "commit", "-m", message]
+            elif action == "git_push":
+                command = ["git", "push"]
+            else:
+                raise ValueError(f"Unknown git action: {action}")
+        except Exception as exc:
+            self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id,
+                                     lineage_token=lineage_token, loop_token=loop_token)
+            return
+
+        worker = GitWorker(command=command, working_directory=cwd)
+        self._active_workers[exec_id] = worker
+
+        def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
+            if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
+                _n.append_output(line)
+                if self.on_output_line:
+                    self.on_output_line(_n, line)
+
+        def on_finished(full: str, _n=node, _e=exec_id, _r=run_id,
+                        _lt=lineage_token, _lp=loop_token, _action=action):
+            result = ""
+            if not full.strip():
+                if _action == "git_add":
+                    result = "git add: staged all changes."
+                elif _action == "git_commit":
+                    result = "git commit: committed successfully."
+                elif _action == "git_push":
+                    result = "git push: pushed successfully."
+            self._on_invocation_done(_n, _e, result, error=False, run_id=_r,
+                                     lineage_token=_lt, loop_token=_lp)
+
+        def on_error(msg: str, _n=node, _e=exec_id, _r=run_id,
+                     _lt=lineage_token, _lp=loop_token):
+            self._on_invocation_done(_n, _e, msg, error=True, run_id=_r,
+                                     lineage_token=_lt, loop_token=_lp)
+
+        worker.output_line.connect(on_output)
+        worker.finished.connect(on_finished)
+        worker.error.connect(on_error)
+        worker.start()
+
     def _queue_child_triggers(self: "WorkflowCanvas", node: GraphNode, run_id: int,
                               branch: str = "output", lineage_token: str = "",
                               loop_token: str = "") -> int:
@@ -519,6 +602,7 @@ class _ExecutionMixin:
                 self.on_output_line(node, msg)
             node.set_status("error")
         else:
+            from src.gui.git_action_node import GitActionNode
             if isinstance(node, FileOpNode):
                 node.clear_output()
                 if self.on_output_cleared:
@@ -526,6 +610,11 @@ class _ExecutionMixin:
                 node.append_output(result)
                 if self.on_output_line:
                     self.on_output_line(node, result)
+            elif isinstance(node, GitActionNode):
+                if result:
+                    node.append_output(result)
+                    if self.on_output_line:
+                        self.on_output_line(node, result)
             else:
                 node.output_text = result
             node.set_status("done")

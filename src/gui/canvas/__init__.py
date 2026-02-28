@@ -1,6 +1,6 @@
 """WorkflowCanvas — QGraphicsView with node graph interaction."""
 
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Protocol, Union
 from uuid import uuid4
 
 from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
 )
 
 from src.llm.base_provider import LLMProviderRegistry
-from src.workers.llm_worker import LLMWorker
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import FileOpNode
@@ -23,6 +22,7 @@ from src.gui.undo_commands import (
     AddConnectionCommand, RemoveConnectionCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand,
     FileOpTypeChangeCommand, ConditionTypeChangeCommand, LoopCountChangeCommand,
+    GitActionTypeChangeCommand,
 )
 from src.gui.workflow_io import get_provider_for_model
 from src.gui.canvas.execution import _ExecutionMixin
@@ -31,6 +31,11 @@ from src.gui.canvas.io import _IOMixin
 GraphNode = WorkflowNode
 SourceNode = Union[StartNode, WorkflowNode]
 PREFERRED_DEFAULT_LLM_MODEL_ID = "gemini-3-pro-preview"
+
+
+class _CancelableWorker(Protocol):
+    def cancel(self) -> None:
+        ...
 
 
 class _ExecutionSignals(QObject):
@@ -70,7 +75,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         # Execution state
         self._running = False
         self._no_fanout: bool = False
-        self._active_workers: Dict[int, Optional[LLMWorker]] = {}
+        self._active_workers: Dict[int, Optional[_CancelableWorker]] = {}
         self._exec_node: Dict[int, str] = {}
         self._exec_lineage: Dict[int, str] = {}
         self._retired_exec_ids: set = set()
@@ -242,6 +247,31 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             raise RuntimeError("Expected a LoopNode after add command.")
         return node
 
+    def add_git_action_node(self):
+        """Add a git action node (defaults to git_add; type is editable in the panel)."""
+        from src.gui.git_action_node import GitActionNode
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "git_action",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 32,
+            "name": f"Git Action {label_index}",
+            "git_action": "git_add",
+            "msg_source": "static",
+            "commit_msg": "",
+            "commit_msg_file": "",
+        }
+        cmd = AddNodeCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, GitActionNode):
+            raise RuntimeError("Expected a GitActionNode after add command.")
+        return node
+
     def add_conditional_node(self) -> ConditionalNode:
         """Add a conditional routing node (defaults to 'file_empty'; type is editable in the panel)."""
         self._node_counter += 1
@@ -333,6 +363,16 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         if old_type == new_type:
             return
         self._undo_stack.push(FileOpTypeChangeCommand(self, node_id, old_type, new_type))
+
+    def _on_git_action_changed(self, node_id: str, old_action: str, new_action: str):
+        if self._undo_in_progress:
+            return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_action == new_action:
+            return
+        self._undo_stack.push(GitActionTypeChangeCommand(self, node_id, old_action, new_action))
 
     # ------------------------------------------------------------------
     # Mouse interaction

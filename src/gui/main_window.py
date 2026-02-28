@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
+from .git_action_node import GitActionNode
 from .llm_node import LLMNode
 from .file_op_node import FileOpNode
 from .loop_node import LoopNode
@@ -51,6 +52,9 @@ class MainWindow(QMainWindow):
         self._panel.op_type_changed.connect(self._on_panel_op_type_changed)
         self._panel.condition_type_changed.connect(self._on_panel_condition_type_changed)
         self._panel.loop_count_changed.connect(self._on_panel_loop_count_changed)
+        self._panel.git_action_changed.connect(
+            lambda nid, old, new: self.canvas._on_git_action_changed(nid, old, new)
+        )
 
         # Wire canvas output callbacks → panel
         self.canvas.on_output_line = lambda node, line: self._panel.maybe_append_output(node, line)
@@ -158,6 +162,7 @@ class MainWindow(QMainWindow):
         act("＋ File Op", self.canvas.add_file_op_node, tip="Add a file operation node (set type in the panel)")
         act("＋ Conditional", self.canvas.add_conditional_node, tip="Add a conditional node that routes execution to true/false branches")
         act("＋ Loop", self.canvas.add_loop_node, tip="Add a loop node that repeats N times")
+        act("＋ Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
         tb.addSeparator()
         act("▶ Run All", self._run_all, shortcut="F5",
             tip="Run all nodes reachable from Start")
@@ -236,7 +241,8 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self):
         selected = [
             i for i in self.canvas._scene.selectedItems()
-            if isinstance(i, (LLMNode, FileOpNode, ConditionalNode, LoopNode)) and not getattr(i, 'is_start', False)
+            if isinstance(i, (LLMNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
+            and not getattr(i, 'is_start', False)
         ]
         if len(selected) == 1:
             self._panel.show_for_node(selected[0])

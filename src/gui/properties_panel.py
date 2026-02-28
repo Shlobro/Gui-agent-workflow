@@ -9,21 +9,20 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtWidgets import (
-    QComboBox,
-    QFrame,
-    QLabel,
-    QLineEdit,
-    QPlainTextEdit,
     QScrollArea,
     QSizePolicy,
-    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from .llm_widget import ModelSelector, populate_model_selector
-from .conditional_node import CONDITION_REGISTRY
+from ._panel_forms import (
+    _LLMForm,
+    _FileOpForm,
+    _ConditionalForm,
+    _LoopForm,
+    _GitActionForm,
+)
 
 PANEL_WIDTH = 360
 
@@ -85,328 +84,6 @@ _PANEL_STYLE = """
 
 
 # ---------------------------------------------------------------------------
-# LLM form
-# ---------------------------------------------------------------------------
-
-class _LLMForm(QWidget):
-    """Form widget for editing an LLMNode's properties."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(6)
-
-        type_label = QLabel("LLM CALL")
-        type_label.setObjectName("section_label")
-        layout.addWidget(type_label)
-
-        layout.addSpacing(4)
-
-        name_label = QLabel("Name")
-        layout.addWidget(name_label)
-        self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Node name…")
-        layout.addWidget(self.title_edit)
-
-        layout.addSpacing(4)
-
-        model_label = QLabel("Model")
-        layout.addWidget(model_label)
-        self.model_selector = ModelSelector(popup_parent=self)
-        populate_model_selector(self.model_selector)
-        layout.addWidget(self.model_selector)
-
-        layout.addSpacing(4)
-
-        prompt_label = QLabel("Prompt")
-        layout.addWidget(prompt_label)
-        self.prompt_edit = QPlainTextEdit()
-        self.prompt_edit.setPlaceholderText("Enter your prompt here…")
-        self.prompt_edit.setMinimumHeight(100)
-        self.prompt_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        layout.addWidget(self.prompt_edit, stretch=1)
-
-        layout.addSpacing(4)
-
-        self._output_frame = QFrame()
-        self._output_frame.setVisible(False)
-        out_layout = QVBoxLayout(self._output_frame)
-        out_layout.setContentsMargins(0, 0, 0, 0)
-        out_layout.setSpacing(4)
-        self.output_label = QLabel("Output")
-        out_layout.addWidget(self.output_label)
-        self.output_edit = QPlainTextEdit()
-        self.output_edit.setReadOnly(True)
-        self.output_edit.setMinimumHeight(80)
-        out_layout.addWidget(self.output_edit)
-        layout.addWidget(self._output_frame)
-
-    def show_output(self, visible: bool):
-        self._output_frame.setVisible(visible)
-
-
-# ---------------------------------------------------------------------------
-# FileOp form
-# ---------------------------------------------------------------------------
-
-_OP_TYPE_OPTIONS = [
-    ("create_file",   "Create File"),
-    ("truncate_file", "Truncate File"),
-    ("delete_file",   "Delete File"),
-]
-
-
-class _FileOpForm(QWidget):
-    """Form widget for editing a FileOpNode's properties."""
-
-    # Emitted when the user picks a different op type (old_type, new_type).
-    op_type_changed = Signal(str, str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(6)
-
-        type_label = QLabel("FILE OP")
-        type_label.setObjectName("section_label")
-        layout.addWidget(type_label)
-
-        layout.addSpacing(4)
-
-        op_label = QLabel("Operation")
-        layout.addWidget(op_label)
-        self.op_type_combo = QComboBox()
-        for key, display in _OP_TYPE_OPTIONS:
-            self.op_type_combo.addItem(display, userData=key)
-        layout.addWidget(self.op_type_combo)
-
-        layout.addSpacing(4)
-
-        name_label = QLabel("Name")
-        layout.addWidget(name_label)
-        self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Node name…")
-        layout.addWidget(self.title_edit)
-
-        layout.addSpacing(4)
-
-        fn_label = QLabel("Filename")
-        layout.addWidget(fn_label)
-        self.filename_edit = QLineEdit()
-        self.filename_edit.setPlaceholderText("e.g. output.txt")
-        layout.addWidget(self.filename_edit)
-
-        layout.addSpacing(4)
-
-        self._output_frame = QFrame()
-        self._output_frame.setVisible(False)
-        out_layout = QVBoxLayout(self._output_frame)
-        out_layout.setContentsMargins(0, 0, 0, 0)
-        out_layout.setSpacing(4)
-        self.output_label = QLabel("Result")
-        out_layout.addWidget(self.output_label)
-        self.output_edit = QPlainTextEdit()
-        self.output_edit.setReadOnly(True)
-        self.output_edit.setMinimumHeight(60)
-        out_layout.addWidget(self.output_edit)
-        layout.addWidget(self._output_frame)
-
-        layout.addStretch(1)
-
-        self._current_op_type: str = "create_file"
-        self.op_type_combo.currentIndexChanged.connect(self._on_op_type_index_changed)
-
-    def _on_op_type_index_changed(self, index: int):
-        new_type = self.op_type_combo.itemData(index)
-        if new_type and new_type != self._current_op_type:
-            old = self._current_op_type
-            self._current_op_type = new_type
-            self.op_type_changed.emit(old, new_type)
-
-    def set_op_type(self, node_type: str):
-        """Set combobox selection without emitting op_type_changed."""
-        self.op_type_combo.blockSignals(True)
-        for i in range(self.op_type_combo.count()):
-            if self.op_type_combo.itemData(i) == node_type:
-                self.op_type_combo.setCurrentIndex(i)
-                break
-        self._current_op_type = node_type
-        self.op_type_combo.blockSignals(False)
-
-    def show_output(self, visible: bool):
-        self._output_frame.setVisible(visible)
-
-
-# ---------------------------------------------------------------------------
-# Conditional form
-# ---------------------------------------------------------------------------
-
-class _ConditionalForm(QWidget):
-    """Form widget for editing a ConditionalNode's properties."""
-
-    # Emitted when the user picks a different condition type (old_type, new_type).
-    condition_type_changed = Signal(str, str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(6)
-
-        type_label = QLabel("CONDITION")
-        type_label.setObjectName("section_label")
-        layout.addWidget(type_label)
-
-        layout.addSpacing(4)
-
-        cond_label = QLabel("Condition")
-        layout.addWidget(cond_label)
-        self.condition_combo = QComboBox()
-        for cond_id, (display_name, _) in CONDITION_REGISTRY.items():
-            self.condition_combo.addItem(display_name, userData=cond_id)
-        layout.addWidget(self.condition_combo)
-
-        layout.addSpacing(4)
-
-        name_label = QLabel("Name")
-        layout.addWidget(name_label)
-        self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Node name…")
-        layout.addWidget(self.title_edit)
-
-        layout.addSpacing(4)
-
-        fn_label = QLabel("File to check")
-        layout.addWidget(fn_label)
-        self.filename_edit = QLineEdit()
-        self.filename_edit.setPlaceholderText("e.g. output.txt")
-        layout.addWidget(self.filename_edit)
-
-        layout.addSpacing(4)
-
-        self._output_frame = QFrame()
-        self._output_frame.setVisible(False)
-        out_layout = QVBoxLayout(self._output_frame)
-        out_layout.setContentsMargins(0, 0, 0, 0)
-        out_layout.setSpacing(4)
-        self.output_label = QLabel("Result")
-        out_layout.addWidget(self.output_label)
-        self.output_edit = QPlainTextEdit()
-        self.output_edit.setReadOnly(True)
-        self.output_edit.setMinimumHeight(60)
-        out_layout.addWidget(self.output_edit)
-        layout.addWidget(self._output_frame)
-
-        layout.addStretch(1)
-
-        self._current_condition_type: str = "file_empty"
-        self.condition_combo.currentIndexChanged.connect(self._on_condition_index_changed)
-
-    def _on_condition_index_changed(self, index: int):
-        new_type = self.condition_combo.itemData(index)
-        if new_type and new_type != self._current_condition_type:
-            old = self._current_condition_type
-            self._current_condition_type = new_type
-            self.condition_type_changed.emit(old, new_type)
-
-    def set_condition_type(self, condition_type: str):
-        """Set combobox selection without emitting condition_type_changed."""
-        self.condition_combo.blockSignals(True)
-        for i in range(self.condition_combo.count()):
-            if self.condition_combo.itemData(i) == condition_type:
-                self.condition_combo.setCurrentIndex(i)
-                break
-        self._current_condition_type = condition_type
-        self.condition_combo.blockSignals(False)
-
-    def show_output(self, visible: bool):
-        self._output_frame.setVisible(visible)
-
-
-# ---------------------------------------------------------------------------
-# Loop form
-# ---------------------------------------------------------------------------
-
-class _LoopForm(QWidget):
-    """Form widget for editing a LoopNode's properties."""
-
-    # Emitted when the user changes the loop count (old_count, new_count).
-    loop_count_changed = Signal(int, int)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(6)
-
-        type_label = QLabel("LOOP")
-        type_label.setObjectName("section_label")
-        layout.addWidget(type_label)
-
-        layout.addSpacing(4)
-
-        name_label = QLabel("Name")
-        layout.addWidget(name_label)
-        self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Node name…")
-        layout.addWidget(self.title_edit)
-
-        layout.addSpacing(4)
-
-        count_label = QLabel("Iterations (N)")
-        layout.addWidget(count_label)
-        self.count_spin = QSpinBox()
-        self.count_spin.setMinimum(1)
-        self.count_spin.setMaximum(9999)
-        self.count_spin.setValue(3)
-        layout.addWidget(self.count_spin)
-
-        layout.addSpacing(4)
-
-        self._output_frame = QFrame()
-        self._output_frame.setVisible(False)
-        out_layout = QVBoxLayout(self._output_frame)
-        out_layout.setContentsMargins(0, 0, 0, 0)
-        out_layout.setSpacing(4)
-        self.output_label = QLabel("Output")
-        out_layout.addWidget(self.output_label)
-        self.output_edit = QPlainTextEdit()
-        self.output_edit.setReadOnly(True)
-        self.output_edit.setMinimumHeight(60)
-        out_layout.addWidget(self.output_edit)
-        layout.addWidget(self._output_frame)
-
-        layout.addStretch(1)
-
-        self._current_count: int = 3
-        self.count_spin.valueChanged.connect(self._on_count_changed)
-
-    def _on_count_changed(self, value: int):
-        if value != self._current_count:
-            old = self._current_count
-            self._current_count = value
-            self.loop_count_changed.emit(old, value)
-
-    def set_loop_count(self, count: int):
-        """Set spinbox value without emitting loop_count_changed."""
-        self.count_spin.blockSignals(True)
-        self.count_spin.setValue(count)
-        self._current_count = self.count_spin.value()  # track clamped value
-        self.count_spin.blockSignals(False)
-
-    def show_output(self, visible: bool):
-        self._output_frame.setVisible(visible)
-
-
-# ---------------------------------------------------------------------------
 # PropertiesPanel
 # ---------------------------------------------------------------------------
 
@@ -421,6 +98,7 @@ class PropertiesPanel(QWidget):
     op_type_changed = Signal(str, str, str)          # node_id, old_type, new_type
     condition_type_changed = Signal(str, str, str)   # node_id, old_type, new_type
     loop_count_changed = Signal(str, int, int)       # node_id, old_count, new_count
+    git_action_changed = Signal(str, str, str)       # node_id, old_action, new_action
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -435,6 +113,8 @@ class PropertiesPanel(QWidget):
         self._prompt_dirty: bool = False
         self._filename_dirty: bool = False
         self._cond_filename_dirty: bool = False
+        self._git_commit_msg_dirty: bool = False
+        self._git_commit_msg_file_dirty: bool = False
         self._is_committing: bool = False
 
         # Animation on maximumWidth
@@ -442,7 +122,7 @@ class PropertiesPanel(QWidget):
         self._anim.setDuration(200)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        # Stack: page 0 = empty, page 1 = LLM form, page 2 = FileOp form, page 3 = Conditional form
+        # Stack: page 0 = empty, page 1–5 = form pages
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
@@ -485,6 +165,14 @@ class PropertiesPanel(QWidget):
         loop_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(loop_scroll)
 
+        # Page 5 — GitAction form (inside a scroll area)
+        self._git_form = _GitActionForm()
+        git_scroll = QScrollArea()
+        git_scroll.setWidgetResizable(True)
+        git_scroll.setWidget(self._git_form)
+        git_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._stack.addWidget(git_scroll)
+
         self._wire_signals()
 
     # ------------------------------------------------------------------
@@ -516,6 +204,17 @@ class PropertiesPanel(QWidget):
         self._loop_form.title_edit.editingFinished.connect(self._on_loop_title_committed)
         self._loop_form.loop_count_changed.connect(self._on_loop_count_changed)
 
+        # GitAction form
+        self._git_form.title_edit.editingFinished.connect(self._on_git_title_committed)
+        self._git_form.git_action_changed.connect(self._on_git_action_changed)
+        self._git_form.msg_source_changed.connect(self._on_git_msg_source_changed)
+        self._git_form.commit_msg_edit.textChanged.connect(self._on_git_commit_msg_changed)
+        self._git_form.commit_msg_edit.editingFinished.connect(self._on_git_commit_msg_committed)
+        self._git_form.commit_msg_edit.installEventFilter(self)
+        self._git_form.commit_msg_file_edit.textChanged.connect(self._on_git_commit_msg_file_changed)
+        self._git_form.commit_msg_file_edit.editingFinished.connect(self._on_git_commit_msg_file_committed)
+        self._git_form.commit_msg_file_edit.installEventFilter(self)
+
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.FocusOut:
@@ -525,6 +224,10 @@ class PropertiesPanel(QWidget):
                 self._flush_filename()
             elif obj is self._cond_form.filename_edit and self._cond_filename_dirty:
                 self._flush_cond_filename()
+            elif obj is self._git_form.commit_msg_edit and self._git_commit_msg_dirty:
+                self._flush_git_commit_msg()
+            elif obj is self._git_form.commit_msg_file_edit and self._git_commit_msg_file_dirty:
+                self._flush_git_commit_msg_file()
         return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
@@ -621,6 +324,50 @@ class PropertiesPanel(QWidget):
             return
         self.loop_count_changed.emit(self._current_node.node_id, old_count, new_count)
 
+    def _on_git_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._git_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_git_action_changed(self, old_action: str, new_action: str):
+        if self._current_node is None:
+            return
+        self.git_action_changed.emit(self._current_node.node_id, old_action, new_action)
+
+    def _on_git_msg_source_changed(self, _old_source: str, new_source: str):
+        if self._current_node is None:
+            return
+        self._current_node.msg_source = new_source
+
+    def _on_git_commit_msg_changed(self):
+        self._git_commit_msg_dirty = True
+
+    def _on_git_commit_msg_committed(self):
+        if self._git_commit_msg_dirty:
+            self._flush_git_commit_msg()
+
+    def _flush_git_commit_msg(self):
+        if self._current_node is None:
+            return
+        self._current_node.commit_msg = self._git_form.commit_msg_edit.text()
+        self._git_commit_msg_dirty = False
+
+    def _on_git_commit_msg_file_changed(self):
+        self._git_commit_msg_file_dirty = True
+
+    def _on_git_commit_msg_file_committed(self):
+        if self._git_commit_msg_file_dirty:
+            self._flush_git_commit_msg_file()
+
+    def _flush_git_commit_msg_file(self):
+        if self._current_node is None:
+            return
+        self._current_node.commit_msg_file = self._git_form.commit_msg_file_edit.text()
+        self._git_commit_msg_file_dirty = False
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -634,6 +381,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
+        from .git_action_node import GitActionNode
 
         self._is_committing = True
         try:
@@ -653,6 +401,12 @@ class PropertiesPanel(QWidget):
                 self._on_cond_title_committed()
             elif isinstance(self._current_node, LoopNode):
                 self._on_loop_title_committed()
+            elif isinstance(self._current_node, GitActionNode):
+                if self._git_commit_msg_dirty:
+                    self._flush_git_commit_msg()
+                if self._git_commit_msg_file_dirty:
+                    self._flush_git_commit_msg_file()
+                self._on_git_title_committed()
         finally:
             self._is_committing = False
 
@@ -662,6 +416,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
+        from .git_action_node import GitActionNode
 
         # Commit any pending edits for the previous node before switching.
         if self._current_node is not None and self._current_node is not node:
@@ -678,6 +433,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, LoopNode):
             self._load_loop_form(node)
             self._stack.setCurrentIndex(4)
+        elif isinstance(node, GitActionNode):
+            self._load_git_form(node)
+            self._stack.setCurrentIndex(5)
         elif isinstance(node, FileOpNode):
             self._load_file_form(node)
             self._stack.setCurrentIndex(2)
@@ -700,6 +458,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
+        from .git_action_node import GitActionNode
         if isinstance(node, LLMNode):
             self._llm_form.show_output(True)
             self._llm_form.output_edit.appendPlainText(line)
@@ -709,6 +468,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, LoopNode):
             self._loop_form.show_output(True)
             self._loop_form.output_edit.appendPlainText(line)
+        elif isinstance(node, GitActionNode):
+            self._git_form.show_output(True)
+            self._git_form.output_edit.appendPlainText(line)
         elif isinstance(node, FileOpNode):
             self._file_form.show_output(True)
             self._file_form.output_edit.appendPlainText(line)
@@ -721,6 +483,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
+        from .git_action_node import GitActionNode
         if isinstance(node, LLMNode):
             self._llm_form.output_edit.clear()
             self._llm_form.show_output(False)
@@ -730,6 +493,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, LoopNode):
             self._loop_form.output_edit.clear()
             self._loop_form.show_output(False)
+        elif isinstance(node, GitActionNode):
+            self._git_form.output_edit.clear()
+            self._git_form.show_output(False)
         elif isinstance(node, FileOpNode):
             self._file_form.output_edit.clear()
             self._file_form.show_output(False)
@@ -748,7 +514,6 @@ class PropertiesPanel(QWidget):
         form.model_selector.set_model_id(node.model_id)
         form.prompt_edit.setPlainText(node.prompt_text)
 
-        # Output area
         if node.output_text:
             form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
@@ -824,6 +589,37 @@ class PropertiesPanel(QWidget):
 
         self._old_title = node.title
         self._cond_filename_dirty = False
+
+    def _load_git_form(self, node) -> None:
+        form = self._git_form
+        form.title_edit.blockSignals(True)
+        form.action_combo.blockSignals(True)
+        form.msg_source_combo.blockSignals(True)
+        form.commit_msg_edit.blockSignals(True)
+        form.commit_msg_file_edit.blockSignals(True)
+
+        form.set_git_action(node.git_action)
+        form.title_edit.setText(node.title)
+        form.set_msg_source(node.msg_source)
+        form.commit_msg_edit.setText(node.commit_msg)
+        form.commit_msg_file_edit.setText(node.commit_msg_file)
+
+        if node.output_text:
+            form.show_output(True)
+            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+        else:
+            form.output_edit.clear()
+            form.show_output(False)
+
+        form.title_edit.blockSignals(False)
+        form.action_combo.blockSignals(False)
+        form.msg_source_combo.blockSignals(False)
+        form.commit_msg_edit.blockSignals(False)
+        form.commit_msg_file_edit.blockSignals(False)
+
+        self._old_title = node.title
+        self._git_commit_msg_dirty = False
+        self._git_commit_msg_file_dirty = False
 
     def _animate_to(self, target_width: int) -> None:
         self._anim.stop()

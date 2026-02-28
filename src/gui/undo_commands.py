@@ -370,6 +370,45 @@ class LoopCountChangeCommand(QUndoCommand):
             self._canvas.notify_node_changed(self._node_id)
 
 
+class GitActionTypeChangeCommand(QUndoCommand):
+    """Push when the user changes the git action type of a GitActionNode."""
+
+    def __init__(self, canvas: "WorkflowCanvas", node_id: str,
+                 old_action: str, new_action: str):
+        super().__init__("Change Git Action Type")
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_action = old_action
+        self._new_action = new_action
+
+    def _node(self):
+        from .git_action_node import GitActionNode
+        node = self._canvas._nodes.get(self._node_id)
+        return node if isinstance(node, GitActionNode) else None
+
+    def redo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.git_action = self._new_action
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+    def undo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.git_action = self._old_action
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+
 class PasteCommand(QUndoCommand):
     """Push when clipboard nodes are pasted."""
 

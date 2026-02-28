@@ -1,4 +1,4 @@
-"""FileOpNode — file-operation nodes (create, truncate, delete) for the workflow canvas."""
+"""GitActionNode — git operation nodes (add, commit, push) for the workflow canvas."""
 
 import math as _math
 from typing import Optional
@@ -23,42 +23,38 @@ from .llm_node import (
 )
 from .llm_widget import NODE_WIDTH
 
-# Accent color per operation type (header strip)
-_OP_ACCENT = {
-    "create_file":   QColor("#2a7a2a"),
-    "truncate_file": QColor("#7a6a1a"),
-    "delete_file":   QColor("#7a2a2a"),
+# Accent color per git action (header strip)
+_GIT_ACCENT = {
+    "git_add":    QColor("#1a5a3a"),
+    "git_commit": QColor("#1a3a6a"),
+    "git_push":   QColor("#5a1a6a"),
 }
 
-NODE_TYPE_DISPLAY_NAMES = {
-    "create_file":   "Create File",
-    "truncate_file": "Truncate File",
-    "delete_file":   "Delete File",
+GIT_ACTION_DISPLAY_NAMES = {
+    "git_add":    "Git Add",
+    "git_commit": "Git Commit",
+    "git_push":   "Git Push",
 }
 
 CORNER_RADIUS = 12
 _HEADER_HEIGHT = 28
-
-# Compact node height (header + title row + padding)
-_COMPACT_FILE_NODE_HEIGHT = 64
+_COMPACT_GIT_NODE_HEIGHT = 64
 
 
-# ---------------------------------------------------------------------------
-# Base graphics item
-# ---------------------------------------------------------------------------
+class GitActionNode(WorkflowNode):
+    """A git-action node whose action type is a mutable instance attribute."""
 
-class FileOpNode(WorkflowNode):
-    """A file-operation node whose operation type is a mutable instance attribute."""
+    node_type = "git_action"
 
-    def __init__(self, node_id: Optional[str] = None, label_index: int = 1,
-                 node_type: str = "create_file"):
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
         super().__init__(node_id=node_id, label_index=label_index)
 
-        self.node_type: str = node_type
-        op_label = NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op")
-        self._title: str = f"{op_label} {label_index}"
-        self._filename: str = ""
-        self._height = _COMPACT_FILE_NODE_HEIGHT
+        self.git_action: str = "git_add"
+        self.msg_source: str = "static"
+        self.commit_msg: str = ""
+        self.commit_msg_file: str = ""
+        self._title: str = f"Git Action {label_index}"
+        self._height = _COMPACT_GIT_NODE_HEIGHT
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -73,16 +69,8 @@ class FileOpNode(WorkflowNode):
         self._title = value
         self.update()
 
-    @property
-    def filename(self) -> str:
-        return self._filename
-
-    @filename.setter
-    def filename(self, value: str):
-        self._filename = value
-
     # Compatibility shims so canvas code that reads model_id / prompt_text
-    # on all nodes doesn't crash (FileOpNode skips LLM validation instead).
+    # on all nodes doesn't crash (GitActionNode skips LLM validation).
     @property
     def model_id(self) -> Optional[str]:
         return None
@@ -120,7 +108,7 @@ class FileOpNode(WorkflowNode):
     # ------------------------------------------------------------------
 
     def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath):
-        phase = (id(self) * 0.001) % 1.0   # static stand-in; canvas drives repaints via set_status
+        phase = (id(self) * 0.001) % 1.0
         cx = NODE_WIDTH / 2
         cy = self._height / 2
         pulse = 0.55 + 0.45 * _math.sin(phase * 2 * _math.pi)
@@ -153,7 +141,7 @@ class FileOpNode(WorkflowNode):
         painter.fillPath(path, QBrush(QColor("#252525")))
 
         # Accent header strip — rounded top corners, flat bottom edge.
-        accent = _OP_ACCENT.get(self.node_type, QColor("#444444"))
+        accent = _GIT_ACCENT.get(self.git_action, QColor("#444444"))
         painter.save()
         painter.setClipRect(QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT))
         header_path = QPainterPath()
@@ -163,14 +151,14 @@ class FileOpNode(WorkflowNode):
         painter.fillPath(header_path, QBrush(accent))
         painter.restore()
 
-        # Op type label in header
+        # Action label in header
         font = QFont("Segoe UI", 8, QFont.Weight.Bold)
         painter.setFont(font)
         painter.setPen(QColor("#dddddd"))
         painter.drawText(
             QRectF(8, 0, NODE_WIDTH - 16, _HEADER_HEIGHT),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            NODE_TYPE_DISPLAY_NAMES.get(self.node_type, "File Op").upper(),
+            GIT_ACTION_DISPLAY_NAMES.get(self.git_action, "Git").upper(),
         )
 
         # Title in body below header
@@ -239,7 +227,10 @@ class FileOpNode(WorkflowNode):
             "x": pos.x(),
             "y": pos.y(),
             "name": self._title,
-            "filename": self._filename,
+            "git_action": self.git_action,
+            "msg_source": self.msg_source,
+            "commit_msg": self.commit_msg,
+            "commit_msg_file": self.commit_msg_file,
         }
 
     def from_dict(self, data: dict):
@@ -247,51 +238,15 @@ class FileOpNode(WorkflowNode):
         self.label_index = data.get("label_index", self.label_index)
         self.setPos(data.get("x", 0), data.get("y", 0))
         self._title = data.get("name", self._title)
-        self._filename = data.get("filename", "")
-        if "node_type" in data:
-            self.node_type = data["node_type"]
+        self.git_action = data.get("git_action", "git_add")
+        self.msg_source = data.get("msg_source", "static")
+        self.commit_msg = data.get("commit_msg", "")
+        self.commit_msg_file = data.get("commit_msg_file", "")
 
 
 # ---------------------------------------------------------------------------
-# Backward-compat aliases (load/paste still reference these names)
+# Factory function used by canvas load/paste and NODE_TYPE_MAP
 # ---------------------------------------------------------------------------
 
-def CreateFileNode(node_id=None, label_index=1):
-    return FileOpNode(node_id=node_id, label_index=label_index, node_type="create_file")
-
-
-def TruncateFileNode(node_id=None, label_index=1):
-    return FileOpNode(node_id=node_id, label_index=label_index, node_type="truncate_file")
-
-
-def DeleteFileNode(node_id=None, label_index=1):
-    return FileOpNode(node_id=node_id, label_index=label_index, node_type="delete_file")
-
-
-# ---------------------------------------------------------------------------
-# Lookup map used by canvas load/paste
-# ---------------------------------------------------------------------------
-
-def _conditional_factory(node_id=None, label_index=1):
-    from .conditional_node import ConditionalNode
-    return ConditionalNode(node_id=node_id, label_index=label_index)
-
-
-def _loop_factory(node_id=None, label_index=1):
-    from .loop_node import LoopNode
-    return LoopNode(node_id=node_id, label_index=label_index)
-
-
-def _git_action_factory(node_id=None, label_index=1):
-    from .git_action_node import GitActionNode
+def GitActionNodeFactory(node_id=None, label_index=1):
     return GitActionNode(node_id=node_id, label_index=label_index)
-
-
-NODE_TYPE_MAP = {
-    "create_file":   CreateFileNode,
-    "truncate_file": TruncateFileNode,
-    "delete_file":   DeleteFileNode,
-    "conditional":   _conditional_factory,
-    "loop":          _loop_factory,
-    "git_action":    _git_action_factory,
-}
