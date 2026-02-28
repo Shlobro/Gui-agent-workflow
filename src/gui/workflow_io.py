@@ -11,6 +11,7 @@ from typing import List
 from src.llm.base_provider import LLMProviderRegistry
 from .llm_node import LLMNode
 from .file_op_node import NODE_TYPE_MAP
+from .conditional_node import CONDITION_REGISTRY
 
 
 def get_provider_for_model(model_id: str):
@@ -56,6 +57,7 @@ def parse_workflow_data(data: dict) -> dict:
 
     normalized_nodes: List[dict] = []
     node_ids: set[str] = set()
+    node_type_by_id: dict[str, str] = {}  # node_id → node_type, used for connection validation
     max_label_index = 0
     for idx_in_list, b_data in enumerate(nodes_data):
         if not isinstance(b_data, dict):
@@ -71,10 +73,19 @@ def parse_workflow_data(data: dict) -> dict:
 
         # Validate raw string fields before from_dict so falsey non-strings
         # (0, false, [], null) are caught rather than silently collapsed to "".
-        for str_field in ("name", "model", "prompt", "filename"):
+        for str_field in ("name", "model", "prompt", "filename", "condition_type"):
             if str_field in b_data and not isinstance(b_data[str_field], str):
                 raise ValueError(
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
+                )
+
+        # For conditional nodes, validate condition_type is a known registry entry.
+        if node_type == "conditional":
+            ct = b_data.get("condition_type", "")
+            if ct not in CONDITION_REGISTRY:
+                raise ValueError(
+                    f"Node record at index {idx_in_list} has unknown condition_type "
+                    f"'{ct}'. Known types: {list(CONDITION_REGISTRY)}."
                 )
 
         node_cls = NODE_TYPE_MAP.get(node_type, LLMNode)
@@ -95,6 +106,7 @@ def parse_workflow_data(data: dict) -> dict:
         if node_id in node_ids:
             raise ValueError(f"Duplicate node id '{node_id}' at index {idx_in_list}.")
         node_ids.add(node_id)
+        node_type_by_id[node_id] = node_type
         max_label_index = max(max_label_index, label_index)
         normalized_nodes.append(snapshot)
 
@@ -118,7 +130,20 @@ def parse_workflow_data(data: dict) -> dict:
             continue
         if tgt_id not in node_ids:
             continue
-        normalized_connections.append({"from": src_id, "to": tgt_id})
+        conn_record: dict = {"from": src_id, "to": tgt_id}
+        source_port = c_data.get("source_port", "output")
+        if not isinstance(source_port, str):
+            continue  # malformed source_port; drop the connection
+        src_node_type = node_type_by_id.get(src_id, "llm") if src_id != "start" else "start"
+        if src_node_type == "conditional":
+            if source_port not in ("true", "false"):
+                continue  # invalid port for ConditionalNode; drop
+        else:
+            if source_port != "output":
+                continue  # non-conditional nodes only have "output" port; drop
+        if source_port != "output":
+            conn_record["source_port"] = source_port
+        normalized_connections.append(conn_record)
 
     return {
         "node_counter": node_counter,

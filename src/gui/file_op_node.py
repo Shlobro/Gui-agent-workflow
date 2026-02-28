@@ -109,7 +109,7 @@ class FileOpNode(WorkflowNode):
     # Port positions
     # ------------------------------------------------------------------
 
-    def output_port_scene_pos(self) -> QPointF:
+    def output_port_scene_pos(self, port: str = "output") -> QPointF:
         return self.mapToScene(QPointF(NODE_WIDTH, self._height / 2))
 
     def input_port_scene_pos(self) -> QPointF:
@@ -272,8 +272,14 @@ def DeleteFileNode(node_id=None, label_index=1):
 # Lookup map used by canvas load/paste
 # ---------------------------------------------------------------------------
 
+def _conditional_factory(node_id=None, label_index=1):
+    from .conditional_node import ConditionalNode
+    return ConditionalNode(node_id=node_id, label_index=label_index)
+
+
 NODE_TYPE_MAP = {
     "create_file":   CreateFileNode,
     "truncate_file": TruncateFileNode,
     "delete_file":   DeleteFileNode,
+    "conditional":   _conditional_factory,
 }

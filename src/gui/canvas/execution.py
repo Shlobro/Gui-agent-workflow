@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from src.workers.llm_worker import LLMWorker
 from src.gui.file_op_node import FileOpNode
+from src.gui.conditional_node import ConditionalNode, CONDITION_REGISTRY
 from src.gui.llm_node import StartNode, WorkflowNode
 from src.gui.workflow_io import get_provider_for_model
 
@@ -141,14 +142,26 @@ class _ExecutionMixin:
     def _would_create_cycle(self: "WorkflowCanvas", source, target: GraphNode) -> bool:
         return source in self._reachable_from(target)
 
-    def _source_has_outgoing(self: "WorkflowCanvas", source) -> bool:
-        return any(conn.source_node is source for conn in self._connections)
+    def _source_port_has_outgoing(self: "WorkflowCanvas", source, port: str = "output") -> bool:
+        """Return True if source already has an outgoing connection on the given port."""
+        return any(
+            conn.source_node is source
+            and getattr(conn, "source_port", "output") == port
+            for conn in self._connections
+        )
 
     def _validate_nodes(self: "WorkflowCanvas", nodes: Sequence[GraphNode]) -> List[str]:
         errors = []
         for node in nodes:
             title = getattr(node, "title", node.node_id)
-            if isinstance(node, FileOpNode):
+            if isinstance(node, ConditionalNode):
+                if not node.filename.strip():
+                    errors.append(f'\u2022 "{title}" has no filename set.')
+                if node.condition_type not in CONDITION_REGISTRY:
+                    errors.append(
+                        f'\u2022 "{title}" has unknown condition type "{node.condition_type}".'
+                    )
+            elif isinstance(node, FileOpNode):
                 if not node.filename.strip():
                     errors.append(f'\u2022 "{title}" has no filename set.')
             else:
@@ -205,6 +218,9 @@ class _ExecutionMixin:
         self._exec_node[exec_id] = node.node_id
         self._current_run_exec_ids.add(exec_id)
         node.set_status("running")
+        if isinstance(node, ConditionalNode):
+            self._fire_condition_check(node, exec_id)
+            return
         if isinstance(node, FileOpNode):
             self._fire_file_op(node, exec_id)
             return
@@ -251,6 +267,42 @@ class _ExecutionMixin:
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
         worker.start()
+
+    def _fire_condition_check(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int):
+        run_id = self._run_id
+        try:
+            # Resolve and confine the path exactly as file ops do — rejects absolute
+            # paths and traversal escapes outside the project folder.
+            resolved_path = self._resolve_file_op_path(node.filename)
+            result = node.evaluate(resolved_path)
+            branch = "true" if result else "false"
+            node.append_output(f"Condition '{node.condition_type}': {branch}")
+            if self.on_output_line:
+                self.on_output_line(node, f"Condition '{node.condition_type}': {branch}")
+            self._on_condition_done(node, exec_id, branch, run_id=run_id)
+        except Exception as exc:
+            self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id)
+
+    def _on_condition_done(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int,
+                           branch: str, run_id: int = 0):
+        """Complete a ConditionalNode invocation and queue only the matching branch."""
+        if exec_id not in self._active_workers:
+            return
+        retired = exec_id in self._retired_exec_ids
+        self._retired_exec_ids.discard(exec_id)
+        del self._active_workers[exec_id]
+        self._exec_node.pop(exec_id, None)
+        self._current_run_exec_ids.discard(exec_id)
+        if run_id != self._run_id or not self._running:
+            self._check_drain()
+            return
+        if retired:
+            self._check_drain()
+            return
+        node.set_status("done")
+        if not self._no_fanout:
+            self._queue_child_triggers(node, run_id, branch=branch)
+        self._check_drain()
 
     def _resolve_file_op_path(self: "WorkflowCanvas", filename: str) -> str:
         if not self._working_directory:
@@ -302,25 +354,38 @@ class _ExecutionMixin:
         except Exception as exc:
             self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id)
 
-    def _queue_child_triggers(self: "WorkflowCanvas", node: GraphNode, run_id: int):
-        edge_pairs = [
-            (conn.source_node.node_id, conn.target_node.node_id)
-            for conn in self._connections
-            if conn.source_node is node
-        ]
+    def _queue_child_triggers(self: "WorkflowCanvas", node: GraphNode, run_id: int,
+                              branch: str = "output"):
+        if isinstance(node, ConditionalNode):
+            # Only follow connections on the evaluated branch port
+            edge_pairs = [
+                (conn.source_node.node_id, conn.target_node.node_id, getattr(conn, "source_port", "output"))
+                for conn in self._connections
+                if conn.source_node is node and getattr(conn, "source_port", "output") == branch
+            ]
+        else:
+            edge_pairs = [
+                (conn.source_node.node_id, conn.target_node.node_id, getattr(conn, "source_port", "output"))
+                for conn in self._connections
+                if conn.source_node is node
+            ]
         self._pending_child_triggers += len(edge_pairs)
-        for source_id, target_id in edge_pairs:
+        for source_id, target_id, source_port in edge_pairs:
             QTimer.singleShot(
                 0,
-                lambda _src=source_id, _tgt=target_id, _run_id=run_id: self._trigger_node_if_active(_src, _tgt, _run_id),
+                lambda _src=source_id, _tgt=target_id, _run_id=run_id, _sp=source_port:
+                    self._trigger_node_if_active(_src, _tgt, _run_id, _sp),
             )
 
-    def _trigger_node_if_active(self: "WorkflowCanvas", source_id: str, target_id: str, run_id: int):
+    def _trigger_node_if_active(self: "WorkflowCanvas", source_id: str, target_id: str,
+                                run_id: int, source_port: str = "output"):
         try:
             if run_id != self._run_id or not self._running or self._no_fanout:
                 return
             edge_still_exists = any(
-                conn.source_node.node_id == source_id and conn.target_node.node_id == target_id
+                conn.source_node.node_id == source_id
+                and conn.target_node.node_id == target_id
+                and getattr(conn, "source_port", "output") == source_port
                 for conn in self._connections
             )
             if not edge_still_exists:

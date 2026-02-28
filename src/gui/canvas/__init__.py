@@ -16,11 +16,12 @@ from src.workers.llm_worker import LLMWorker
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import FileOpNode
+from src.gui.conditional_node import ConditionalNode
 from src.gui.undo_commands import (
     AddNodeCommand, RemoveNodeCommand,
     AddConnectionCommand, RemoveConnectionCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand,
-    FileOpTypeChangeCommand,
+    FileOpTypeChangeCommand, ConditionTypeChangeCommand,
 )
 from src.gui.workflow_io import get_provider_for_model
 from src.gui.canvas.execution import _ExecutionMixin
@@ -62,6 +63,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         # Connection-drawing state
         self._drawing_connection = False
         self._conn_source: Optional[SourceNode] = None
+        self._conn_source_port: str = "output"
         self._rubber_line: Optional[QGraphicsLineItem] = None
 
         # Execution state
@@ -216,6 +218,28 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             raise RuntimeError("Expected a FileOpNode after add command.")
         return node
 
+    def add_conditional_node(self) -> ConditionalNode:
+        """Add a conditional routing node (defaults to 'file_empty'; type is editable in the panel)."""
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "conditional",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 40,
+            "name": f"Condition {label_index}",
+            "filename": "",
+            "condition_type": "file_empty",
+        }
+        cmd = AddNodeCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, ConditionalNode):
+            raise RuntimeError("Expected a ConditionalNode after add command.")
+        return node
+
     def remove_node(self, node: GraphNode):
         if isinstance(node, StartNode):
             raise TypeError("remove_node cannot remove StartNode")
@@ -227,7 +251,8 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
     def _remove_connection(self, conn: ConnectionItem):
         src_id = conn.source_node.node_id
         tgt_id = conn.target_node.node_id
-        cmd = RemoveConnectionCommand(self, src_id, tgt_id)
+        source_port = getattr(conn, "source_port", "output")
+        cmd = RemoveConnectionCommand(self, src_id, tgt_id, source_port)
         self._undo_stack.push(cmd)
 
     # ------------------------------------------------------------------
@@ -255,6 +280,16 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             return
         self._undo_stack.push(ModelChangeCommand(self, node_id, old_model_id, new_model_id))
 
+    def _on_condition_type_changed(self, node_id: str, old_type: str, new_type: str):
+        if self._undo_in_progress:
+            return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_type == new_type:
+            return
+        self._undo_stack.push(ConditionTypeChangeCommand(self, node_id, old_type, new_type))
+
     def _on_op_type_changed(self, node_id: str, old_type: str, new_type: str):
         if self._undo_in_progress:
             return
@@ -277,7 +312,14 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
                 self._start_connection(self._start_node, scene_pos)
                 return
             for node in self._nodes.values():
-                if node.is_near_output_port(scene_pos):
+                if isinstance(node, ConditionalNode):
+                    if node.is_near_true_port(scene_pos):
+                        self._start_connection(node, scene_pos, port="true")
+                        return
+                    if node.is_near_false_port(scene_pos):
+                        self._start_connection(node, scene_pos, port="false")
+                        return
+                elif node.is_near_output_port(scene_pos):
                     self._start_connection(node, scene_pos)
                     return
 
@@ -362,11 +404,12 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
     # Connection drawing
     # ------------------------------------------------------------------
 
-    def _start_connection(self, source: SourceNode, scene_pos: QPointF):
+    def _start_connection(self, source: SourceNode, scene_pos: QPointF, port: str = "output"):
         self._drawing_connection = True
         self._conn_source = source
-        port = source.output_port_scene_pos()
-        self._rubber_line = QGraphicsLineItem(port.x(), port.y(), scene_pos.x(), scene_pos.y())
+        self._conn_source_port = port
+        port_pos = source.output_port_scene_pos(port)
+        self._rubber_line = QGraphicsLineItem(port_pos.x(), port_pos.y(), scene_pos.x(), scene_pos.y())
         self._rubber_line.setPen(QPen(QColor("#5599ff"), 2, Qt.PenStyle.DashLine))
         self._scene.addItem(self._rubber_line)
 
@@ -375,6 +418,9 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         if self._rubber_line:
             self._scene.removeItem(self._rubber_line)
             self._rubber_line = None
+
+        source_port = self._conn_source_port
+        self._conn_source_port = "output"
 
         target_node: Optional[GraphNode] = None
         for node in self._nodes.values():
@@ -387,7 +433,9 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             return
 
         for conn in self._connections:
-            if conn.source_node is self._conn_source and conn.target_node is target_node:
+            if (conn.source_node is self._conn_source
+                    and conn.target_node is target_node
+                    and getattr(conn, "source_port", "output") == source_port):
                 self._conn_source = None
                 return
 
@@ -409,7 +457,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        elif self._source_has_outgoing(source):
+        elif self._source_port_has_outgoing(source, source_port):
             reply = QMessageBox.information(
                 self, "Parallel Fan-Out",
                 f'"{src_label}" already has an outgoing connection.\n\n'
@@ -421,7 +469,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        cmd = AddConnectionCommand(self, source.node_id, target_node.node_id)
+        cmd = AddConnectionCommand(self, source.node_id, target_node.node_id, source_port)
         self._undo_stack.push(cmd)
 
     # ------------------------------------------------------------------

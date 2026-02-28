@@ -64,8 +64,9 @@ class _IOMixin:
         self._nodes.pop(node_id, None)
         self._title_committed.pop(node_id, None)
 
-    def _undo_add_connection(self: "WorkflowCanvas", src, tgt: GraphNode) -> ConnectionItem:
-        conn = ConnectionItem(src, tgt)
+    def _undo_add_connection(self: "WorkflowCanvas", src, tgt: GraphNode,
+                             source_port: str = "output") -> ConnectionItem:
+        conn = ConnectionItem(src, tgt, source_port=source_port)
         self._scene.addItem(conn)
         conn.update_path()
         self._connections.append(conn)
@@ -77,9 +78,12 @@ class _IOMixin:
         if conn in self._connections:
             self._connections.remove(conn)
 
-    def _find_connection(self: "WorkflowCanvas", src_id: str, tgt_id: str) -> Optional[ConnectionItem]:
+    def _find_connection(self: "WorkflowCanvas", src_id: str, tgt_id: str,
+                         source_port: str = "output") -> Optional[ConnectionItem]:
         for conn in self._connections:
-            if conn.source_node.node_id == src_id and conn.target_node.node_id == tgt_id:
+            if (conn.source_node.node_id == src_id
+                    and conn.target_node.node_id == tgt_id
+                    and getattr(conn, "source_port", "output") == source_port):
                 return conn
         return None
 
@@ -98,7 +102,7 @@ class _IOMixin:
         self._clipboard = [node.to_dict() for node in selected_nodes]
         self._paste_count = 0
         self._clipboard_conns = [
-            {"from": conn.source_node.node_id, "to": conn.target_node.node_id}
+            conn.to_dict()
             for conn in self._connections
             if conn.source_node.node_id in selected_ids
             and conn.target_node.node_id in selected_ids
@@ -163,10 +167,11 @@ class _IOMixin:
         for c_data in parsed["connections"]:
             src_id = c_data.get("from")
             tgt_id = c_data.get("to")
+            source_port = c_data.get("source_port", "output")
             src = self._start_node if src_id == "start" else self._nodes.get(src_id)
             tgt = self._nodes.get(tgt_id)
             if src and tgt:
-                conn = ConnectionItem(src, tgt)
+                conn = ConnectionItem(src, tgt, source_port=source_port)
                 self._scene.addItem(conn)
                 self._connections.append(conn)
 

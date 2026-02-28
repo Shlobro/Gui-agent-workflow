@@ -12,7 +12,7 @@ from .file_op_node import NODE_TYPE_DISPLAY_NAMES
 
 if TYPE_CHECKING:
     from .canvas import WorkflowCanvas
-    from .llm_node import LLMNode, StartNode
+    from .llm_node import LLMNode, StartNode, WorkflowNode
     from .file_op_node import FileOpNode
 
 # Command IDs for merge support
@@ -48,12 +48,12 @@ class AddNodeCommand(QUndoCommand):
 class RemoveNodeCommand(QUndoCommand):
     """Push when a workflow node is about to be deleted."""
 
-    def __init__(self, canvas: "WorkflowCanvas", node: "LLMNode | FileOpNode"):
+    def __init__(self, canvas: "WorkflowCanvas", node: "WorkflowNode"):
         self._canvas = canvas
         self._snapshot = node.to_dict()
         super().__init__(f"Delete {_command_node_label(self._snapshot)}")
         self._label_index = node.label_index
-        # Capture connected edges before node is removed
+        # Capture connected edges before node is removed (includes source_port)
         self._conn_snapshots: List[dict] = [
             conn.to_dict() for conn in node.connections()
         ]
@@ -67,6 +67,7 @@ class RemoveNodeCommand(QUndoCommand):
             return
         for c in self._conn_snapshots:
             src_id, tgt_id = c.get("from"), c.get("to")
+            source_port = c.get("source_port", "output")
             if src_id == "start":
                 src = self._canvas._start_node
             else:
@@ -76,17 +77,19 @@ class RemoveNodeCommand(QUndoCommand):
             else:
                 tgt = self._canvas._nodes.get(tgt_id)
             if src and tgt:
-                self._canvas._undo_add_connection(src, tgt)
+                self._canvas._undo_add_connection(src, tgt, source_port)
 
 
 class AddConnectionCommand(QUndoCommand):
     """Push when a ConnectionItem is created."""
 
-    def __init__(self, canvas: "WorkflowCanvas", src_id: str, tgt_id: str):
+    def __init__(self, canvas: "WorkflowCanvas", src_id: str, tgt_id: str,
+                 source_port: str = "output"):
         super().__init__("Add Connection")
         self._canvas = canvas
         self._src_id = src_id
         self._tgt_id = tgt_id
+        self._source_port = source_port
 
     def _resolve(self):
         src = (self._canvas._start_node if self._src_id == "start"
@@ -98,10 +101,10 @@ class AddConnectionCommand(QUndoCommand):
     def redo(self):
         src, tgt = self._resolve()
         if src and tgt:
-            self._canvas._undo_add_connection(src, tgt)
+            self._canvas._undo_add_connection(src, tgt, self._source_port)
 
     def undo(self):
-        conn = self._canvas._find_connection(self._src_id, self._tgt_id)
+        conn = self._canvas._find_connection(self._src_id, self._tgt_id, self._source_port)
         if conn:
             self._canvas._undo_remove_connection_item(conn)
 
@@ -109,11 +112,13 @@ class AddConnectionCommand(QUndoCommand):
 class RemoveConnectionCommand(QUndoCommand):
     """Push when a ConnectionItem is deleted."""
 
-    def __init__(self, canvas: "WorkflowCanvas", src_id: str, tgt_id: str):
+    def __init__(self, canvas: "WorkflowCanvas", src_id: str, tgt_id: str,
+                 source_port: str = "output"):
         super().__init__("Delete Connection")
         self._canvas = canvas
         self._src_id = src_id
         self._tgt_id = tgt_id
+        self._source_port = source_port
 
     def _resolve(self):
         src = (self._canvas._start_node if self._src_id == "start"
@@ -123,14 +128,14 @@ class RemoveConnectionCommand(QUndoCommand):
         return src, tgt
 
     def redo(self):
-        conn = self._canvas._find_connection(self._src_id, self._tgt_id)
+        conn = self._canvas._find_connection(self._src_id, self._tgt_id, self._source_port)
         if conn:
             self._canvas._undo_remove_connection_item(conn)
 
     def undo(self):
         src, tgt = self._resolve()
         if src and tgt:
-            self._canvas._undo_add_connection(src, tgt)
+            self._canvas._undo_add_connection(src, tgt, self._source_port)
 
 
 class MoveNodeCommand(QUndoCommand):
@@ -156,7 +161,7 @@ class MoveNodeCommand(QUndoCommand):
         self._new_pos = QPointF(other._new_pos)
         return True
 
-    def _node(self) -> Optional["StartNode | LLMNode | FileOpNode"]:
+    def _node(self) -> Optional["StartNode | WorkflowNode"]:
         if self._is_start:
             return self._canvas._start_node
         return self._canvas._nodes.get(self._node_id)
@@ -185,7 +190,7 @@ class TitleChangeCommand(QUndoCommand):
         self._old_title = old_title
         self._new_title = new_title
 
-    def _node(self) -> Optional["LLMNode | FileOpNode"]:
+    def _node(self) -> Optional["WorkflowNode"]:
         return self._canvas._nodes.get(self._node_id)
 
     def redo(self):
@@ -287,6 +292,45 @@ class FileOpTypeChangeCommand(QUndoCommand):
             self._canvas.notify_node_changed(self._node_id)
 
 
+class ConditionTypeChangeCommand(QUndoCommand):
+    """Push when the user changes the condition type of a ConditionalNode."""
+
+    def __init__(self, canvas: "WorkflowCanvas", node_id: str,
+                 old_type: str, new_type: str):
+        super().__init__("Change Condition Type")
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_type = old_type
+        self._new_type = new_type
+
+    def _node(self):
+        from .conditional_node import ConditionalNode
+        node = self._canvas._nodes.get(self._node_id)
+        return node if isinstance(node, ConditionalNode) else None
+
+    def redo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.condition_type = self._new_type
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+    def undo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.condition_type = self._old_type
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+
 class PasteCommand(QUndoCommand):
     """Push when clipboard nodes are pasted."""
 
@@ -321,7 +365,7 @@ class PasteCommand(QUndoCommand):
             if node:
                 new_nodes.append(node)
 
-        # Recreate internal connections
+        # Recreate internal connections (preserving source_port)
         for conn_data in self._clipboard_conns:
             src_id = self._id_map.get(conn_data["from"])
             tgt_id = self._id_map.get(conn_data["to"])
@@ -329,7 +373,8 @@ class PasteCommand(QUndoCommand):
                 src = self._canvas._nodes.get(src_id)
                 tgt = self._canvas._nodes.get(tgt_id)
                 if src and tgt:
-                    self._canvas._undo_add_connection(src, tgt)
+                    sp = conn_data.get("source_port", "output")
+                    self._canvas._undo_add_connection(src, tgt, sp)
 
         # Select pasted nodes, deselect others
         self._canvas._scene.clearSelection()

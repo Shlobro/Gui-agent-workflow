@@ -37,10 +37,11 @@ SourceNode = Union[StartNode, WorkflowNode]
 class ConnectionItem(QGraphicsPathItem):
     """Obstacle-aware routed arrow from source output port to target input port."""
 
-    def __init__(self, source: SourceNode, target: GraphNode):
+    def __init__(self, source: SourceNode, target: GraphNode, source_port: str = "output"):
         super().__init__()
         self.source_node = source
         self.target_node = target
+        self.source_port: str = source_port
         self._arrow_tip = QPointF()
         self._arrow_angle = 0.0
         self._hit_path = QPainterPath()
@@ -55,7 +56,7 @@ class ConnectionItem(QGraphicsPathItem):
         self.update_path()
 
     def update_path(self):
-        src_center = self.source_node.output_port_scene_pos()
+        src_center = self.source_node.output_port_scene_pos(self.source_port)
         dst_center = self.target_node.input_port_scene_pos()
 
         src_edge = src_center + QPointF(PORT_EDGE_OFFSET, 0)
@@ -363,7 +364,10 @@ class ConnectionItem(QGraphicsPathItem):
         self.target_node.remove_connection(self)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "from": self.source_node.node_id,
             "to": self.target_node.node_id,
         }
+        if self.source_port and self.source_port != "output":
+            d["source_port"] = self.source_port
+        return d

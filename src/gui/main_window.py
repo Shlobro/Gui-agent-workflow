@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .canvas import WorkflowCanvas
+from .conditional_node import ConditionalNode
 from .llm_node import LLMNode
 from .file_op_node import FileOpNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
@@ -47,6 +48,7 @@ class MainWindow(QMainWindow):
         self._panel.prompt_committed.connect(self._on_panel_prompt_committed)
         self._panel.filename_committed.connect(self._on_panel_filename_committed)
         self._panel.op_type_changed.connect(self._on_panel_op_type_changed)
+        self._panel.condition_type_changed.connect(self._on_panel_condition_type_changed)
 
         # Wire canvas output callbacks → panel
         self.canvas.on_output_line = lambda node, line: self._panel.maybe_append_output(node, line)
@@ -152,6 +154,7 @@ class MainWindow(QMainWindow):
 
         act("＋ LLM Call", self.canvas.add_llm_node, tip="Add a new LLM call node")
         act("＋ File Op", self.canvas.add_file_op_node, tip="Add a file operation node (set type in the panel)")
+        act("＋ Conditional", self.canvas.add_conditional_node, tip="Add a conditional node that routes execution to true/false branches")
         tb.addSeparator()
         act("▶ Run All", self._run_all, shortcut="F5",
             tip="Run all nodes reachable from Start")
@@ -230,7 +233,7 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self):
         selected = [
             i for i in self.canvas._scene.selectedItems()
-            if isinstance(i, (LLMNode, FileOpNode)) and not getattr(i, 'is_start', False)
+            if isinstance(i, (LLMNode, FileOpNode, ConditionalNode)) and not getattr(i, 'is_start', False)
         ]
         if len(selected) == 1:
             self._panel.show_for_node(selected[0])
@@ -262,7 +265,7 @@ class MainWindow(QMainWindow):
 
     def _on_panel_filename_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
-        if node is not None and isinstance(node, FileOpNode):
+        if node is not None and isinstance(node, (FileOpNode, ConditionalNode)):
             node.filename = text
 
     def _on_panel_op_type_changed(self, node_id: str, old_type: str, new_type: str):
@@ -270,6 +273,12 @@ class MainWindow(QMainWindow):
         if node is None:
             return
         self.canvas._on_op_type_changed(node_id, old_type, new_type)
+
+    def _on_panel_condition_type_changed(self, node_id: str, old_type: str, new_type: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is None:
+            return
+        self.canvas._on_condition_type_changed(node_id, old_type, new_type)
 
     # ------------------------------------------------------------------
 

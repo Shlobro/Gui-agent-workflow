@@ -272,7 +272,7 @@ class LLMNode(WorkflowNode):
     # Port positions
     # ------------------------------------------------------------------
 
-    def output_port_scene_pos(self) -> QPointF:
+    def output_port_scene_pos(self, port: str = "output") -> QPointF:
         return self.mapToScene(QPointF(NODE_WIDTH, self._height / 2))
 
     def input_port_scene_pos(self) -> QPointF:
@@ -443,7 +443,7 @@ class StartNode(QGraphicsItem):
         )
         self.setZValue(1)
 
-    def output_port_scene_pos(self) -> QPointF:
+    def output_port_scene_pos(self, port: str = "output") -> QPointF:
         return self.mapToScene(QPointF(START_NODE_WIDTH, START_NODE_HEIGHT / 2))
 
     def is_near_output_port(self, scene_pos: QPointF) -> bool:

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .llm_widget import ModelSelector, populate_model_selector
+from .conditional_node import CONDITION_REGISTRY
 
 PANEL_WIDTH = 360
 
@@ -242,6 +243,93 @@ class _FileOpForm(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# Conditional form
+# ---------------------------------------------------------------------------
+
+class _ConditionalForm(QWidget):
+    """Form widget for editing a ConditionalNode's properties."""
+
+    # Emitted when the user picks a different condition type (old_type, new_type).
+    condition_type_changed = Signal(str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(6)
+
+        type_label = QLabel("CONDITION")
+        type_label.setObjectName("section_label")
+        layout.addWidget(type_label)
+
+        layout.addSpacing(4)
+
+        cond_label = QLabel("Condition")
+        layout.addWidget(cond_label)
+        self.condition_combo = QComboBox()
+        for cond_id, (display_name, _) in CONDITION_REGISTRY.items():
+            self.condition_combo.addItem(display_name, userData=cond_id)
+        layout.addWidget(self.condition_combo)
+
+        layout.addSpacing(4)
+
+        name_label = QLabel("Name")
+        layout.addWidget(name_label)
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Node name…")
+        layout.addWidget(self.title_edit)
+
+        layout.addSpacing(4)
+
+        fn_label = QLabel("File to check")
+        layout.addWidget(fn_label)
+        self.filename_edit = QLineEdit()
+        self.filename_edit.setPlaceholderText("e.g. output.txt")
+        layout.addWidget(self.filename_edit)
+
+        layout.addSpacing(4)
+
+        self._output_frame = QFrame()
+        self._output_frame.setVisible(False)
+        out_layout = QVBoxLayout(self._output_frame)
+        out_layout.setContentsMargins(0, 0, 0, 0)
+        out_layout.setSpacing(4)
+        self.output_label = QLabel("Result")
+        out_layout.addWidget(self.output_label)
+        self.output_edit = QPlainTextEdit()
+        self.output_edit.setReadOnly(True)
+        self.output_edit.setMinimumHeight(60)
+        out_layout.addWidget(self.output_edit)
+        layout.addWidget(self._output_frame)
+
+        layout.addStretch(1)
+
+        self._current_condition_type: str = "file_empty"
+        self.condition_combo.currentIndexChanged.connect(self._on_condition_index_changed)
+
+    def _on_condition_index_changed(self, index: int):
+        new_type = self.condition_combo.itemData(index)
+        if new_type and new_type != self._current_condition_type:
+            old = self._current_condition_type
+            self._current_condition_type = new_type
+            self.condition_type_changed.emit(old, new_type)
+
+    def set_condition_type(self, condition_type: str):
+        """Set combobox selection without emitting condition_type_changed."""
+        self.condition_combo.blockSignals(True)
+        for i in range(self.condition_combo.count()):
+            if self.condition_combo.itemData(i) == condition_type:
+                self.condition_combo.setCurrentIndex(i)
+                break
+        self._current_condition_type = condition_type
+        self.condition_combo.blockSignals(False)
+
+    def show_output(self, visible: bool):
+        self._output_frame.setVisible(visible)
+
+
+# ---------------------------------------------------------------------------
 # PropertiesPanel
 # ---------------------------------------------------------------------------
 
@@ -249,11 +337,12 @@ class PropertiesPanel(QWidget):
     """Animated drawer panel that slides in from the right when a node is selected."""
 
     # Signals emitted when the user commits changes
-    title_committed = Signal(str, str, str)     # node_id, old_title, new_title
-    model_changed = Signal(str, str, str)        # node_id, old_model_id, new_model_id
-    prompt_committed = Signal(str, str)          # node_id, text
-    filename_committed = Signal(str, str)        # node_id, text
-    op_type_changed = Signal(str, str, str)     # node_id, old_type, new_type
+    title_committed = Signal(str, str, str)         # node_id, old_title, new_title
+    model_changed = Signal(str, str, str)            # node_id, old_model_id, new_model_id
+    prompt_committed = Signal(str, str)              # node_id, text
+    filename_committed = Signal(str, str)            # node_id, text
+    op_type_changed = Signal(str, str, str)          # node_id, old_type, new_type
+    condition_type_changed = Signal(str, str, str)   # node_id, old_type, new_type
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -267,6 +356,7 @@ class PropertiesPanel(QWidget):
         self._old_title: str = ""
         self._prompt_dirty: bool = False
         self._filename_dirty: bool = False
+        self._cond_filename_dirty: bool = False
         self._is_committing: bool = False
 
         # Animation on maximumWidth
@@ -274,7 +364,7 @@ class PropertiesPanel(QWidget):
         self._anim.setDuration(200)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        # Stack: page 0 = empty, page 1 = LLM form, page 2 = FileOp form
+        # Stack: page 0 = empty, page 1 = LLM form, page 2 = FileOp form, page 3 = Conditional form
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
@@ -301,6 +391,14 @@ class PropertiesPanel(QWidget):
         file_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(file_scroll)
 
+        # Page 3 — Conditional form (inside a scroll area)
+        self._cond_form = _ConditionalForm()
+        cond_scroll = QScrollArea()
+        cond_scroll.setWidgetResizable(True)
+        cond_scroll.setWidget(self._cond_form)
+        cond_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._stack.addWidget(cond_scroll)
+
         self._wire_signals()
 
     # ------------------------------------------------------------------
@@ -321,6 +419,13 @@ class PropertiesPanel(QWidget):
         self._file_form.filename_edit.installEventFilter(self)
         self._file_form.op_type_changed.connect(self._on_op_type_changed)
 
+        # Conditional form
+        self._cond_form.title_edit.editingFinished.connect(self._on_cond_title_committed)
+        self._cond_form.filename_edit.editingFinished.connect(self._on_cond_filename_committed)
+        self._cond_form.filename_edit.textChanged.connect(self._on_cond_filename_changed)
+        self._cond_form.filename_edit.installEventFilter(self)
+        self._cond_form.condition_type_changed.connect(self._on_condition_type_changed)
+
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.FocusOut:
@@ -328,6 +433,8 @@ class PropertiesPanel(QWidget):
                 self._flush_prompt()
             elif obj is self._file_form.filename_edit and self._filename_dirty:
                 self._flush_filename()
+            elif obj is self._cond_form.filename_edit and self._cond_filename_dirty:
+                self._flush_cond_filename()
         return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
@@ -384,6 +491,33 @@ class PropertiesPanel(QWidget):
             return
         self.op_type_changed.emit(self._current_node.node_id, old_type, new_type)
 
+    def _on_cond_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._cond_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_cond_filename_changed(self):
+        self._cond_filename_dirty = True
+
+    def _on_cond_filename_committed(self):
+        if self._cond_filename_dirty:
+            self._flush_cond_filename()
+
+    def _flush_cond_filename(self):
+        if self._current_node is None:
+            return
+        text = self._cond_form.filename_edit.text()
+        self.filename_committed.emit(self._current_node.node_id, text)
+        self._cond_filename_dirty = False
+
+    def _on_condition_type_changed(self, old_type: str, new_type: str):
+        if self._current_node is None:
+            return
+        self.condition_type_changed.emit(self._current_node.node_id, old_type, new_type)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -395,6 +529,7 @@ class PropertiesPanel(QWidget):
 
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
+        from .conditional_node import ConditionalNode
 
         self._is_committing = True
         try:
@@ -408,6 +543,10 @@ class PropertiesPanel(QWidget):
                 if self._filename_dirty:
                     self._flush_filename()
                 self._on_file_title_committed()
+            elif isinstance(self._current_node, ConditionalNode):
+                if self._cond_filename_dirty:
+                    self._flush_cond_filename()
+                self._on_cond_title_committed()
         finally:
             self._is_committing = False
 
@@ -415,6 +554,7 @@ class PropertiesPanel(QWidget):
         """Load node data into the form, switch page, and animate open."""
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
+        from .conditional_node import ConditionalNode
 
         # Commit any pending edits for the previous node before switching.
         if self._current_node is not None and self._current_node is not node:
@@ -425,6 +565,9 @@ class PropertiesPanel(QWidget):
         if isinstance(node, LLMNode):
             self._load_llm_form(node)
             self._stack.setCurrentIndex(1)
+        elif isinstance(node, ConditionalNode):
+            self._load_cond_form(node)
+            self._stack.setCurrentIndex(3)
         elif isinstance(node, FileOpNode):
             self._load_file_form(node)
             self._stack.setCurrentIndex(2)
@@ -445,9 +588,13 @@ class PropertiesPanel(QWidget):
             return
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
+        from .conditional_node import ConditionalNode
         if isinstance(node, LLMNode):
             self._llm_form.show_output(True)
             self._llm_form.output_edit.appendPlainText(line)
+        elif isinstance(node, ConditionalNode):
+            self._cond_form.show_output(True)
+            self._cond_form.output_edit.appendPlainText(line)
         elif isinstance(node, FileOpNode):
             self._file_form.show_output(True)
             self._file_form.output_edit.appendPlainText(line)
@@ -458,9 +605,13 @@ class PropertiesPanel(QWidget):
             return
         from .llm_node import LLMNode
         from .file_op_node import FileOpNode
+        from .conditional_node import ConditionalNode
         if isinstance(node, LLMNode):
             self._llm_form.output_edit.clear()
             self._llm_form.show_output(False)
+        elif isinstance(node, ConditionalNode):
+            self._cond_form.output_edit.clear()
+            self._cond_form.show_output(False)
         elif isinstance(node, FileOpNode):
             self._file_form.output_edit.clear()
             self._file_form.show_output(False)
@@ -515,6 +666,28 @@ class PropertiesPanel(QWidget):
 
         self._old_title = node.title
         self._filename_dirty = False
+
+    def _load_cond_form(self, node) -> None:
+        form = self._cond_form
+        form.title_edit.blockSignals(True)
+        form.filename_edit.blockSignals(True)
+
+        form.set_condition_type(node.condition_type)
+        form.title_edit.setText(node.title)
+        form.filename_edit.setText(node.filename)
+
+        if node.output_text:
+            form.show_output(True)
+            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+        else:
+            form.output_edit.clear()
+            form.show_output(False)
+
+        form.title_edit.blockSignals(False)
+        form.filename_edit.blockSignals(False)
+
+        self._old_title = node.title
+        self._cond_filename_dirty = False
 
     def _animate_to(self, target_width: int) -> None:
         self._anim.stop()
