@@ -1,0 +1,96 @@
+{
+  "nodes": [
+    {
+      "node_type": "create_file",
+      "id": "3571904f-5dae-4264-bd74-f4efd8d626f7",
+      "label_index": 1,
+      "x": -136.0,
+      "y": -33.0,
+      "name": "make story.txt",
+      "filename": "story.txt"
+    },
+    {
+      "id": "81770781-643f-4b43-98ae-58a6c8627f98",
+      "label_index": 2,
+      "x": 388.0,
+      "y": -34.0,
+      "name": "LLM 2",
+      "model": "gemini-3-pro-preview",
+      "prompt": "write the first part of a story to story.txt"
+    },
+    {
+      "node_type": "loop",
+      "id": "6bc4f7e2-694b-48c5-a7cf-627759937812",
+      "label_index": 3,
+      "x": 953.0,
+      "y": -35.0,
+      "name": "add to story",
+      "loop_count": 3
+    },
+    {
+      "id": "50b52817-0622-4af2-b414-fe356619c036",
+      "label_index": 4,
+      "x": 1292.0,
+      "y": -273.0,
+      "name": "LLM 2",
+      "model": "gemini-3-pro-preview",
+      "prompt": "add to story.txt"
+    },
+    {
+      "id": "8b564ca3-a689-4984-9365-1c11b8150235",
+      "label_index": 5,
+      "x": 1641.0,
+      "y": -78.0,
+      "name": "LLM 5",
+      "model": "claude-sonnet-4-6",
+      "prompt": "create a summary of the story"
+    },
+    {
+      "id": "5bd1ae12-6854-48d7-9bcf-b5d817b2afbb",
+      "label_index": 6,
+      "x": 1634.0,
+      "y": 74.0,
+      "name": "LLM 5",
+      "model": "gpt-5.3-codex:low",
+      "prompt": "create a summary of the story"
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "3571904f-5dae-4264-bd74-f4efd8d626f7"
+    },
+    {
+      "from": "3571904f-5dae-4264-bd74-f4efd8d626f7",
+      "to": "81770781-643f-4b43-98ae-58a6c8627f98"
+    },
+    {
+      "from": "81770781-643f-4b43-98ae-58a6c8627f98",
+      "to": "6bc4f7e2-694b-48c5-a7cf-627759937812"
+    },
+    {
+      "from": "6bc4f7e2-694b-48c5-a7cf-627759937812",
+      "to": "50b52817-0622-4af2-b414-fe356619c036",
+      "source_port": "loop"
+    },
+    {
+      "from": "50b52817-0622-4af2-b414-fe356619c036",
+      "to": "6bc4f7e2-694b-48c5-a7cf-627759937812"
+    },
+    {
+      "from": "6bc4f7e2-694b-48c5-a7cf-627759937812",
+      "to": "8b564ca3-a689-4984-9365-1c11b8150235",
+      "source_port": "done"
+    },
+    {
+      "from": "6bc4f7e2-694b-48c5-a7cf-627759937812",
+      "to": "5bd1ae12-6854-48d7-9bcf-b5d817b2afbb",
+      "source_port": "done"
+    }
+  ],
+  "node_counter": 6,
+  "start_pos": [
+    -414.0,
+    -39.0
+  ]
+}
