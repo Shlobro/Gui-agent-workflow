@@ -8,6 +8,10 @@ A visual node-graph editor for chaining LLM calls, file operations, git actions,
 
 ---
 
+![screenshot](screen%20shot/screenshot%201.png)
+
+---
+
 ## What It Does
 
 Build workflows visually. Connect nodes. Run them.
