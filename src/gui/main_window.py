@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
 
         self.canvas.status_update.connect(self._on_status)
         self.canvas.selection_changed.connect(self._on_selection_changed)
+        self.canvas.usage_limit_hit.connect(self._on_usage_limit_hit)
 
         # Wire panel signals → canvas undo handlers
         self._panel.title_committed.connect(self._on_panel_title_committed)
@@ -226,6 +227,17 @@ class MainWindow(QMainWindow):
             self._open_folder_action.setToolTip(
                 "Choose the folder LLM calls will run in"
             )
+
+    def _on_usage_limit_hit(self, node_id: str, error_text: str) -> None:
+        from .dialogs.usage_limit_dialog import UsageLimitDialog
+        node = self.canvas._nodes.get(node_id)
+        node_title = getattr(node, "title", node_id) if node else node_id
+        dlg = UsageLimitDialog(node_title=node_title, error_text=error_text, parent=self)
+        dlg.exec()
+        if dlg.result_code() == UsageLimitDialog.CHANGE_MODEL and node is not None:
+            self.canvas._scene.clearSelection()
+            node.setSelected(True)
+            self.canvas.ensureVisible(node)
 
     def _undo(self):
         self._panel.commit_pending_edits()

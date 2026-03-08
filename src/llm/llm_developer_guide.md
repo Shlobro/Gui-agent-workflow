@@ -12,7 +12,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 
 ## Current Model Sets
 - Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
-- Codex: GPT-5.3 Codex with `low`, default (medium), `high`, and `xhigh` reasoning-effort options.
+- Codex CLI / OpenAI: GPT-5.4 and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` reasoning-effort options.
 - Gemini: See `gemini_provider.py` for the current list exposed to the UI.
 
 ## Provider Contract

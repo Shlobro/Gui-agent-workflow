@@ -3,7 +3,8 @@
     "allow": [
       "Bash(cd C:\\\\Users\\\\shlob\\\\Pycharm Projects\\\\GUI workflow:*)",
       "Bash(python:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebSearch"
     ]
   }
 }

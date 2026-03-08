@@ -19,7 +19,7 @@
 
 ## Current Built-In Models
 - Claude provider: Opus 4.6, Sonnet 4.6, Haiku 4.5.
-- Codex provider: GPT-5.3 Codex with `low`, default (medium), `high`, and `xhigh` effort options.
+- Codex CLI / OpenAI provider: GPT-5.4 and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` effort options.
 - Gemini provider: models declared in `llm/gemini_provider.py`.
 
 ## When To Edit What

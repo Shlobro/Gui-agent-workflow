@@ -100,6 +100,9 @@ class LLMWorker(QThread):
                 self.error.emit("Cancelled")
                 return
             full_output = "\n".join(self._output_lines)
+            if self._process.returncode != 0:
+                self.error.emit(full_output)
+                return
             self.finished.emit(full_output)
 
         except FileNotFoundError:

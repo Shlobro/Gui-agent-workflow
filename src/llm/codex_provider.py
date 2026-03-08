@@ -7,6 +7,10 @@ from .base_provider import BaseLLMProvider, LLMProviderRegistry
 
 class CodexProvider(BaseLLMProvider):
     MODELS = [
+        ("gpt-5.4", "GPT-5.4 (Medium)"),
+        ("gpt-5.4:low", "GPT-5.4 (Low)"),
+        ("gpt-5.4:high", "GPT-5.4 (High)"),
+        ("gpt-5.4:xhigh", "GPT-5.4 (Ultra High)"),
         ("gpt-5.3-codex", "GPT-5.3 Codex (Medium)"),
         ("gpt-5.3-codex:low", "GPT-5.3 Codex (Low)"),
         ("gpt-5.3-codex:high", "GPT-5.3 Codex (High)"),

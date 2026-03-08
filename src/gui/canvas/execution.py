@@ -1,6 +1,7 @@
 """_ExecutionMixin — workflow run/stop logic for WorkflowCanvas."""
 
 import os
+import re
 from collections import deque
 from typing import TYPE_CHECKING, List, Sequence
 from uuid import uuid4
@@ -19,6 +20,21 @@ if TYPE_CHECKING:
     from src.gui.canvas import WorkflowCanvas
 
 GraphNode = WorkflowNode
+
+_USAGE_LIMIT_RE = re.compile(
+    r"you'?ve hit your usage limit"
+    r"|you'?ve reached your \d+-hour message limit"
+    r"|claude usage limit reached"
+    r"|api error: rate limit (?:reached|exceeded)"
+    r"|you exceeded your current quota"
+    r"|usage limit reached for"
+    r"|quota exceeded for",
+    re.IGNORECASE,
+)
+
+
+def is_usage_limit_error(text: str) -> bool:
+    return bool(_USAGE_LIMIT_RE.search(text))
 
 
 class _ExecutionMixin:
@@ -601,6 +617,13 @@ class _ExecutionMixin:
             if self.on_output_line:
                 self.on_output_line(node, msg)
             node.set_status("error")
+            if is_usage_limit_error(result):
+                self.stop_all()
+                QTimer.singleShot(
+                    0,
+                    lambda _nid=node.node_id, _msg=result:
+                        self.usage_limit_hit.emit(_nid, _msg),
+                )
         else:
             from src.gui.git_action_node import GitActionNode
             if isinstance(node, FileOpNode):

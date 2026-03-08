@@ -47,6 +47,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
     status_update = Signal(str)
     selection_changed = Signal()
     run_state_changed = Signal(bool)
+    usage_limit_hit = Signal(str, str)   # node_id, error_text
 
     def __init__(self, parent=None):
         super().__init__(parent)
