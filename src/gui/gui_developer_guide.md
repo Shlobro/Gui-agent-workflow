@@ -4,7 +4,7 @@
 Implements the interactive Qt UI for composing and running LLM workflows.
 
 ## Contents
-- `main_window.py`: Main shell with the File menu, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores and saves panel width plus panel text zoom with `QSettings`, drives the panel from `canvas.selection_changed`, commits pending edits before run/save operations, hides the panel before destructive canvas mutations, catches load parse/schema errors for a user-facing dialog, listens for `canvas.usage_limit_hit`, and defines the app-wide rounded `QScrollBar` theme.
+- `main_window.py`: Main shell with the File menu, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores and saves panel width plus panel text zoom with `QSettings`, drives the panel from `canvas.selection_changed`, commits pending edits before run/save operations, hides the panel before destructive canvas mutations, catches load parse/schema errors for a user-facing dialog, listens for `canvas.usage_limit_hit`, defines the app-wide rounded `QScrollBar` theme (18 px capsule rail with inset bordered capsule handles), and uses non-native `QFileDialog` pickers for Save/Load so app styling applies consistently.
 - `dialogs/`: Modal dialog classes for runtime user notifications.
 - `canvas/` subpackage: Houses `WorkflowCanvas` and its mixins.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`.
@@ -18,7 +18,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `loop_node.py`: `LoopNode` with loop/done output ports and loop-token keyed counters.
 - `connection_item.py`: Directed edge item carrying `source_port` for multi-port nodes.
 - `undo_commands.py`: `QUndoCommand` implementations for graph mutations.
-- `project_chooser.py`: Startup dialog for selecting the project folder and persisting recent folders. Uses its own stylesheet including rounded scrollbar styling for the recent-folder list.
+- `project_chooser.py`: Startup dialog for selecting the project folder and persisting recent folders. Uses its own stylesheet including rounded scrollbar styling for the recent-folder list, and opens folder selection with non-native `QFileDialog` options so dialog scrollbars follow the app theme.
 - `assets/`: Static logo files used by the model selector.
 - `__init__.py`: Package marker.
 

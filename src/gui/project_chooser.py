@@ -135,19 +135,26 @@ class ProjectChooserDialog(QDialog):
             QDialogButtonBox QPushButton { padding: 5px 18px; }
             QFrame[frameShape="4"] { color: #333; }
             QScrollBar:vertical {
-                background: transparent;
-                width: 12px;
-                margin: 2px 1px 2px 1px;
+                background: #20242b;
+                width: 18px;
+                padding: 2px;
+                border-radius: 9px;
             }
             QScrollBar::handle:vertical {
-                background: #4b4f58;
-                border-radius: 6px;
-                min-height: 34px;
+                background: #6f8fb3;
+                border: 2px solid #20242b;
+                border-radius: 7px;
+                min-height: 52px;
             }
-            QScrollBar::handle:vertical:hover { background: #637997; }
-            QScrollBar::handle:vertical:pressed { background: #7b9bc1; }
+            QScrollBar::handle:vertical:hover { background: #83a4ca; }
+            QScrollBar::handle:vertical:pressed { background: #95b8df; }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+            QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
+                background: transparent;
+                width: 0px;
+                height: 0px;
+            }
         """)
 
     # ------------------------------------------------------------------
@@ -156,7 +163,9 @@ class ProjectChooserDialog(QDialog):
     def _browse(self):
         folder = QFileDialog.getExistingDirectory(
             self, "Choose Project Folder", "",
-            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks,
+            QFileDialog.Option.ShowDirsOnly
+            | QFileDialog.Option.DontResolveSymlinks
+            | QFileDialog.Option.DontUseNativeDialog,
         )
         if folder:
             self._chosen = folder
