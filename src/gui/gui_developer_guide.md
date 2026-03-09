@@ -33,6 +33,8 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - The Start node is permanent and recreated after Clear Canvas. Its position is saved and restored with workflow JSON.
 - Cyclic graphs execute continuously until the user stops the workflow. Drawing a connection that would create a cycle still warns first, but the user may proceed.
 - Loop bodies require an explicit feedback edge into the loop node input (for example `Loop(loop) -> Body -> Loop(input)`) so the next pass can re-enter the loop node.
+- All non-start workflow nodes share the same timer-driven active-border animation while their status is `running` (or `looping` for loop nodes), and selected active nodes use a stronger pulsing selection ring derived from the active status color.
+- Loop nodes use status `looping` during in-progress iterations (amber visual treatment) and switch to `done` (green) only on final completion.
 - Nodes not reachable from Start are never executed by Run All.
 - Children fire only on successful completion.
 - Run Selected fires only the selected node(s) without triggering children. Run From Here fires the selected node and all descendants reachable from it.

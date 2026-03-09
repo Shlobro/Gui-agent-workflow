@@ -18,6 +18,8 @@ from PySide6.QtGui import (
 from .llm_node import (
     WorkflowNode,
     STATUS_COLORS,
+    glow_phase,
+    set_node_status,
     PORT_RADIUS,
     INPUT_PORT_EDGE_COLOR, INPUT_PORT_FILL_COLOR, INPUT_PORT_LABEL_COLOR,
     CORNER_RADIUS,
@@ -158,8 +160,7 @@ class ConditionalNode(WorkflowNode):
     # ------------------------------------------------------------------
 
     def set_status(self, status: str) -> None:
-        self.status = status
-        self.update()
+        set_node_status(self, status)
 
     def append_output(self, line: str) -> None:
         self.output_text += line + "\n"
@@ -226,7 +227,7 @@ class ConditionalNode(WorkflowNode):
     # ------------------------------------------------------------------
 
     def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath):
-        phase = (id(self) * 0.001) % 1.0
+        phase = glow_phase()
         cx = NODE_WIDTH / 2
         cy = self._height / 2
         pulse = 0.55 + 0.45 * _math.sin(phase * 2 * _math.pi)
@@ -286,17 +287,13 @@ class ConditionalNode(WorkflowNode):
         )
 
         if self.isSelected():
-            glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
-            glow_path = QPainterPath()
-            glow_path.addRoundedRect(glow_rect, CORNER_RADIUS + 2.5, CORNER_RADIUS + 2.5)
-            outer_glow_pen = QPen(QColor(255, 200, 60, 90), 8)
-            outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(outer_glow_pen)
-            painter.drawPath(glow_path)
-            inner_glow_pen = QPen(QColor(255, 220, 100, 220), 3)
-            inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(inner_glow_pen)
-            painter.drawPath(glow_path)
+            self._draw_selection_glow(
+                painter,
+                QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0),
+                CORNER_RADIUS + 2.5,
+                active=self.status in {"running", "looping"},
+                active_color=STATUS_COLORS.get(self.status, QColor("#ffd060")),
+            )
 
         if self.status == "running":
             self._paint_running_glow(painter, path)

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 STATUS_COLORS = {
     "idle":    QColor("#555555"),
     "running": QColor("#3a8ef5"),
+    "looping": QColor("#d18a2f"),
     "done":    QColor("#3aaa5a"),
     "error":   QColor("#e05252"),
 }
@@ -49,11 +50,11 @@ _COMPACT_NODE_HEIGHT = 64
 
 
 # ---------------------------------------------------------------------------
-# Glow animation singleton — drives "running" border animation for LLMNode
+# Glow animation singleton - drives animated border effects for active nodes.
 # ---------------------------------------------------------------------------
 
 class _GlowAnimator:
-    """Singleton timer that advances a shared glow phase for running LLMNodes."""
+    """Singleton timer that advances a shared glow phase for active workflow nodes."""
 
     _instance: Optional["_GlowAnimator"] = None
 
@@ -91,6 +92,27 @@ class _GlowAnimator:
         self._phase = (self._phase + 0.012) % 1.0   # full cycle ≈ 2.5 s
         for node in list(self._nodes):
             node.update()
+
+
+_ANIMATED_STATUSES = {"running", "looping"}
+
+
+def glow_phase() -> float:
+    """Current normalized glow phase in [0, 1)."""
+    return _GlowAnimator.get().phase
+
+
+def set_node_status(node: "WorkflowNode", status: str) -> None:
+    """Apply node status and keep shared glow animation registration in sync."""
+    was_animated = node.status in _ANIMATED_STATUSES
+    node.status = status
+    is_animated = status in _ANIMATED_STATUSES
+    animator = _GlowAnimator.get()
+    if is_animated and not was_animated:
+        animator.register(node)
+    elif not is_animated and was_animated:
+        animator.unregister(node)
+    node.update()
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +224,36 @@ class WorkflowNode(QGraphicsItem):
         painter.drawLine(QPointF(tip_x - 5.0, y - 3.7), QPointF(tip_x, y))
         painter.drawLine(QPointF(tip_x - 5.0, y + 3.7), QPointF(tip_x, y))
 
+    @staticmethod
+    def _draw_selection_glow(
+        painter: QPainter,
+        rect: QRectF,
+        corner_radius: float,
+        active: bool = False,
+        active_color: Optional[QColor] = None,
+    ) -> None:
+        glow_path = QPainterPath()
+        glow_path.addRoundedRect(rect, corner_radius, corner_radius)
+
+        if active:
+            phase = _GlowAnimator.get().phase
+            pulse = 0.55 + 0.45 * math.sin(phase * 2 * math.pi)
+            c = active_color or QColor("#8ddcff")
+            outer_alpha = int(60 + 70 * pulse)
+            inner_alpha = int(170 + 60 * pulse)
+            outer_glow_pen = QPen(QColor(c.red(), c.green(), c.blue(), outer_alpha), 8)
+            inner_glow_pen = QPen(QColor(c.red(), c.green(), c.blue(), inner_alpha), 3.2)
+        else:
+            outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
+            inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
+
+        outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(outer_glow_pen)
+        painter.drawPath(glow_path)
+        painter.setPen(inner_glow_pen)
+        painter.drawPath(glow_path)
+
 
 # ---------------------------------------------------------------------------
 # LLMNode
@@ -253,14 +305,7 @@ class LLMNode(WorkflowNode):
     # ------------------------------------------------------------------
 
     def set_status(self, status: str) -> None:
-        was_running = self.status == "running"
-        self.status = status
-        animator = _GlowAnimator.get()
-        if status == "running" and not was_running:
-            animator.register(self)
-        elif status != "running" and was_running:
-            animator.unregister(self)
-        self.update()
+        set_node_status(self, status)
 
     def append_output(self, line: str) -> None:
         self.output_text += line + "\n"
@@ -283,7 +328,7 @@ class LLMNode(WorkflowNode):
     # ------------------------------------------------------------------
 
     def _paint_running_glow(self, painter: QPainter, border_path: QPainterPath) -> None:
-        phase = _GlowAnimator.get().phase
+        phase = glow_phase()
         cx = NODE_WIDTH / 2
         cy = self._height / 2
 
@@ -350,18 +395,15 @@ class LLMNode(WorkflowNode):
             self._title,
         )
 
+        is_active = self.status in _ANIMATED_STATUSES
         if self.isSelected():
-            glow_rect = QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0)
-            glow_path = QPainterPath()
-            glow_path.addRoundedRect(glow_rect, CORNER_RADIUS + 2.5, CORNER_RADIUS + 2.5)
-            outer_glow_pen = QPen(QColor(122, 215, 255, 90), 8)
-            outer_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(outer_glow_pen)
-            painter.drawPath(glow_path)
-            inner_glow_pen = QPen(QColor(160, 230, 255, 220), 3)
-            inner_glow_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(inner_glow_pen)
-            painter.drawPath(glow_path)
+            self._draw_selection_glow(
+                painter,
+                QRectF(-2.5, -2.5, NODE_WIDTH + 5.0, self._height + 5.0),
+                CORNER_RADIUS + 2.5,
+                active=is_active,
+                active_color=STATUS_COLORS.get(self.status, QColor("#8ddcff")),
+            )
 
         if self.status == "running":
             self._paint_running_glow(painter, path)

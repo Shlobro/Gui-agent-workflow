@@ -145,7 +145,7 @@ class _ExecutionMixin:
             if worker is not None:
                 worker.cancel()
         for node in self._nodes.values():
-            if node.status == "running":
+            if node.status in {"running", "looping"}:
                 node.set_status("idle")
         self.status_update.emit("Stopped.")
 
@@ -278,10 +278,11 @@ class _ExecutionMixin:
         self._exec_node[exec_id] = node.node_id
         self._exec_lineage[exec_id] = lineage_token
         self._current_run_exec_ids.add(exec_id)
-        node.set_status("running")
         if isinstance(node, LoopNode):
+            node.set_status("looping")
             self._fire_loop(node, exec_id, lineage_token, loop_token)
             return
+        node.set_status("running")
         if isinstance(node, ConditionalNode):
             self._fire_condition_check(node, exec_id, lineage_token, loop_token)
             return
@@ -560,6 +561,8 @@ class _ExecutionMixin:
         if retired:
             self._check_drain()
             return
+        if branch == "loop":
+            node.set_status("looping")
         if branch == "done":
             node.set_status("done")
         if not self._no_fanout:
@@ -820,7 +823,7 @@ class _ExecutionMixin:
             self._running = False
             self._loop_counters.clear()
             for node in self._nodes.values():
-                if node.status == "running":
+                if node.status in {"running", "looping"}:
                     node.set_status("done")
             self.run_state_changed.emit(False)
             self.status_update.emit("Done.")
