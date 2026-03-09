@@ -1,4 +1,4 @@
-"""PropertiesPanel — animated side-panel for editing node properties."""
+"""PropertiesPanel - animated side-panel for editing node properties."""
 
 from typing import Optional
 
@@ -22,6 +22,7 @@ from ._panel_forms import (
     _ConditionalForm,
     _LoopForm,
     _GitActionForm,
+    _AttentionForm,
 )
 
 PANEL_WIDTH = 360
@@ -83,22 +84,18 @@ _PANEL_STYLE = """
 """
 
 
-# ---------------------------------------------------------------------------
-# PropertiesPanel
-# ---------------------------------------------------------------------------
-
 class PropertiesPanel(QWidget):
     """Animated drawer panel that slides in from the right when a node is selected."""
 
-    # Signals emitted when the user commits changes
-    title_committed = Signal(str, str, str)         # node_id, old_title, new_title
-    model_changed = Signal(str, str, str)            # node_id, old_model_id, new_model_id
-    prompt_committed = Signal(str, str)              # node_id, text
-    filename_committed = Signal(str, str)            # node_id, text
-    op_type_changed = Signal(str, str, str)          # node_id, old_type, new_type
-    condition_type_changed = Signal(str, str, str)   # node_id, old_type, new_type
-    loop_count_changed = Signal(str, int, int)       # node_id, old_count, new_count
-    git_action_changed = Signal(str, str, str)       # node_id, old_action, new_action
+    title_committed = Signal(str, str, str)
+    model_changed = Signal(str, str, str)
+    prompt_committed = Signal(str, str)
+    filename_committed = Signal(str, str)
+    attention_message_committed = Signal(str, str)
+    op_type_changed = Signal(str, str, str)
+    condition_type_changed = Signal(str, str, str)
+    loop_count_changed = Signal(str, int, int)
+    git_action_changed = Signal(str, str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -113,16 +110,15 @@ class PropertiesPanel(QWidget):
         self._prompt_dirty: bool = False
         self._filename_dirty: bool = False
         self._cond_filename_dirty: bool = False
+        self._attention_message_dirty: bool = False
         self._git_commit_msg_dirty: bool = False
         self._git_commit_msg_file_dirty: bool = False
         self._is_committing: bool = False
 
-        # Animation on maximumWidth
         self._anim = QPropertyAnimation(self, b"maximumWidth")
         self._anim.setDuration(200)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        # Stack: page 0 = empty, page 1–5 = form pages
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
@@ -130,10 +126,8 @@ class PropertiesPanel(QWidget):
         self._stack = QStackedWidget()
         outer_layout.addWidget(self._stack)
 
-        # Page 0 — empty placeholder
         self._stack.addWidget(QWidget())
 
-        # Page 1 — LLM form (inside a scroll area)
         self._llm_form = _LLMForm()
         llm_scroll = QScrollArea()
         llm_scroll.setWidgetResizable(True)
@@ -141,7 +135,6 @@ class PropertiesPanel(QWidget):
         llm_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(llm_scroll)
 
-        # Page 2 — FileOp form (inside a scroll area)
         self._file_form = _FileOpForm()
         file_scroll = QScrollArea()
         file_scroll.setWidgetResizable(True)
@@ -149,7 +142,6 @@ class PropertiesPanel(QWidget):
         file_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(file_scroll)
 
-        # Page 3 — Conditional form (inside a scroll area)
         self._cond_form = _ConditionalForm()
         cond_scroll = QScrollArea()
         cond_scroll.setWidgetResizable(True)
@@ -157,7 +149,6 @@ class PropertiesPanel(QWidget):
         cond_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(cond_scroll)
 
-        # Page 4 — Loop form (inside a scroll area)
         self._loop_form = _LoopForm()
         loop_scroll = QScrollArea()
         loop_scroll.setWidgetResizable(True)
@@ -165,7 +156,6 @@ class PropertiesPanel(QWidget):
         loop_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(loop_scroll)
 
-        # Page 5 — GitAction form (inside a scroll area)
         self._git_form = _GitActionForm()
         git_scroll = QScrollArea()
         git_scroll.setWidgetResizable(True)
@@ -173,38 +163,36 @@ class PropertiesPanel(QWidget):
         git_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._stack.addWidget(git_scroll)
 
+        self._attention_form = _AttentionForm()
+        attention_scroll = QScrollArea()
+        attention_scroll.setWidgetResizable(True)
+        attention_scroll.setWidget(self._attention_form)
+        attention_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._stack.addWidget(attention_scroll)
+
         self._wire_signals()
 
-    # ------------------------------------------------------------------
-    # Signal wiring
-    # ------------------------------------------------------------------
-
     def _wire_signals(self):
-        # LLM form
         self._llm_form.title_edit.editingFinished.connect(self._on_llm_title_committed)
         self._llm_form.model_selector.model_changed.connect(self._on_model_changed)
         self._llm_form.prompt_edit.textChanged.connect(self._on_prompt_changed)
         self._llm_form.prompt_edit.installEventFilter(self)
 
-        # FileOp form
         self._file_form.title_edit.editingFinished.connect(self._on_file_title_committed)
         self._file_form.filename_edit.editingFinished.connect(self._on_filename_committed)
         self._file_form.filename_edit.textChanged.connect(self._on_filename_changed)
         self._file_form.filename_edit.installEventFilter(self)
         self._file_form.op_type_changed.connect(self._on_op_type_changed)
 
-        # Conditional form
         self._cond_form.title_edit.editingFinished.connect(self._on_cond_title_committed)
         self._cond_form.filename_edit.editingFinished.connect(self._on_cond_filename_committed)
         self._cond_form.filename_edit.textChanged.connect(self._on_cond_filename_changed)
         self._cond_form.filename_edit.installEventFilter(self)
         self._cond_form.condition_type_changed.connect(self._on_condition_type_changed)
 
-        # Loop form
         self._loop_form.title_edit.editingFinished.connect(self._on_loop_title_committed)
         self._loop_form.loop_count_changed.connect(self._on_loop_count_changed)
 
-        # GitAction form
         self._git_form.title_edit.editingFinished.connect(self._on_git_title_committed)
         self._git_form.git_action_changed.connect(self._on_git_action_changed)
         self._git_form.msg_source_changed.connect(self._on_git_msg_source_changed)
@@ -215,6 +203,10 @@ class PropertiesPanel(QWidget):
         self._git_form.commit_msg_file_edit.editingFinished.connect(self._on_git_commit_msg_file_committed)
         self._git_form.commit_msg_file_edit.installEventFilter(self)
 
+        self._attention_form.title_edit.editingFinished.connect(self._on_attention_title_committed)
+        self._attention_form.message_edit.textChanged.connect(self._on_attention_message_changed)
+        self._attention_form.message_edit.installEventFilter(self)
+
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
         if event.type() == QEvent.Type.FocusOut:
@@ -224,15 +216,13 @@ class PropertiesPanel(QWidget):
                 self._flush_filename()
             elif obj is self._cond_form.filename_edit and self._cond_filename_dirty:
                 self._flush_cond_filename()
+            elif obj is self._attention_form.message_edit and self._attention_message_dirty:
+                self._flush_attention_message()
             elif obj is self._git_form.commit_msg_edit and self._git_commit_msg_dirty:
                 self._flush_git_commit_msg()
             elif obj is self._git_form.commit_msg_file_edit and self._git_commit_msg_file_dirty:
                 self._flush_git_commit_msg_file()
         return super().eventFilter(obj, event)
-
-    # ------------------------------------------------------------------
-    # Slot helpers
-    # ------------------------------------------------------------------
 
     def _on_llm_title_committed(self):
         if self._current_node is None:
@@ -368,9 +358,23 @@ class PropertiesPanel(QWidget):
         self._current_node.commit_msg_file = self._git_form.commit_msg_file_edit.text()
         self._git_commit_msg_file_dirty = False
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def _on_attention_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._attention_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_attention_message_changed(self):
+        self._attention_message_dirty = True
+
+    def _flush_attention_message(self):
+        if self._current_node is None:
+            return
+        text = self._attention_form.message_edit.toPlainText()
+        self.attention_message_committed.emit(self._current_node.node_id, text)
+        self._attention_message_dirty = False
 
     def commit_pending_edits(self) -> None:
         """Commit visible-form edits in a stable order."""
@@ -378,7 +382,7 @@ class PropertiesPanel(QWidget):
             return
 
         from .llm_node import LLMNode
-        from .file_op_node import FileOpNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
         from .git_action_node import GitActionNode
@@ -386,12 +390,14 @@ class PropertiesPanel(QWidget):
         self._is_committing = True
         try:
             if isinstance(self._current_node, LLMNode):
-                # Flush content first, then title; title commit can trigger panel refresh.
                 if self._prompt_dirty:
                     self._flush_prompt()
                 self._on_llm_title_committed()
+            elif isinstance(self._current_node, AttentionNode):
+                if self._attention_message_dirty:
+                    self._flush_attention_message()
+                self._on_attention_title_committed()
             elif isinstance(self._current_node, FileOpNode):
-                # Flush content first, then title; title commit can trigger panel refresh.
                 if self._filename_dirty:
                     self._flush_filename()
                 self._on_file_title_committed()
@@ -413,12 +419,11 @@ class PropertiesPanel(QWidget):
     def show_for_node(self, node) -> None:
         """Load node data into the form, switch page, and animate open."""
         from .llm_node import LLMNode
-        from .file_op_node import FileOpNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
         from .git_action_node import GitActionNode
 
-        # Commit any pending edits for the previous node before switching.
         if self._current_node is not None and self._current_node is not node:
             self.commit_pending_edits()
 
@@ -430,6 +435,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, ConditionalNode):
             self._load_cond_form(node)
             self._stack.setCurrentIndex(3)
+        elif isinstance(node, AttentionNode):
+            self._load_attention_form(node)
+            self._stack.setCurrentIndex(6)
         elif isinstance(node, LoopNode):
             self._load_loop_form(node)
             self._stack.setCurrentIndex(4)
@@ -445,17 +453,15 @@ class PropertiesPanel(QWidget):
         self._animate_to(PANEL_WIDTH)
 
     def hide_panel(self) -> None:
-        """Flush pending edits, then animate the panel shut."""
         self.commit_pending_edits()
         self._current_node = None
         self._animate_to(0)
 
     def maybe_append_output(self, node, line: str) -> None:
-        """Append a line to the output area if `node` is currently displayed."""
         if node is not self._current_node:
             return
         from .llm_node import LLMNode
-        from .file_op_node import FileOpNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
         from .git_action_node import GitActionNode
@@ -465,6 +471,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, ConditionalNode):
             self._cond_form.show_output(True)
             self._cond_form.output_edit.appendPlainText(line)
+        elif isinstance(node, AttentionNode):
+            self._attention_form.show_output(True)
+            self._attention_form.output_edit.appendPlainText(line)
         elif isinstance(node, LoopNode):
             self._loop_form.show_output(True)
             self._loop_form.output_edit.appendPlainText(line)
@@ -476,11 +485,10 @@ class PropertiesPanel(QWidget):
             self._file_form.output_edit.appendPlainText(line)
 
     def maybe_clear_output(self, node) -> None:
-        """Clear the output area if `node` is currently displayed."""
         if node is not self._current_node:
             return
         from .llm_node import LLMNode
-        from .file_op_node import FileOpNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
         from .loop_node import LoopNode
         from .git_action_node import GitActionNode
@@ -490,6 +498,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, ConditionalNode):
             self._cond_form.output_edit.clear()
             self._cond_form.show_output(False)
+        elif isinstance(node, AttentionNode):
+            self._attention_form.output_edit.clear()
+            self._attention_form.show_output(False)
         elif isinstance(node, LoopNode):
             self._loop_form.output_edit.clear()
             self._loop_form.show_output(False)
@@ -499,10 +510,6 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, FileOpNode):
             self._file_form.output_edit.clear()
             self._file_form.show_output(False)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _load_llm_form(self, node) -> None:
         form = self._llm_form
@@ -621,15 +628,32 @@ class PropertiesPanel(QWidget):
         self._git_commit_msg_dirty = False
         self._git_commit_msg_file_dirty = False
 
+    def _load_attention_form(self, node) -> None:
+        form = self._attention_form
+        form.title_edit.blockSignals(True)
+        form.message_edit.blockSignals(True)
+
+        form.title_edit.setText(node.title)
+        form.message_edit.setPlainText(node.message_text)
+
+        if node.output_text:
+            form.show_output(True)
+            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+        else:
+            form.output_edit.clear()
+            form.show_output(False)
+
+        form.title_edit.blockSignals(False)
+        form.message_edit.blockSignals(False)
+
+        self._old_title = node.title
+        self._attention_message_dirty = False
+
     def _animate_to(self, target_width: int) -> None:
         self._anim.stop()
         self._anim.setStartValue(self.maximumWidth())
         self._anim.setEndValue(target_width)
         self._anim.start()
-
-    # ------------------------------------------------------------------
-    # Called by MainWindow after undo/redo changes node data
-    # ------------------------------------------------------------------
 
     def refresh_if_current(self, node) -> None:
         """Reload form fields if this node is currently shown."""

@@ -1,4 +1,4 @@
-"""_ExecutionMixin — workflow run/stop logic for WorkflowCanvas."""
+"""_ExecutionMixin - workflow run/stop logic for WorkflowCanvas."""
 
 import os
 import re
@@ -7,12 +7,18 @@ from typing import TYPE_CHECKING, List, Sequence
 from uuid import uuid4
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from src.workers.llm_worker import LLMWorker
 from src.workers.git_worker import GitWorker
-from src.gui.file_op_node import FileOpNode
-from src.gui.conditional_node import ConditionalNode, CONDITION_REGISTRY
+from src.gui.file_op_node import AttentionNode, FileOpNode
+from src.gui.conditional_node import (
+    CONDITION_REGISTRY,
+    ConditionalNode,
+    condition_display_name,
+    condition_execution_mode,
+    condition_requires_filename,
+)
 from src.gui.llm_node import StartNode, WorkflowNode
 from src.gui.workflow_io import get_provider_for_model
 
@@ -32,6 +38,9 @@ _USAGE_LIMIT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_GIT_STATUS_TIMEOUT_SECONDS = 15
+_GIT_STATUS_COMMAND = ["git", "status", "--porcelain", "--untracked-files=all"]
+
 
 def is_usage_limit_error(text: str) -> bool:
     return bool(_USAGE_LIMIT_RE.search(text))
@@ -50,7 +59,7 @@ class _ExecutionMixin:
         QMessageBox.warning(
             self, "No Project Folder",
             "Please open a project folder before running a workflow.\n\n"
-            "Use File → Open Project Folder… to choose one.",
+            "Use File -> Open Project Folder... to choose one.",
         )
         return False
 
@@ -179,12 +188,15 @@ class _ExecutionMixin:
         for node in nodes:
             title = getattr(node, "title", node.node_id)
             if isinstance(node, ConditionalNode):
-                if not node.filename.strip():
+                if condition_requires_filename(node.condition_type) and not node.filename.strip():
                     errors.append(f'\u2022 "{title}" has no filename set.')
                 if node.condition_type not in CONDITION_REGISTRY:
                     errors.append(
                         f'\u2022 "{title}" has unknown condition type "{node.condition_type}".'
                     )
+            elif isinstance(node, AttentionNode):
+                if not node.message_text.strip():
+                    errors.append(f'\u2022 "{title}" has no attention message set.')
             elif isinstance(node, FileOpNode):
                 if not node.filename.strip():
                     errors.append(f'\u2022 "{title}" has no filename set.')
@@ -273,6 +285,9 @@ class _ExecutionMixin:
         if isinstance(node, ConditionalNode):
             self._fire_condition_check(node, exec_id, lineage_token, loop_token)
             return
+        if isinstance(node, AttentionNode):
+            self._fire_attention(node, exec_id, lineage_token, loop_token)
+            return
         if isinstance(node, FileOpNode):
             self._fire_file_op(node, exec_id, lineage_token, loop_token)
             return
@@ -330,19 +345,160 @@ class _ExecutionMixin:
                               lineage_token: str = "", loop_token: str = ""):
         run_id = self._run_id
         try:
-            # Resolve and confine the path exactly as file ops do — rejects absolute
-            # paths and traversal escapes outside the project folder.
-            resolved_path = self._resolve_file_op_path(node.filename)
-            result = node.evaluate(resolved_path)
+            resolved_path = None
+            if condition_requires_filename(node.condition_type):
+                resolved_path = self._resolve_file_op_path(node.filename)
+            if condition_execution_mode(node.condition_type) == "git_worker":
+                self._fire_git_changes_condition(
+                    node,
+                    exec_id,
+                    run_id,
+                    lineage_token=lineage_token,
+                    loop_token=loop_token,
+                )
+                return
+            result = node.evaluate(
+                resolved_path=resolved_path,
+                working_directory=self._working_directory or "",
+            )
             branch = "true" if result else "false"
-            node.append_output(f"Condition '{node.condition_type}': {branch}")
+            display_name = condition_display_name(node.condition_type)
+            node.append_output(f"Condition '{display_name}': {branch}")
             if self.on_output_line:
-                self.on_output_line(node, f"Condition '{node.condition_type}': {branch}")
+                self.on_output_line(node, f"Condition '{display_name}': {branch}")
             self._on_condition_done(node, exec_id, branch, run_id=run_id,
                                     lineage_token=lineage_token, loop_token=loop_token)
         except Exception as exc:
             self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id,
                                      lineage_token=lineage_token, loop_token=loop_token)
+
+    def _fire_git_changes_condition(
+        self: "WorkflowCanvas",
+        node: ConditionalNode,
+        exec_id: int,
+        run_id: int,
+        lineage_token: str = "",
+        loop_token: str = "",
+    ):
+        cwd = self._working_directory or ""
+        if not cwd:
+            self._on_invocation_done(
+                node,
+                exec_id,
+                "No project folder selected.",
+                error=True,
+                run_id=run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+            )
+            return
+
+        worker = GitWorker(
+            command=_GIT_STATUS_COMMAND,
+            working_directory=cwd,
+            timeout=_GIT_STATUS_TIMEOUT_SECONDS,
+        )
+        self._active_workers[exec_id] = worker
+
+        def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
+            if (
+                _r == self._run_id
+                and self._running
+                and _e in self._active_workers
+                and _e not in self._retired_exec_ids
+            ):
+                _n.append_output(line)
+                if self.on_output_line:
+                    self.on_output_line(_n, line)
+
+        def on_finished(full: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token):
+            branch = "true" if bool(full.strip()) else "false"
+            display_name = condition_display_name(_n.condition_type)
+            if (
+                _r == self._run_id
+                and self._running
+                and _e in self._active_workers
+                and _e not in self._retired_exec_ids
+            ):
+                _n.append_output(f"Condition '{display_name}': {branch}")
+                if self.on_output_line:
+                    self.on_output_line(_n, f"Condition '{display_name}': {branch}")
+            self._on_condition_done(
+                _n,
+                _e,
+                branch,
+                run_id=_r,
+                lineage_token=_lt,
+                loop_token=_lp,
+            )
+
+        def on_error(msg: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token):
+            if msg.startswith("Timed out after "):
+                msg = (
+                    "git status timed out after "
+                    f"{_GIT_STATUS_TIMEOUT_SECONDS}s while checking for repository changes."
+                )
+            self._on_invocation_done(
+                _n,
+                _e,
+                msg,
+                error=True,
+                run_id=_r,
+                lineage_token=_lt,
+                loop_token=_lp,
+            )
+
+        worker.output_line.connect(on_output)
+        worker.finished.connect(on_finished)
+        worker.error.connect(on_error)
+        worker.start()
+
+    def _fire_attention(self: "WorkflowCanvas", node: AttentionNode, exec_id: int,
+                        lineage_token: str = "", loop_token: str = ""):
+        run_id = self._run_id
+        message = node.message_text.strip()
+        QApplication.beep()
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Attention Required")
+        dialog.setText(node.title)
+        dialog.setInformativeText(message)
+        continue_button = dialog.addButton(
+            "Continue Workflow", QMessageBox.ButtonRole.AcceptRole
+        )
+        stop_button = dialog.addButton(
+            "Stop Workflow", QMessageBox.ButtonRole.RejectRole
+        )
+        dialog.setDefaultButton(continue_button)
+        dialog.exec()
+        if dialog.clickedButton() is not continue_button:
+            if exec_id not in self._active_workers:
+                return
+            self._retired_exec_ids.discard(exec_id)
+            del self._active_workers[exec_id]
+            self._exec_node.pop(exec_id, None)
+            self._exec_lineage.pop(exec_id, None)
+            self._current_run_exec_ids.discard(exec_id)
+            choice = "Attention acknowledged: workflow stopped by user."
+            node.clear_output()
+            if self.on_output_cleared:
+                self.on_output_cleared(node)
+            node.append_output(choice)
+            if self.on_output_line:
+                self.on_output_line(node, choice)
+            self.stop_all()
+            node.set_status("done")
+            self.status_update.emit(f'Stopped at "{node.title}".')
+            return
+        self._on_invocation_done(
+            node,
+            exec_id,
+            "Attention acknowledged: continuing workflow.",
+            error=False,
+            run_id=run_id,
+            lineage_token=lineage_token,
+            loop_token=loop_token,
+        )
 
     def _on_condition_done(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int,
                            branch: str, run_id: int = 0, lineage_token: str = "",
@@ -415,7 +571,7 @@ class _ExecutionMixin:
                 lineage_token=lineage_token, loop_token=child_loop_token,
             )
             # No outgoing connections on the loop branch means the loop can
-            # never iterate — mark done so the node doesn't stay visually "running".
+            # never iterate - mark done so the node does not stay visually "running".
             if branch == "loop" and children_queued == 0:
                 self._loop_counters.pop((node.node_id, loop_token), None)
                 node.set_status("done")
@@ -626,7 +782,14 @@ class _ExecutionMixin:
                 )
         else:
             from src.gui.git_action_node import GitActionNode
-            if isinstance(node, FileOpNode):
+            if isinstance(node, AttentionNode):
+                node.clear_output()
+                if self.on_output_cleared:
+                    self.on_output_cleared(node)
+                node.append_output(result)
+                if self.on_output_line:
+                    self.on_output_line(node, result)
+            elif isinstance(node, FileOpNode):
                 node.clear_output()
                 if self.on_output_cleared:
                     self.on_output_cleared(node)

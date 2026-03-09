@@ -57,7 +57,7 @@ def parse_workflow_data(data: dict) -> dict:
 
     normalized_nodes: List[dict] = []
     node_ids: set[str] = set()
-    node_type_by_id: dict[str, str] = {}  # node_id → node_type, used for connection validation
+    node_type_by_id: dict[str, str] = {}  # node_id -> node_type, used for connection validation
     max_label_index = 0
     for idx_in_list, b_data in enumerate(nodes_data):
         if not isinstance(b_data, dict):
@@ -74,7 +74,8 @@ def parse_workflow_data(data: dict) -> dict:
         # Validate raw string fields before from_dict so falsey non-strings
         # (0, false, [], null) are caught rather than silently collapsed to "".
         for str_field in ("name", "model", "prompt", "filename", "condition_type",
-                          "git_action", "msg_source", "commit_msg", "commit_msg_file"):
+                          "git_action", "msg_source", "commit_msg", "commit_msg_file",
+                          "message"):
             if str_field in b_data and not isinstance(b_data[str_field], str):
                 raise ValueError(
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
@@ -86,7 +87,7 @@ def parse_workflow_data(data: dict) -> dict:
             if not isinstance(lc, int) or isinstance(lc, bool) or lc < 1 or lc > 9999:
                 raise ValueError(
                     f"Node record at index {idx_in_list} has invalid loop_count "
-                    f"'{lc}' (must be an integer 1–9999)."
+                    f"'{lc}' (must be an integer 1-9999)."
                 )
 
         # For git_action nodes, validate git_action and msg_source fields.

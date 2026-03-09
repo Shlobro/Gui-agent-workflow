@@ -11,14 +11,13 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QStatusBar,
     QToolBar,
-    QWidget,
 )
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
 from .git_action_node import GitActionNode
 from .llm_node import LLMNode
-from .file_op_node import FileOpNode
+from .file_op_node import AttentionNode, FileOpNode
 from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 from .properties_panel import PropertiesPanel
@@ -45,11 +44,12 @@ class MainWindow(QMainWindow):
         self.canvas.selection_changed.connect(self._on_selection_changed)
         self.canvas.usage_limit_hit.connect(self._on_usage_limit_hit)
 
-        # Wire panel signals → canvas undo handlers
+        # Wire panel signals -> canvas undo handlers
         self._panel.title_committed.connect(self._on_panel_title_committed)
         self._panel.model_changed.connect(self._on_panel_model_changed)
         self._panel.prompt_committed.connect(self._on_panel_prompt_committed)
         self._panel.filename_committed.connect(self._on_panel_filename_committed)
+        self._panel.attention_message_committed.connect(self._on_panel_attention_message_committed)
         self._panel.op_type_changed.connect(self._on_panel_op_type_changed)
         self._panel.condition_type_changed.connect(self._on_panel_condition_type_changed)
         self._panel.loop_count_changed.connect(self._on_panel_loop_count_changed)
@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
             lambda nid, old, new: self.canvas._on_git_action_changed(nid, old, new)
         )
 
-        # Wire canvas output callbacks → panel
+        # Wire canvas output callbacks -> panel
         self.canvas.on_output_line = lambda node, line: self._panel.maybe_append_output(node, line)
         self.canvas.on_output_cleared = lambda node: self._panel.maybe_clear_output(node)
 
@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("File")
         file_menu.setToolTipsVisible(True)
 
-        open_action = QAction("Open Project Folder…", self)
+        open_action = QAction("Open Project Folder", self)
         open_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
         open_action.setToolTip("Choose the folder LLM calls will run in")
         open_action.triggered.connect(self._open_folder)
@@ -134,12 +134,12 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        save_action = QAction("Save Workflow…", self)
+        save_action = QAction("Save Workflow", self)
         save_action.setShortcut(QKeySequence("Ctrl+S"))
         save_action.triggered.connect(self._save)
         file_menu.addAction(save_action)
 
-        load_action = QAction("Load Workflow…", self)
+        load_action = QAction("Load Workflow", self)
         load_action.setShortcut(QKeySequence("Ctrl+O"))
         load_action.triggered.connect(self._load)
         file_menu.addAction(load_action)
@@ -159,24 +159,25 @@ class MainWindow(QMainWindow):
             tb.addAction(a)
             return a
 
-        act("＋ LLM Call", self.canvas.add_llm_node, tip="Add a new LLM call node")
-        act("＋ File Op", self.canvas.add_file_op_node, tip="Add a file operation node (set type in the panel)")
-        act("＋ Conditional", self.canvas.add_conditional_node, tip="Add a conditional node that routes execution to true/false branches")
-        act("＋ Loop", self.canvas.add_loop_node, tip="Add a loop node that repeats N times")
-        act("＋ Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
+        act("Add LLM Call", self.canvas.add_llm_node, tip="Add a new LLM call node")
+        act("Add File Op", self.canvas.add_file_op_node, tip="Add a file operation node (set type in the panel)")
+        act("Add Conditional", self.canvas.add_conditional_node, tip="Add a conditional node that routes execution to true/false branches")
+        act("Add Attention", self.canvas.add_attention_node, tip="Add a node that alerts the user and asks whether to continue")
+        act("Add Loop", self.canvas.add_loop_node, tip="Add a loop node that repeats N times")
+        act("Add Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
         tb.addSeparator()
-        act("▶ Run All", self._run_all, shortcut="F5",
+        act("Run All", self._run_all, shortcut="F5",
             tip="Run all nodes reachable from Start")
-        act("▶ Run Selected", self._run_selected_only,
+        act("Run Selected", self._run_selected_only,
             tip="Run only the selected node(s) without fan-out")
         self._run_from_here_action = act(
-            "▶ Run From Here", self._run_from_here,
+            "Run From Here", self._run_from_here,
             tip="Run the selected node and all its descendants",
         )
         self._run_from_here_action.setEnabled(False)
-        act("■ Stop", self.canvas.stop_all, tip="Cancel running workers")
+        act("Stop", self.canvas.stop_all, tip="Cancel running workers")
         tb.addSeparator()
-        act("🗑 Clear", self._clear, tip="Clear the canvas")
+        act("Clear", self._clear, tip="Clear the canvas")
         tb.addSeparator()
         undo_action = QAction("Undo", self)
         undo_action.setShortcut(QKeySequence.StandardKey.Undo)
@@ -205,7 +206,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_working_directory(folder)
         add_to_recent(folder)
         name = os.path.basename(folder)
-        self.setWindowTitle(f"LLM Workflow — {name}")
+        self.setWindowTitle(f"LLM Workflow - {name}")
         self._status_bar.showMessage(f"Project folder: {folder}")
 
     def _open_folder(self):
@@ -253,8 +254,8 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self):
         selected = [
             i for i in self.canvas._scene.selectedItems()
-            if isinstance(i, (LLMNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
-            and not getattr(i, 'is_start', False)
+            if isinstance(i, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
+            and not getattr(i, "is_start", False)
         ]
         if len(selected) == 1:
             self._panel.show_for_node(selected[0])
@@ -288,6 +289,11 @@ class MainWindow(QMainWindow):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, (FileOpNode, ConditionalNode)):
             node.filename = text
+
+    def _on_panel_attention_message_committed(self, node_id: str, text: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, AttentionNode):
+            node.message_text = text
 
     def _on_panel_op_type_changed(self, node_id: str, old_type: str, new_type: str):
         node = self.canvas._nodes.get(node_id)

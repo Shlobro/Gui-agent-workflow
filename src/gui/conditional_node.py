@@ -1,4 +1,4 @@
-"""ConditionalNode — routes execution to a true or false branch based on a condition."""
+"""ConditionalNode - routes execution to a true or false branch based on a condition."""
 
 import os
 import math as _math
@@ -48,10 +48,48 @@ def _check_file_empty(resolved_path: str) -> bool:
     return not os.path.exists(resolved_path) or os.path.getsize(resolved_path) == 0
 
 
-# Maps condition_id → (display_name, evaluator_fn(resolved_path: str) -> bool)
 CONDITION_REGISTRY: dict = {
-    "file_empty": ("Is File Empty", _check_file_empty),
+    "file_empty": {
+        "display_name": "Is File Empty",
+        "requires_filename": True,
+        "execution_mode": "sync",
+        "note": "",
+        "evaluator": lambda resolved_path, _working_directory: _check_file_empty(
+            resolved_path or ""
+        ),
+    },
+    "git_changes": {
+        "display_name": "Has Git Changes",
+        "requires_filename": False,
+        "execution_mode": "git_worker",
+        "note": "Checks the selected project folder for staged, unstaged, or untracked git changes.",
+    },
 }
+
+
+def condition_execution_mode(condition_type: str) -> str:
+    """Return the execution mode for the given condition type ('sync' or 'git_worker')."""
+    entry = CONDITION_REGISTRY.get(condition_type)
+    return str(entry.get("execution_mode", "sync")) if entry else "sync"
+
+
+def condition_requires_filename(condition_type: str) -> bool:
+    entry = CONDITION_REGISTRY.get(condition_type)
+    return bool(entry and entry.get("requires_filename"))
+
+
+def condition_note(condition_type: str) -> str:
+    entry = CONDITION_REGISTRY.get(condition_type)
+    if not entry:
+        return ""
+    return str(entry.get("note", ""))
+
+
+def condition_display_name(condition_type: str) -> str:
+    entry = CONDITION_REGISTRY.get(condition_type)
+    if not entry:
+        return condition_type
+    return str(entry.get("display_name", condition_type))
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +130,7 @@ class ConditionalNode(WorkflowNode):
     def filename(self, value: str):
         self._filename = value
 
-    # Compatibility shims — ConditionalNode is not an LLM node
+    # Compatibility shims - ConditionalNode is not an LLM node
     @property
     def model_id(self) -> Optional[str]:
         return None
@@ -105,13 +143,15 @@ class ConditionalNode(WorkflowNode):
     # Condition evaluation
     # ------------------------------------------------------------------
 
-    def evaluate(self, resolved_path: str) -> bool:
-        """Evaluate the condition against an already-resolved, confined absolute path."""
+    def evaluate(self, resolved_path: Optional[str], working_directory: str) -> bool:
+        """Evaluate the condition against the current execution context."""
         entry = CONDITION_REGISTRY.get(self.condition_type)
         if entry is None:
             raise ValueError(f"Unknown condition type: {self.condition_type!r}")
-        _, evaluator = entry
-        return evaluator(resolved_path)
+        evaluator = entry.get("evaluator")
+        if evaluator is None:
+            raise ValueError(f"Condition type {self.condition_type!r} requires async evaluation.")
+        return bool(evaluator(resolved_path, working_directory))
 
     # ------------------------------------------------------------------
     # Status / output
@@ -128,15 +168,15 @@ class ConditionalNode(WorkflowNode):
         self.output_text = ""
 
     # ------------------------------------------------------------------
-    # Port positions — two output ports on the right edge
+    # Port positions - two output ports on the right edge
     # ------------------------------------------------------------------
 
     def output_port_scene_pos(self, port: str = "output") -> QPointF:
         """Return scene position of the named output port.
 
-        port="true"  → upper-right at 33% height
-        port="false" → lower-right at 67% height
-        port="output"→ center (same as true, used as a fallback)
+        port="true"  -> upper-right at 33% height
+        port="false" -> lower-right at 67% height
+        port="output" -> center (same as true, used as a fallback)
         """
         if port == "true":
             y = self._height * 0.33
@@ -156,7 +196,7 @@ class ConditionalNode(WorkflowNode):
         return self.mapToScene(QPointF(0, self._height / 2))
 
     # ------------------------------------------------------------------
-    # Port proximity helpers — separate methods for each output port
+    # Port proximity helpers - separate methods for each output port
     # ------------------------------------------------------------------
 
     def is_near_true_port(self, scene_pos: QPointF) -> bool:

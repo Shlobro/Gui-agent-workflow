@@ -1,4 +1,4 @@
-"""WorkflowCanvas — QGraphicsView with node graph interaction."""
+"""WorkflowCanvas - QGraphicsView with node graph interaction."""
 
 from typing import Callable, Dict, List, Optional, Protocol, Union
 from uuid import uuid4
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 from src.llm.base_provider import LLMProviderRegistry
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
-from src.gui.file_op_node import FileOpNode
+from src.gui.file_op_node import AttentionNode, FileOpNode
 from src.gui.conditional_node import ConditionalNode
 from src.gui.loop_node import LoopNode
 from src.gui.undo_commands import (
@@ -109,7 +109,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         self._drag_start_positions: Dict[str, QPointF] = {}
         self._title_committed: Dict[str, str] = {}
 
-        # Output callbacks — set by MainWindow
+        # Output callbacks - set by MainWindow
         self.on_output_line: Optional[Callable] = None
         self.on_output_cleared: Optional[Callable] = None
 
@@ -246,6 +246,27 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         node = self._nodes[snapshot["id"]]
         if not isinstance(node, LoopNode):
             raise RuntimeError("Expected a LoopNode after add command.")
+        return node
+
+    def add_attention_node(self) -> AttentionNode:
+        """Add an attention node that gates its own branch and asks whether to continue."""
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "attention",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 32,
+            "name": f"Attention {label_index}",
+            "message": "User attention needed.",
+        }
+        cmd = AddNodeCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, AttentionNode):
+            raise RuntimeError("Expected an AttentionNode after add command.")
         return node
 
     def add_git_action_node(self):

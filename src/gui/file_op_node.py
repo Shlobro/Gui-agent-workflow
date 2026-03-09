@@ -1,4 +1,4 @@
-"""FileOpNode — file-operation nodes (create, truncate, delete) for the workflow canvas."""
+"""FileOpNode - file-operation nodes (create, truncate, delete) for the workflow canvas."""
 
 import math as _math
 from typing import Optional
@@ -28,12 +28,14 @@ _OP_ACCENT = {
     "create_file":   QColor("#2a7a2a"),
     "truncate_file": QColor("#7a6a1a"),
     "delete_file":   QColor("#7a2a2a"),
+    "attention":     QColor("#8a4f14"),
 }
 
 NODE_TYPE_DISPLAY_NAMES = {
     "create_file":   "Create File",
     "truncate_file": "Truncate File",
     "delete_file":   "Delete File",
+    "attention":     "Attention",
 }
 
 CORNER_RADIUS = 12
@@ -152,7 +154,7 @@ class FileOpNode(WorkflowNode):
         path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, self._height), CORNER_RADIUS, CORNER_RADIUS)
         painter.fillPath(path, QBrush(QColor("#252525")))
 
-        # Accent header strip — rounded top corners, flat bottom edge.
+        # Accent header strip - rounded top corners, flat bottom edge.
         accent = _OP_ACCENT.get(self.node_type, QColor("#444444"))
         painter.save()
         painter.setClipRect(QRectF(0, 0, NODE_WIDTH, _HEADER_HEIGHT))
@@ -252,6 +254,37 @@ class FileOpNode(WorkflowNode):
             self.node_type = data["node_type"]
 
 
+class AttentionNode(FileOpNode):
+    """A compact node that requests user acknowledgement before continuing this branch."""
+
+    node_type = "attention"
+
+    def __init__(self, node_id: Optional[str] = None, label_index: int = 1):
+        super().__init__(node_id=node_id, label_index=label_index, node_type=self.node_type)
+        self._title = f"Attention {label_index}"
+        self.message_text: str = "User attention needed."
+
+    def to_dict(self) -> dict:
+        pos = self.pos()
+        return {
+            "node_type": self.node_type,
+            "id": self.node_id,
+            "label_index": self.label_index,
+            "x": pos.x(),
+            "y": pos.y(),
+            "name": self._title,
+            "message": self.message_text,
+        }
+
+    def from_dict(self, data: dict):
+        self.node_id = data.get("id", self.node_id)
+        self.label_index = data.get("label_index", self.label_index)
+        self.setPos(data.get("x", 0), data.get("y", 0))
+        self._title = data.get("name", self._title)
+        self.message_text = data.get("message", self.message_text)
+        self.node_type = self.node_type
+
+
 # ---------------------------------------------------------------------------
 # Backward-compat aliases (load/paste still reference these names)
 # ---------------------------------------------------------------------------
@@ -287,6 +320,10 @@ def _git_action_factory(node_id=None, label_index=1):
     return GitActionNode(node_id=node_id, label_index=label_index)
 
 
+def _attention_factory(node_id=None, label_index=1):
+    return AttentionNode(node_id=node_id, label_index=label_index)
+
+
 NODE_TYPE_MAP = {
     "create_file":   CreateFileNode,
     "truncate_file": TruncateFileNode,
@@ -294,4 +331,5 @@ NODE_TYPE_MAP = {
     "conditional":   _conditional_factory,
     "loop":          _loop_factory,
     "git_action":    _git_action_factory,
+    "attention":     _attention_factory,
 }
