@@ -532,11 +532,11 @@ class _ExecutionMixin:
             loop_token = lineage_token
         key = (node.node_id, loop_token)
         count = self._loop_counters.get(key, 0) + 1
-        line = f"Loop iteration {count}/{node.loop_count}"
-        node.append_output(line)
-        if self.on_output_line:
-            self.on_output_line(node, line)
-        if count < node.loop_count:
+        if count <= node.loop_count:
+            line = f"Loop iteration {count}/{node.loop_count}"
+            node.append_output(line)
+            if self.on_output_line:
+                self.on_output_line(node, line)
             self._loop_counters[key] = count
             self._on_loop_iteration(node, exec_id, "loop", lineage_token, loop_token, run_id)
         else:
