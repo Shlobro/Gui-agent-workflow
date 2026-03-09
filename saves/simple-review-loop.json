@@ -4,8 +4,8 @@
       "node_type": "create_file",
       "id": "c8d10de3-7c63-4d62-9359-16a4d46cf730",
       "label_index": 1,
-      "x": -754.0,
-      "y": -55.0,
+      "x": -790.5010000000001,
+      "y": 84.92049999999989,
       "name": "create review file",
       "filename": "review.txt"
     },
@@ -22,16 +22,16 @@
       "node_type": "create_file",
       "id": "b5ddfbfe-b090-454d-a0b9-c0076e4b98f6",
       "label_index": 4,
-      "x": -778.0,
-      "y": -243.0,
+      "x": -814.5010000000001,
+      "y": -103.07950000000005,
       "name": "create response file",
       "filename": "fixes-made.txt"
     },
     {
       "id": "a75ecac2-9507-4e61-b4df-a6af49dff362",
       "label_index": 5,
-      "x": 89.78260869565213,
-      "y": -241.1304347826087,
+      "x": 114.11660869565208,
+      "y": -248.7348097826086,
       "name": "Fix reviewed files",
       "model": "claude-sonnet-4-6",
       "prompt": "I asked a junior dev to review the recent changes you can use git diff to see these changes and he put his findings into review.txt. read the review and fix bugs you agree with. either way input into fixes-made.txt a summary of each bug, if you agreed or disagreed and why and if you did something about it what you did."
@@ -40,7 +40,7 @@
       "node_type": "conditional",
       "id": "f638bd3a-592d-4fea-b113-50e94acd212d",
       "label_index": 6,
-      "x": -2.0,
+      "x": -0.8499999999999943,
       "y": -425.0,
       "name": "is the review file empty?",
       "filename": "review.txt",
@@ -49,8 +49,8 @@
     {
       "id": "549b43e0-0bac-42d0-b2e5-2258ad063ec5",
       "label_index": 7,
-      "x": 261.775,
-      "y": 148.1925,
+      "x": 288.40899999999993,
+      "y": 232.58812500000002,
       "name": "Review recent changes (post-fix)",
       "model": "gpt-5.4",
       "prompt": "A junior dev straight out of college made some changes you can view these changes using git diff. reviews that have already been done and fixed are in fixes-made.txt read that file and then do a full review of the changes. Do not hold back. Do not run the code, just analyze it and provide a review. Also review all the relevant .md guides, are they up to date with the changes and review the updates to the .md files as well? For any issue found, suggest how you would fix it. all your findings must go in review.txt you are running in headless mode and the user cannot see your output at all. so any relevent output put in review.txt. if no issues or errors were found keep review.txt empty. this is part of an automated workflow so if there are no errors for the workflow to keep working you must leave the file empty."
@@ -59,8 +59,8 @@
       "node_type": "truncate_file",
       "id": "e4fd6dd9-510c-4053-8ad9-aacbd6d3ddec",
       "label_index": 8,
-      "x": 165.30434782608694,
-      "y": -72.0,
+      "x": 189.63834782608694,
+      "y": -79.604375,
       "name": "clear review file",
       "filename": "review.txt"
     },
@@ -81,6 +81,30 @@
       "y": -382.0,
       "name": "delete response file",
       "filename": "fixes-made.txt"
+    },
+    {
+      "node_type": "git_action",
+      "id": "eb7e4206-d36b-4199-a1f6-89a33c068cff",
+      "label_index": 11,
+      "x": -800.0994999999997,
+      "y": -295.11137499999984,
+      "name": "Stage all",
+      "git_action": "git_add",
+      "msg_source": "static",
+      "commit_msg": "",
+      "commit_msg_file": ""
+    },
+    {
+      "node_type": "git_action",
+      "id": "722788e3-20ef-4920-8328-7d54122f243d",
+      "label_index": 12,
+      "x": 317.28834999999975,
+      "y": 63.20776249999997,
+      "name": "Stage all",
+      "git_action": "git_add",
+      "msg_source": "static",
+      "commit_msg": "",
+      "commit_msg_file": ""
     }
   ],
   "connections": [
@@ -97,10 +121,6 @@
       "to": "b5ddfbfe-b090-454d-a0b9-c0076e4b98f6"
     },
     {
-      "from": "b5ddfbfe-b090-454d-a0b9-c0076e4b98f6",
-      "to": "78697afb-6e3a-4af6-b595-615970d00e72"
-    },
-    {
       "from": "f638bd3a-592d-4fea-b113-50e94acd212d",
       "to": "a75ecac2-9507-4e61-b4df-a6af49dff362",
       "source_port": "false"
@@ -108,10 +128,6 @@
     {
       "from": "a75ecac2-9507-4e61-b4df-a6af49dff362",
       "to": "e4fd6dd9-510c-4053-8ad9-aacbd6d3ddec"
-    },
-    {
-      "from": "e4fd6dd9-510c-4053-8ad9-aacbd6d3ddec",
-      "to": "549b43e0-0bac-42d0-b2e5-2258ad063ec5"
     },
     {
       "from": "549b43e0-0bac-42d0-b2e5-2258ad063ec5",
@@ -125,11 +141,27 @@
     {
       "from": "9bddd400-2604-4109-9c4d-e3b76ccb3c8f",
       "to": "f7912c49-0f00-430f-9a6d-8db84f1bf6df"
+    },
+    {
+      "from": "b5ddfbfe-b090-454d-a0b9-c0076e4b98f6",
+      "to": "eb7e4206-d36b-4199-a1f6-89a33c068cff"
+    },
+    {
+      "from": "eb7e4206-d36b-4199-a1f6-89a33c068cff",
+      "to": "78697afb-6e3a-4af6-b595-615970d00e72"
+    },
+    {
+      "from": "e4fd6dd9-510c-4053-8ad9-aacbd6d3ddec",
+      "to": "722788e3-20ef-4920-8328-7d54122f243d"
+    },
+    {
+      "from": "722788e3-20ef-4920-8328-7d54122f243d",
+      "to": "549b43e0-0bac-42d0-b2e5-2258ad063ec5"
     }
   ],
-  "node_counter": 10,
+  "node_counter": 12,
   "start_pos": [
-    -1010.0,
-    -33.0
+    -1046.5010000000002,
+    106.92049999999995
   ]
 }
