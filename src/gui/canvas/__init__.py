@@ -661,3 +661,4 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         if 0.2 <= new_zoom <= 4.0:
             self.scale(factor, factor)
         event.accept()
+

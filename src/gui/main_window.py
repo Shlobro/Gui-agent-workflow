@@ -3,24 +3,28 @@
 import json
 import os
 
-from PySide6.QtCore import QEvent, QObject
-from PySide6.QtGui import QKeySequence, QAction
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QFileDialog,
     QMainWindow,
     QMessageBox,
-    QFileDialog,
+    QSplitter,
     QStatusBar,
     QToolBar,
 )
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
+from .file_op_node import AttentionNode, FileOpNode
 from .git_action_node import GitActionNode
 from .llm_node import LLMNode
-from .file_op_node import AttentionNode, FileOpNode
 from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
-from .properties_panel import PropertiesPanel
+from .properties_panel import DEFAULT_PANEL_WIDTH, DEFAULT_TEXT_ZOOM, PropertiesPanel
+
+_PANEL_WIDTH_KEY = "properties_panel/width"
+_PANEL_TEXT_ZOOM_KEY = "properties_panel/text_zoom"
 
 
 class MainWindow(QMainWindow):
@@ -30,21 +34,30 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self._setup_style()
 
-        self.canvas = WorkflowCanvas()
-        self._panel = PropertiesPanel(parent=self.canvas)
-        self._panel.raise_()
-        self.setCentralWidget(self.canvas)
+        self._settings = QSettings()
+        self._panel_width = self._load_int_setting(_PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH)
+        self._panel_zoom = self._load_int_setting(_PANEL_TEXT_ZOOM_KEY, DEFAULT_TEXT_ZOOM)
+        self._restoring_panel_width = False
 
-        # Keep the panel pinned to the top-right corner of the canvas viewport.
-        self.canvas.installEventFilter(self)
-        # Reposition whenever the panel animates (width changes).
-        self._panel._anim.valueChanged.connect(lambda _: self._reposition_panel())
+        self.canvas = WorkflowCanvas()
+        self._panel = PropertiesPanel()
+        self._panel.set_preferred_width(self._panel_width)
+        self._panel.set_text_zoom(self._panel_zoom)
+
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        self._splitter.setHandleWidth(6)
+        self._splitter.addWidget(self.canvas)
+        self._splitter.addWidget(self._panel)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 0)
+        self.setCentralWidget(self._splitter)
+        self._panel.hide()
 
         self.canvas.status_update.connect(self._on_status)
         self.canvas.selection_changed.connect(self._on_selection_changed)
         self.canvas.usage_limit_hit.connect(self._on_usage_limit_hit)
 
-        # Wire panel signals -> canvas undo handlers
         self._panel.title_committed.connect(self._on_panel_title_committed)
         self._panel.model_changed.connect(self._on_panel_model_changed)
         self._panel.prompt_committed.connect(self._on_panel_prompt_committed)
@@ -56,13 +69,14 @@ class MainWindow(QMainWindow):
         self._panel.git_action_changed.connect(
             lambda nid, old, new: self.canvas._on_git_action_changed(nid, old, new)
         )
+        self._panel.text_zoom_changed.connect(self._on_panel_text_zoom_changed)
+        self._splitter.splitterMoved.connect(self._on_splitter_moved)
 
-        # Wire canvas output callbacks -> panel
         self.canvas.on_output_line = lambda node, line: self._panel.maybe_append_output(node, line)
         self.canvas.on_output_cleared = lambda node: self._panel.maybe_clear_output(node)
 
-        self._run_from_here_action: QAction | None = None  # set in _build_toolbar
-        self._open_folder_action: QAction | None = None    # set in _build_menu
+        self._run_from_here_action: QAction | None = None
+        self._open_folder_action: QAction | None = None
         self._build_menu()
         self._build_toolbar()
         self._status_bar = QStatusBar()
@@ -75,25 +89,72 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.showMessage("Ready. No project folder selected.")
 
-    # ------------------------------------------------------------------
+    def _load_int_setting(self, key: str, default: int) -> int:
+        value = self._settings.value(key, default)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
-    def _reposition_panel(self) -> None:
-        """Pin the panel to the top-right corner of the canvas viewport.
+    def _save_panel_preferences(self) -> None:
+        self._settings.setValue(_PANEL_WIDTH_KEY, self._panel_width)
+        self._settings.setValue(_PANEL_TEXT_ZOOM_KEY, self._panel_zoom)
+        self._settings.sync()
 
-        Since the panel is absolutely positioned (not in a layout), we drive its
-        width directly from maximumWidth so the animation value is respected.
-        """
-        cw = self.canvas.width()
-        ch = self.canvas.height()
-        pw = self._panel.maximumWidth()
-        self._panel.setGeometry(cw - pw, 0, pw, ch)
+    def _show_panel(self) -> None:
+        center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+        if self._panel.isHidden():
+            self._panel.show()
+        QTimer.singleShot(0, lambda: self._restore_panel_width_and_recenter(center))
 
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if obj is self.canvas and event.type() == QEvent.Type.Resize:
-            self._reposition_panel()
-        return super().eventFilter(obj, event)
+    def _hide_panel(self, preserve_center: bool = True) -> None:
+        if self._panel.isVisible():
+            self._panel_width = self._panel.preferred_width()
+            self._save_panel_preferences()
+        center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+        self._panel.hide_panel()
+        self._panel.hide()
+        self._restoring_panel_width = True
+        try:
+            self._splitter.setSizes([1, 0])
+        finally:
+            self._restoring_panel_width = False
+        if preserve_center:
+            QTimer.singleShot(0, lambda: self.canvas.centerOn(center))
 
-    # ------------------------------------------------------------------
+    def _restore_panel_width(self) -> None:
+        if self._panel.isHidden():
+            return
+        total_width = max(1, self._splitter.width())
+        width = min(self._panel.preferred_width(), max(1, total_width - 220))
+        self._restoring_panel_width = True
+        try:
+            self._splitter.setSizes([max(1, total_width - width), width])
+        finally:
+            self._restoring_panel_width = False
+
+    def _restore_panel_width_and_recenter(self, center) -> None:
+        self._restore_panel_width()
+        self.canvas.centerOn(center)
+
+    def _on_splitter_moved(self, _pos: int, _index: int) -> None:
+        if self._restoring_panel_width or not self._panel.isVisible():
+            return
+        width = self._panel.width()
+        if width > 0:
+            self._panel.set_preferred_width(width)
+            self._panel_width = self._panel.preferred_width()
+            self._save_panel_preferences()
+
+    def _on_panel_text_zoom_changed(self, zoom: int) -> None:
+        self._panel_zoom = zoom
+        self._save_panel_preferences()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._panel.isVisible():
+            center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+            QTimer.singleShot(0, lambda: self._restore_panel_width_and_recenter(center))
 
     def _setup_style(self):
         self.setStyleSheet("""
@@ -117,6 +178,8 @@ class MainWindow(QMainWindow):
             QToolButton:hover { background: #444; }
             QToolButton:pressed { background: #222; }
             QStatusBar { background: #252525; color: #aaaaaa; }
+            QSplitter::handle { background: #252525; }
+            QSplitter::handle:hover { background: #3a8ef5; }
         """)
 
     def _build_menu(self):
@@ -150,14 +213,14 @@ class MainWindow(QMainWindow):
         self.addToolBar(tb)
 
         def act(label, slot, shortcut=None, tip=None):
-            a = QAction(label, self)
-            a.triggered.connect(slot)
+            action = QAction(label, self)
+            action.triggered.connect(slot)
             if shortcut:
-                a.setShortcut(QKeySequence(shortcut))
+                action.setShortcut(QKeySequence(shortcut))
             if tip:
-                a.setToolTip(tip)
-            tb.addAction(a)
-            return a
+                action.setToolTip(tip)
+            tb.addAction(action)
+            return action
 
         act("Add LLM Call", self.canvas.add_llm_node, tip="Add a new LLM call node")
         act("Add File Op", self.canvas.add_file_op_node, tip="Add a file operation node (set type in the panel)")
@@ -166,12 +229,11 @@ class MainWindow(QMainWindow):
         act("Add Loop", self.canvas.add_loop_node, tip="Add a loop node that repeats N times")
         act("Add Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
         tb.addSeparator()
-        act("Run All", self._run_all, shortcut="F5",
-            tip="Run all nodes reachable from Start")
-        act("Run Selected", self._run_selected_only,
-            tip="Run only the selected node(s) without fan-out")
+        act("Run All", self._run_all, shortcut="F5", tip="Run all nodes reachable from Start")
+        act("Run Selected", self._run_selected_only, tip="Run only the selected node(s) without fan-out")
         self._run_from_here_action = act(
-            "Run From Here", self._run_from_here,
+            "Run From Here",
+            self._run_from_here,
             tip="Run the selected node and all its descendants",
         )
         self._run_from_here_action.setEnabled(False)
@@ -179,6 +241,7 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         act("Clear", self._clear, tip="Clear the canvas")
         tb.addSeparator()
+
         undo_action = QAction("Undo", self)
         undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         undo_action.triggered.connect(self._undo)
@@ -199,8 +262,6 @@ class MainWindow(QMainWindow):
         redo_action.setEnabled(self.canvas._undo_stack.canRedo())
         tb.addAction(redo_action)
 
-    # ------------------------------------------------------------------
-
     def _apply_project_folder(self, folder: str) -> None:
         folder = os.path.normpath(folder)
         self.canvas.set_working_directory(folder)
@@ -213,8 +274,6 @@ class MainWindow(QMainWindow):
         dlg = ProjectChooserDialog(self)
         if dlg.exec() == ProjectChooserDialog.DialogCode.Accepted and dlg.chosen_folder:
             self._apply_project_folder(dlg.chosen_folder)
-
-    # ------------------------------------------------------------------
 
     def _on_run_state_changed(self, running: bool) -> None:
         if self._open_folder_action is None:
@@ -231,6 +290,7 @@ class MainWindow(QMainWindow):
 
     def _on_usage_limit_hit(self, node_id: str, error_text: str) -> None:
         from .dialogs.usage_limit_dialog import UsageLimitDialog
+
         node = self.canvas._nodes.get(node_id)
         node_title = getattr(node, "title", node_id) if node else node_id
         dlg = UsageLimitDialog(node_title=node_title, error_text=error_text, parent=self)
@@ -238,7 +298,7 @@ class MainWindow(QMainWindow):
         if dlg.result_code() == UsageLimitDialog.CHANGE_MODEL and node is not None:
             self.canvas._scene.clearSelection()
             node.setSelected(True)
-            self.canvas.ensureVisible(node)
+            QTimer.singleShot(0, lambda: self.canvas.ensureVisible(node))
 
     def _undo(self):
         self._panel.commit_pending_edits()
@@ -253,20 +313,18 @@ class MainWindow(QMainWindow):
 
     def _on_selection_changed(self):
         selected = [
-            i for i in self.canvas._scene.selectedItems()
-            if isinstance(i, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
-            and not getattr(i, "is_start", False)
+            item
+            for item in self.canvas._scene.selectedItems()
+            if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
+            and not getattr(item, "is_start", False)
         ]
         if len(selected) == 1:
             self._panel.show_for_node(selected[0])
+            self._show_panel()
         else:
-            self._panel.hide_panel()
+            self._hide_panel()
         if self._run_from_here_action is not None:
             self._run_from_here_action.setEnabled(len(selected) == 1)
-
-    # ------------------------------------------------------------------
-    # Panel signal handlers
-    # ------------------------------------------------------------------
 
     def _on_panel_title_committed(self, node_id: str, old_title: str, new_title: str):
         node = self.canvas._nodes.get(node_id)
@@ -313,8 +371,6 @@ class MainWindow(QMainWindow):
             return
         self.canvas._on_loop_count_changed(node_id, old_count, new_count)
 
-    # ------------------------------------------------------------------
-
     def _run_all(self):
         self._panel.commit_pending_edits()
         self.canvas.run_all()
@@ -338,11 +394,11 @@ class MainWindow(QMainWindow):
             path += ".json"
         data = self.canvas.get_workflow_data()
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            with open(path, "w", encoding="utf-8") as file_obj:
+                json.dump(data, file_obj, indent=2)
             self._status_bar.showMessage(f"Saved to {path}")
-        except OSError as e:
-            QMessageBox.critical(self, "Save Error", str(e))
+        except OSError as exc:
+            QMessageBox.critical(self, "Save Error", str(exc))
 
     def _load(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -351,23 +407,22 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # Commit and detach panel before destructive canvas mutations.
-            self._panel.hide_panel()
+            with open(path, "r", encoding="utf-8") as file_obj:
+                data = json.load(file_obj)
+            self._hide_panel(preserve_center=False)
             self.canvas.load_workflow_data(data)
             self._status_bar.showMessage(f"Loaded from {path}")
-        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
-            QMessageBox.critical(self, "Load Error", str(e))
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+            QMessageBox.critical(self, "Load Error", str(exc))
 
     def _clear(self):
         reply = QMessageBox.question(
-            self, "Clear Canvas",
+            self,
+            "Clear Canvas",
             "Remove all nodes and connections?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            # Commit and detach panel before destructive canvas mutations.
-            self._panel.hide_panel()
+            self._hide_panel(preserve_center=False)
             self.canvas.clear_canvas()
             self._status_bar.showMessage("Canvas cleared.")

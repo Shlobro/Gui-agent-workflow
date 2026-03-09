@@ -1,31 +1,38 @@
-"""PropertiesPanel - animated side-panel for editing node properties."""
+"""PropertiesPanel - resizable side panel for editing node properties."""
 
 from typing import Optional
 
-from PySide6.QtCore import (
-    QEasingCurve,
-    QPropertyAnimation,
-    Signal,
-    Qt,
-)
+from PySide6.QtCore import QEvent, Signal, Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QComboBox,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from ._panel_forms import (
-    _LLMForm,
-    _FileOpForm,
-    _ConditionalForm,
-    _LoopForm,
-    _GitActionForm,
     _AttentionForm,
+    _ConditionalForm,
+    _FileOpForm,
+    _GitActionForm,
+    _LLMForm,
+    _LoopForm,
 )
 
-PANEL_WIDTH = 360
+DEFAULT_PANEL_WIDTH = 420
+MIN_PANEL_WIDTH = 300
+MAX_PANEL_WIDTH = 720
+DEFAULT_TEXT_ZOOM = 1
+MIN_TEXT_ZOOM = -3
+MAX_TEXT_ZOOM = 8
 
 _PANEL_STYLE = """
     QWidget#properties_panel_root {
@@ -34,14 +41,13 @@ _PANEL_STYLE = """
     }
     QLabel#section_label {
         color: #888888;
-        font-size: 10px;
         font-weight: bold;
         letter-spacing: 1px;
     }
-    QLabel { color: #aaaaaa; font-size: 10px; }
+    QLabel { color: #aaaaaa; }
     QLineEdit {
         background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
-        padding: 4px 6px; color: #e8e8e8; font-size: 13px;
+        padding: 4px 6px; color: #e8e8e8;
     }
     QLineEdit:focus { border: 1px solid #3a8ef5; }
     QPushButton {
@@ -60,12 +66,12 @@ _PANEL_STYLE = """
     QListWidget::item:hover { background: #324056; }
     QPlainTextEdit {
         background: #1e1e1e; border: 1px solid #444; border-radius: 4px;
-        padding: 4px; color: #e8e8e8; font-family: monospace; font-size: 11px;
+        padding: 4px; color: #e8e8e8; font-family: Consolas, "Courier New", monospace;
     }
     QPlainTextEdit:focus { border: 1px solid #3a8ef5; }
     QComboBox {
         background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
-        padding: 4px 6px; color: #e8e8e8; font-size: 13px;
+        padding: 4px 6px; color: #e8e8e8;
     }
     QComboBox:focus { border: 1px solid #3a8ef5; }
     QComboBox::drop-down { border: none; width: 20px; }
@@ -85,7 +91,7 @@ _PANEL_STYLE = """
 
 
 class PropertiesPanel(QWidget):
-    """Animated drawer panel that slides in from the right when a node is selected."""
+    """Resizable panel that edits the currently selected node."""
 
     title_committed = Signal(str, str, str)
     model_changed = Signal(str, str, str)
@@ -96,14 +102,14 @@ class PropertiesPanel(QWidget):
     condition_type_changed = Signal(str, str, str)
     loop_count_changed = Signal(str, int, int)
     git_action_changed = Signal(str, str, str)
+    text_zoom_changed = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("properties_panel_root")
         self.setStyleSheet(_PANEL_STYLE)
-        self.setMinimumWidth(0)
-        self.setMaximumWidth(0)
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.setMinimumWidth(MIN_PANEL_WIDTH)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         self._current_node: Optional[object] = None
         self._old_title: str = ""
@@ -114,10 +120,8 @@ class PropertiesPanel(QWidget):
         self._git_commit_msg_dirty: bool = False
         self._git_commit_msg_file_dirty: bool = False
         self._is_committing: bool = False
-
-        self._anim = QPropertyAnimation(self, b"maximumWidth")
-        self._anim.setDuration(200)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._preferred_width: int = DEFAULT_PANEL_WIDTH
+        self._text_zoom: int = DEFAULT_TEXT_ZOOM
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -129,48 +133,33 @@ class PropertiesPanel(QWidget):
         self._stack.addWidget(QWidget())
 
         self._llm_form = _LLMForm()
-        llm_scroll = QScrollArea()
-        llm_scroll.setWidgetResizable(True)
-        llm_scroll.setWidget(self._llm_form)
-        llm_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(llm_scroll)
+        self._stack.addWidget(self._wrap_form(self._llm_form))
 
         self._file_form = _FileOpForm()
-        file_scroll = QScrollArea()
-        file_scroll.setWidgetResizable(True)
-        file_scroll.setWidget(self._file_form)
-        file_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(file_scroll)
+        self._stack.addWidget(self._wrap_form(self._file_form))
 
         self._cond_form = _ConditionalForm()
-        cond_scroll = QScrollArea()
-        cond_scroll.setWidgetResizable(True)
-        cond_scroll.setWidget(self._cond_form)
-        cond_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(cond_scroll)
+        self._stack.addWidget(self._wrap_form(self._cond_form))
 
         self._loop_form = _LoopForm()
-        loop_scroll = QScrollArea()
-        loop_scroll.setWidgetResizable(True)
-        loop_scroll.setWidget(self._loop_form)
-        loop_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(loop_scroll)
+        self._stack.addWidget(self._wrap_form(self._loop_form))
 
         self._git_form = _GitActionForm()
-        git_scroll = QScrollArea()
-        git_scroll.setWidgetResizable(True)
-        git_scroll.setWidget(self._git_form)
-        git_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(git_scroll)
+        self._stack.addWidget(self._wrap_form(self._git_form))
 
         self._attention_form = _AttentionForm()
-        attention_scroll = QScrollArea()
-        attention_scroll.setWidgetResizable(True)
-        attention_scroll.setWidget(self._attention_form)
-        attention_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(attention_scroll)
+        self._stack.addWidget(self._wrap_form(self._attention_form))
 
         self._wire_signals()
+        self._install_zoom_filters()
+        self._apply_text_zoom()
+
+    def _wrap_form(self, form: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(form)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        return scroll
 
     def _wire_signals(self):
         self._llm_form.title_edit.editingFinished.connect(self._on_llm_title_committed)
@@ -207,8 +196,18 @@ class PropertiesPanel(QWidget):
         self._attention_form.message_edit.textChanged.connect(self._on_attention_message_changed)
         self._attention_form.message_edit.installEventFilter(self)
 
+    def _install_zoom_filters(self) -> None:
+        for widget in self.findChildren(QWidget):
+            widget.installEventFilter(self)
+
     def eventFilter(self, obj, event):
-        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.Wheel and hasattr(event, "modifiers"):
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                delta = event.angleDelta().y()
+                if delta:
+                    self.adjust_text_zoom(1 if delta > 0 else -1)
+                    event.accept()
+                    return True
         if event.type() == QEvent.Type.FocusOut:
             if obj is self._llm_form.prompt_edit and self._prompt_dirty:
                 self._flush_prompt()
@@ -223,6 +222,54 @@ class PropertiesPanel(QWidget):
             elif obj is self._git_form.commit_msg_file_edit and self._git_commit_msg_file_dirty:
                 self._flush_git_commit_msg_file()
         return super().eventFilter(obj, event)
+
+    def preferred_width(self) -> int:
+        return self._preferred_width
+
+    def set_preferred_width(self, width: int) -> None:
+        self._preferred_width = max(MIN_PANEL_WIDTH, min(int(width), MAX_PANEL_WIDTH))
+
+    def text_zoom(self) -> int:
+        return self._text_zoom
+
+    def set_text_zoom(self, zoom: int) -> None:
+        zoom = max(MIN_TEXT_ZOOM, min(int(zoom), MAX_TEXT_ZOOM))
+        if zoom == self._text_zoom:
+            return
+        self._text_zoom = zoom
+        self._apply_text_zoom()
+        self.text_zoom_changed.emit(zoom)
+
+    def adjust_text_zoom(self, delta: int) -> None:
+        self.set_text_zoom(self._text_zoom + delta)
+
+    def _set_font_size(self, widget: QWidget, size: int, bold: bool = False) -> None:
+        font = QFont(widget.font())
+        font.setPointSize(max(8, size))
+        font.setBold(bold)
+        widget.setFont(font)
+
+    def _apply_text_zoom(self) -> None:
+        label_size = 12 + self._text_zoom
+        field_size = 14 + self._text_zoom
+        mono_size = 13 + self._text_zoom
+        section_size = 11 + self._text_zoom
+        for label in self.findChildren(QLabel):
+            self._set_font_size(
+                label,
+                section_size if label.objectName() == "section_label" else label_size,
+                bold=label.objectName() == "section_label",
+            )
+        for edit in self.findChildren(QLineEdit):
+            self._set_font_size(edit, field_size)
+        for combo in self.findChildren(QComboBox):
+            self._set_font_size(combo, field_size)
+        for spin in self.findChildren(QSpinBox):
+            self._set_font_size(spin, field_size)
+        for button in self.findChildren(QPushButton):
+            self._set_font_size(button, field_size)
+        for editor in self.findChildren(QPlainTextEdit):
+            self._set_font_size(editor, mono_size)
 
     def _on_llm_title_committed(self):
         if self._current_node is None:
@@ -381,11 +428,11 @@ class PropertiesPanel(QWidget):
         if self._is_committing:
             return
 
-        from .llm_node import LLMNode
-        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
-        from .loop_node import LoopNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
+        from .llm_node import LLMNode
+        from .loop_node import LoopNode
 
         self._is_committing = True
         try:
@@ -417,12 +464,12 @@ class PropertiesPanel(QWidget):
             self._is_committing = False
 
     def show_for_node(self, node) -> None:
-        """Load node data into the form, switch page, and animate open."""
-        from .llm_node import LLMNode
-        from .file_op_node import AttentionNode, FileOpNode
+        """Load node data into the form and show the matching page."""
         from .conditional_node import ConditionalNode
-        from .loop_node import LoopNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
+        from .llm_node import LLMNode
+        from .loop_node import LoopNode
 
         if self._current_node is not None and self._current_node is not node:
             self.commit_pending_edits()
@@ -450,21 +497,20 @@ class PropertiesPanel(QWidget):
         else:
             self._stack.setCurrentIndex(0)
 
-        self._animate_to(PANEL_WIDTH)
-
     def hide_panel(self) -> None:
         self.commit_pending_edits()
         self._current_node = None
-        self._animate_to(0)
+        self._stack.setCurrentIndex(0)
 
     def maybe_append_output(self, node, line: str) -> None:
         if node is not self._current_node:
             return
-        from .llm_node import LLMNode
-        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
-        from .loop_node import LoopNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
+        from .llm_node import LLMNode
+        from .loop_node import LoopNode
+
         if isinstance(node, LLMNode):
             self._llm_form.show_output(True)
             self._llm_form.output_edit.appendPlainText(line)
@@ -487,11 +533,12 @@ class PropertiesPanel(QWidget):
     def maybe_clear_output(self, node) -> None:
         if node is not self._current_node:
             return
-        from .llm_node import LLMNode
-        from .file_op_node import AttentionNode, FileOpNode
         from .conditional_node import ConditionalNode
-        from .loop_node import LoopNode
+        from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
+        from .llm_node import LLMNode
+        from .loop_node import LoopNode
+
         if isinstance(node, LLMNode):
             self._llm_form.output_edit.clear()
             self._llm_form.show_output(False)
@@ -522,8 +569,8 @@ class PropertiesPanel(QWidget):
         form.prompt_edit.setPlainText(node.prompt_text)
 
         if node.output_text:
-            form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
         else:
             form.output_edit.clear()
             form.show_output(False)
@@ -545,8 +592,8 @@ class PropertiesPanel(QWidget):
         form.filename_edit.setText(node.filename)
 
         if node.output_text:
-            form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
         else:
             form.output_edit.clear()
             form.show_output(False)
@@ -565,14 +612,13 @@ class PropertiesPanel(QWidget):
         form.set_loop_count(node.loop_count)
 
         if node.output_text:
-            form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
         else:
             form.output_edit.clear()
             form.show_output(False)
 
         form.title_edit.blockSignals(False)
-
         self._old_title = node.title
 
     def _load_cond_form(self, node) -> None:
@@ -585,8 +631,8 @@ class PropertiesPanel(QWidget):
         form.filename_edit.setText(node.filename)
 
         if node.output_text:
-            form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
         else:
             form.output_edit.clear()
             form.show_output(False)
@@ -612,8 +658,8 @@ class PropertiesPanel(QWidget):
         form.commit_msg_file_edit.setText(node.commit_msg_file)
 
         if node.output_text:
-            form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
         else:
             form.output_edit.clear()
             form.show_output(False)
@@ -637,8 +683,8 @@ class PropertiesPanel(QWidget):
         form.message_edit.setPlainText(node.message_text)
 
         if node.output_text:
-            form.show_output(True)
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
         else:
             form.output_edit.clear()
             form.show_output(False)
@@ -648,12 +694,6 @@ class PropertiesPanel(QWidget):
 
         self._old_title = node.title
         self._attention_message_dirty = False
-
-    def _animate_to(self, target_width: int) -> None:
-        self._anim.stop()
-        self._anim.setStartValue(self.maximumWidth())
-        self._anim.setEndValue(target_width)
-        self._anim.start()
 
     def refresh_if_current(self, node) -> None:
         """Reload form fields if this node is currently shown."""

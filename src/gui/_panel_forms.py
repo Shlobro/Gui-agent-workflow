@@ -1,6 +1,6 @@
 """Form widgets used inside PropertiesPanel (one form class per node type)."""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -8,18 +8,15 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QSizePolicy,
+    QSplitter,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from .llm_widget import ModelSelector, populate_model_selector
 from .conditional_node import CONDITION_REGISTRY, condition_note, condition_requires_filename
+from .llm_widget import ModelSelector, populate_model_selector
 
-
-# ---------------------------------------------------------------------------
-# LLM form
-# ---------------------------------------------------------------------------
 
 class _LLMForm(QWidget):
     """Form widget for editing an LLMNode's properties."""
@@ -53,17 +50,23 @@ class _LLMForm(QWidget):
 
         layout.addSpacing(4)
 
+        self._editor_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._editor_splitter.setChildrenCollapsible(False)
+
+        self._prompt_frame = QFrame()
+        prompt_layout = QVBoxLayout(self._prompt_frame)
+        prompt_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_layout.setSpacing(4)
         prompt_label = QLabel("Prompt")
-        layout.addWidget(prompt_label)
+        prompt_layout.addWidget(prompt_label)
         self.prompt_edit = QPlainTextEdit()
         self.prompt_edit.setPlaceholderText("Enter your prompt here...")
         self.prompt_edit.setMinimumHeight(100)
         self.prompt_edit.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        layout.addWidget(self.prompt_edit, stretch=1)
-
-        layout.addSpacing(4)
+        prompt_layout.addWidget(self.prompt_edit)
+        self._editor_splitter.addWidget(self._prompt_frame)
 
         self._output_frame = QFrame()
         self._output_frame.setVisible(False)
@@ -76,20 +79,23 @@ class _LLMForm(QWidget):
         self.output_edit.setReadOnly(True)
         self.output_edit.setMinimumHeight(80)
         out_layout.addWidget(self.output_edit)
-        layout.addWidget(self._output_frame)
+        self._editor_splitter.addWidget(self._output_frame)
+        self._editor_splitter.setSizes([1, 0])
+        layout.addWidget(self._editor_splitter, stretch=1)
 
     def show_output(self, visible: bool):
+        was_visible = self._output_frame.isVisible()
         self._output_frame.setVisible(visible)
+        if visible and not was_visible:
+            self._editor_splitter.setSizes([1, 1])
+        elif not visible:
+            self._editor_splitter.setSizes([1, 0])
 
-
-# ---------------------------------------------------------------------------
-# FileOp form
-# ---------------------------------------------------------------------------
 
 _OP_TYPE_OPTIONS = [
-    ("create_file",   "Create File"),
+    ("create_file", "Create File"),
     ("truncate_file", "Truncate File"),
-    ("delete_file",   "Delete File"),
+    ("delete_file", "Delete File"),
 ]
 
 
@@ -162,11 +168,10 @@ class _FileOpForm(QWidget):
             self.op_type_changed.emit(old, new_type)
 
     def set_op_type(self, node_type: str):
-        """Set combobox selection without emitting op_type_changed."""
         self.op_type_combo.blockSignals(True)
-        for i in range(self.op_type_combo.count()):
-            if self.op_type_combo.itemData(i) == node_type:
-                self.op_type_combo.setCurrentIndex(i)
+        for index in range(self.op_type_combo.count()):
+            if self.op_type_combo.itemData(index) == node_type:
+                self.op_type_combo.setCurrentIndex(index)
                 break
         self._current_op_type = node_type
         self.op_type_combo.blockSignals(False)
@@ -174,10 +179,6 @@ class _FileOpForm(QWidget):
     def show_output(self, visible: bool):
         self._output_frame.setVisible(visible)
 
-
-# ---------------------------------------------------------------------------
-# Conditional form
-# ---------------------------------------------------------------------------
 
 class _ConditionalForm(QWidget):
     """Form widget for editing a ConditionalNode's properties."""
@@ -255,11 +256,10 @@ class _ConditionalForm(QWidget):
         self._refresh_condition_inputs()
 
     def set_condition_type(self, condition_type: str):
-        """Set combobox selection without emitting condition_type_changed."""
         self.condition_combo.blockSignals(True)
-        for i in range(self.condition_combo.count()):
-            if self.condition_combo.itemData(i) == condition_type:
-                self.condition_combo.setCurrentIndex(i)
+        for index in range(self.condition_combo.count()):
+            if self.condition_combo.itemData(index) == condition_type:
+                self.condition_combo.setCurrentIndex(index)
                 break
         self._current_condition_type = condition_type
         self.condition_combo.blockSignals(False)
@@ -276,10 +276,6 @@ class _ConditionalForm(QWidget):
     def show_output(self, visible: bool):
         self._output_frame.setVisible(visible)
 
-
-# ---------------------------------------------------------------------------
-# Loop form
-# ---------------------------------------------------------------------------
 
 class _LoopForm(QWidget):
     """Form widget for editing a LoopNode's properties."""
@@ -342,7 +338,6 @@ class _LoopForm(QWidget):
             self.loop_count_changed.emit(old, value)
 
     def set_loop_count(self, count: int):
-        """Set spinbox value without emitting loop_count_changed."""
         self.count_spin.blockSignals(True)
         self.count_spin.setValue(count)
         self._current_count = self.count_spin.value()
@@ -352,18 +347,14 @@ class _LoopForm(QWidget):
         self._output_frame.setVisible(visible)
 
 
-# ---------------------------------------------------------------------------
-# GitAction form
-# ---------------------------------------------------------------------------
-
 _GIT_ACTION_OPTIONS = [
-    ("git_add",    "Git Add"),
+    ("git_add", "Git Add"),
     ("git_commit", "Git Commit"),
-    ("git_push",   "Git Push"),
+    ("git_push", "Git Push"),
 ]
 
 _MSG_SOURCE_OPTIONS = [
-    ("static",    "Static text"),
+    ("static", "Static text"),
     ("from_file", "From file"),
 ]
 
@@ -478,23 +469,21 @@ class _GitActionForm(QWidget):
         self.commit_msg_file_edit.setVisible(source == "from_file")
 
     def set_git_action(self, action: str):
-        """Set action combobox selection without emitting git_action_changed."""
         self.action_combo.blockSignals(True)
-        for i in range(self.action_combo.count()):
-            if self.action_combo.itemData(i) == action:
-                self.action_combo.setCurrentIndex(i)
+        for index in range(self.action_combo.count()):
+            if self.action_combo.itemData(index) == action:
+                self.action_combo.setCurrentIndex(index)
                 break
         self._current_action = action
         self.action_combo.blockSignals(False)
         self._refresh_commit_frame_visibility()
 
     def set_msg_source(self, source: str):
-        """Set message-source combobox selection without emitting msg_source_changed."""
         self.msg_source_combo.blockSignals(True)
         matched = False
-        for i in range(self.msg_source_combo.count()):
-            if self.msg_source_combo.itemData(i) == source:
-                self.msg_source_combo.setCurrentIndex(i)
+        for index in range(self.msg_source_combo.count()):
+            if self.msg_source_combo.itemData(index) == source:
+                self.msg_source_combo.setCurrentIndex(index)
                 matched = True
                 break
         if matched:
@@ -507,10 +496,6 @@ class _GitActionForm(QWidget):
     def show_output(self, visible: bool):
         self._output_frame.setVisible(visible)
 
-
-# ---------------------------------------------------------------------------
-# Attention form
-# ---------------------------------------------------------------------------
 
 class _AttentionForm(QWidget):
     """Form widget for editing an AttentionNode's properties."""
