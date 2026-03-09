@@ -134,6 +134,20 @@ class ProjectChooserDialog(QDialog):
             QPushButton:pressed { background: #222; }
             QDialogButtonBox QPushButton { padding: 5px 18px; }
             QFrame[frameShape="4"] { color: #333; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 12px;
+                margin: 2px 1px 2px 1px;
+            }
+            QScrollBar::handle:vertical {
+                background: #4b4f58;
+                border-radius: 6px;
+                min-height: 34px;
+            }
+            QScrollBar::handle:vertical:hover { background: #637997; }
+            QScrollBar::handle:vertical:pressed { background: #7b9bc1; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
         """)
 
     # ------------------------------------------------------------------

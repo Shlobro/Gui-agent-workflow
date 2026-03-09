@@ -81,12 +81,33 @@ _PANEL_STYLE = """
     }
     QScrollArea { background: transparent; border: none; }
     QScrollBar:vertical {
-        background: #1e1e1e; width: 8px; border-radius: 4px;
+        background: transparent;
+        width: 12px;
+        margin: 2px 1px 2px 1px;
     }
     QScrollBar::handle:vertical {
-        background: #444; border-radius: 4px; min-height: 20px;
+        background: #4b4f58;
+        border-radius: 6px;
+        min-height: 34px;
     }
+    QScrollBar::handle:vertical:hover { background: #637997; }
+    QScrollBar::handle:vertical:pressed { background: #7b9bc1; }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+    QScrollBar:horizontal {
+        background: transparent;
+        height: 12px;
+        margin: 1px 2px 1px 2px;
+    }
+    QScrollBar::handle:horizontal {
+        background: #4b4f58;
+        border-radius: 6px;
+        min-width: 34px;
+    }
+    QScrollBar::handle:horizontal:hover { background: #637997; }
+    QScrollBar::handle:horizontal:pressed { background: #7b9bc1; }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 """
 
 

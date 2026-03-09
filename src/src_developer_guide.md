@@ -16,6 +16,7 @@
 4. `LLMNode` execution uses `LLMWorker` in a background `QThread`. `GitActionNode` execution uses `GitWorker` in a background `QThread` with streaming output, cancellation, and watchdog timeout handling. `FileOpNode`, `AttentionNode`, and `LoopNode` execute synchronously on the GUI thread. `ConditionalNode` execution is mixed: file-based evaluators stay synchronous, while `git_changes` runs `git status --porcelain --untracked-files=all` against the selected project folder in a background `GitWorker` with live streamed git output, a 15-second timeout, and a clear timeout error if git does not return in time. Child triggering is deferred with `QTimer.singleShot(0, ...)`. Trigger calls carry both `lineage_token` and `loop_token`.
 5. File-op paths are resolved against the selected project folder and blocked if they are absolute or escape the folder via traversal. `create_file` reports `Already exists` when the target file already exists and errors when the target exists as a directory or non-file path.
 6. Streamed output lines and terminal node results are appended live to node state and surfaced in the properties panel output area for whichever node is currently selected. For LLM nodes, prompt and output share a vertical splitter so users can rebalance them while reviewing results.
+7. UI scrollbar theming is centered in `gui/main_window.py`, with widget-local overrides in `gui/properties_panel.py`, `gui/llm_widget.py`, and `gui/project_chooser.py` where local stylesheets would otherwise bypass the global theme.
 
 ## Current Built-In Models
 - Claude provider: Opus 4.6, Sonnet 4.6, Haiku 4.5.
@@ -24,6 +25,7 @@
 
 ## When To Edit What
 - Graph interaction and serialization behavior: `gui/`.
+- UI shell styling and shared scrollbar visuals: `gui/main_window.py` plus local GUI widget stylesheets.
 - Add or adjust model catalogs and CLI flags: `llm/`.
 - Process execution, cancellation, and timeout handling: `workers/`.
 

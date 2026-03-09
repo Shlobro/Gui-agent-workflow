@@ -75,6 +75,20 @@ class ModelSelector(QWidget):
         QListWidget::item:hover {
             background: #324056;
         }
+        QScrollBar:vertical {
+            background: transparent;
+            width: 12px;
+            margin: 2px 1px 2px 1px;
+        }
+        QScrollBar::handle:vertical {
+            background: #4b4f58;
+            border-radius: 6px;
+            min-height: 34px;
+        }
+        QScrollBar::handle:vertical:hover { background: #637997; }
+        QScrollBar::handle:vertical:pressed { background: #7b9bc1; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
     """
 
     def __init__(self, popup_parent: QWidget, on_layout_change=None, parent=None):
