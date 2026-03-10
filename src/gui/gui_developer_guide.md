@@ -4,8 +4,8 @@
 Implements the interactive Qt UI for composing and running LLM workflows.
 
 ## Contents
-- `main_window.py`: Main shell with the File menu, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores and saves panel width plus panel text zoom with `QSettings`, drives the panel from `canvas.selection_changed`, commits pending edits before run/save operations, hides the panel before destructive canvas mutations, catches load parse/schema errors for a user-facing dialog, listens for `canvas.usage_limit_hit`, defines the app-wide rounded `QScrollBar` theme (18 px capsule rail with inset bordered capsule handles), and uses non-native `QFileDialog` pickers for Save/Load so app styling applies consistently.
-- `dialogs/`: Modal dialog classes for runtime user notifications.
+- `main_window.py`: Main shell with File/Prompt menus, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores and saves panel width plus panel text zoom with `QSettings`, loads/saves prompt-injection templates via `PromptInjectionStore`, applies default or next-run prompt injections before each run, drives the panel from `canvas.selection_changed`, commits pending edits before run/save operations, hides the panel before destructive canvas mutations, catches load parse/schema errors for a user-facing dialog, listens for `canvas.usage_limit_hit`, defines the app-wide rounded `QScrollBar` theme (18 px capsule rail with inset bordered capsule handles), and uses non-native `QFileDialog` pickers for Save/Load so app styling applies consistently.
+- `dialogs/`: Modal dialog classes for runtime user notifications and prompt-injection setup.
 - `canvas/` subpackage: Houses `WorkflowCanvas` and its mixins.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`.
 - `llm_widget.py`: `ModelSelector`, model list widget, provider icon helpers, and `populate_model_selector`. The model dropdown list keeps its own stylesheet, including local scrollbar rules matching the app theme.
@@ -27,6 +27,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Before any run, reachable nodes are validated with node-type rules: `LLMNode` requires a prompt and a registered model; `FileOpNode` requires a filename; `ConditionalNode` requires a known `condition_type` and a filename only for filename-scoped conditions; `AttentionNode` requires a non-empty message; `LoopNode` has no extra validation beyond valid `loop_count`; `GitActionNode` requires valid action/source enums plus the appropriate commit-message input for `git_commit`.
 - `MainWindow` maps panel signals to canvas undo handlers or direct content writes. `filename_committed` is reused for both `FileOpNode` and filename-scoped `ConditionalNode` edits. `attention_message_committed` writes `AttentionNode.message_text` directly.
 - `MainWindow` persists panel width after user splitter moves and when the panel is hidden; text zoom is persisted on each Ctrl+wheel change via `text_zoom_changed`.
+- Prompt injections are configured from the Prompt menu. Persistent template defaults come from `PromptTemplateManagerDialog`; per-run overrides come from `PromptInjectionRunDialog`; resolved template content plus optional one-off text is pushed to `WorkflowCanvas` before each run command.
 - `LLMNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, and `GitActionNode` store their user-editable fields as plain Python attributes. Canvas execution and serialization read those attributes directly.
 
 ## Behavior Notes

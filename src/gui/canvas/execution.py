@@ -9,6 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from src.llm.prompt_injection import compose_prompt
 from src.workers.llm_worker import LLMWorker
 from src.workers.git_worker import GitWorker
 from src.gui.file_op_node import AttentionNode, FileOpNode
@@ -320,8 +321,17 @@ class _ExecutionMixin:
             self._current_run_exec_ids.discard(exec_id)
             return
 
-        worker = LLMWorker(provider, node.prompt_text, model=model_id,
-                           working_directory=self._working_directory)
+        composed_prompt = compose_prompt(
+            node.prompt_text,
+            self._prompt_injection_templates,
+            self._prompt_injection_one_off,
+        )
+        worker = LLMWorker(
+            provider,
+            composed_prompt,
+            model=model_id,
+            working_directory=self._working_directory,
+        )
         self._active_workers[exec_id] = worker
         run_id = self._run_id
 

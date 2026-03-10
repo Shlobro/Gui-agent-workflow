@@ -12,6 +12,7 @@ env/
 
 # User state files
 .recent_folders.json
+.prompt_injections.json
 
 # Logs and editor/runtime artifacts
 *.log

@@ -8,6 +8,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `claude_provider.py`: Claude model list and command builder.
 - `codex_provider.py`: Codex model list, reasoning-effort suffix parsing, command builder, and optional working-directory scoping/output path.
 - `gemini_provider.py`: Gemini model list and command builder.
+- `prompt_injection.py`: Prompt template models, persistent JSON storage, run-option normalization, and prompt assembly helpers that append enabled template content plus optional one-off context to each LLM prompt.
 - `__init__.py`: Imports all providers so they self-register at startup.
 
 ## Current Model Sets
@@ -21,7 +22,13 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `build_command()` returns argv for subprocess execution.
 - `uses_stdin`/`get_stdin_prompt()` controls prompt transport behavior.
 
+## Prompt Injection
+- Prompt template state is persisted in repo-root `.prompt_injections.json` and loaded through `PromptInjectionStore`.
+- Built-in template `runtime_context_headless` is always available and is enabled by default on first load.
+- `compose_prompt()` performs deterministic prompt assembly: base prompt, then enabled template sections in template order, then one-off run context.
+
 ## When To Edit
 - Add/remove models for a provider: corresponding `*_provider.py`.
 - Add a new provider: create provider file and import it in `__init__.py`.
 - Change global provider API rules: `base_provider.py`.
+- Change template storage rules, limits, or prompt assembly format: `prompt_injection.py`.

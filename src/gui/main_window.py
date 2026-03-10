@@ -16,12 +16,22 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
+from .dialogs.prompt_injection_dialog import (
+    PromptInjectionRunDialog,
+    PromptTemplateManagerDialog,
+)
 from .file_op_node import AttentionNode, FileOpNode
 from .git_action_node import GitActionNode
 from .llm_node import LLMNode
 from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 from .properties_panel import DEFAULT_PANEL_WIDTH, DEFAULT_TEXT_ZOOM, PropertiesPanel
+from src.llm.prompt_injection import (
+    PromptInjectionRunOptions,
+    PromptInjectionStore,
+    normalize_run_options,
+    resolve_template_contents,
+)
 
 _PANEL_WIDTH_KEY = "properties_panel/width"
 _PANEL_TEXT_ZOOM_KEY = "properties_panel/text_zoom"
@@ -38,8 +48,12 @@ class MainWindow(QMainWindow):
         self._panel_width = self._load_int_setting(_PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH)
         self._panel_zoom = self._load_int_setting(_PANEL_TEXT_ZOOM_KEY, DEFAULT_TEXT_ZOOM)
         self._restoring_panel_width = False
+        self._prompt_injection_store = PromptInjectionStore()
+        self._prompt_injection_config = self._prompt_injection_store.load()
+        self._next_run_prompt_injections: PromptInjectionRunOptions | None = None
 
         self.canvas = WorkflowCanvas()
+        self._apply_prompt_injections_for_run()
         self._panel = PropertiesPanel()
         self._panel.set_preferred_width(self._panel_width)
         self._panel.set_text_zoom(self._panel_zoom)
@@ -245,6 +259,19 @@ class MainWindow(QMainWindow):
         load_action.triggered.connect(self._load)
         file_menu.addAction(load_action)
 
+        prompt_menu = menu_bar.addMenu("Prompt")
+        prompt_menu.setToolTipsVisible(True)
+
+        templates_action = QAction("Manage Templates", self)
+        templates_action.setToolTip("Create and maintain reusable prompt injection templates")
+        templates_action.triggered.connect(self._open_prompt_templates)
+        prompt_menu.addAction(templates_action)
+
+        next_run_action = QAction("Set Next Run Injection", self)
+        next_run_action.setToolTip("Choose templates and one-off context for the next run")
+        next_run_action.triggered.connect(self._set_next_run_prompt_injection)
+        prompt_menu.addAction(next_run_action)
+
     def _build_toolbar(self):
         tb = QToolBar("Main")
         tb.setMovable(False)
@@ -411,15 +438,67 @@ class MainWindow(QMainWindow):
 
     def _run_all(self):
         self._panel.commit_pending_edits()
+        self._apply_prompt_injections_for_run()
         self.canvas.run_all()
 
     def _run_selected_only(self):
         self._panel.commit_pending_edits()
+        self._apply_prompt_injections_for_run()
         self.canvas.run_selected_only()
 
     def _run_from_here(self):
         self._panel.commit_pending_edits()
+        self._apply_prompt_injections_for_run()
         self.canvas.run_from_here()
+
+    def _open_prompt_templates(self):
+        dialog = PromptTemplateManagerDialog(self._prompt_injection_config, parent=self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        new_config = dialog.result_config()
+        try:
+            self._prompt_injection_store.save(new_config)
+        except OSError as exc:
+            QMessageBox.critical(self, "Prompt Template Error", str(exc))
+            return
+        self._prompt_injection_config = self._prompt_injection_store.load()
+        self._next_run_prompt_injections = None
+        self._apply_prompt_injections_for_run()
+        self._status_bar.showMessage("Prompt templates saved.")
+
+    def _set_next_run_prompt_injection(self):
+        seed = self._next_run_prompt_injections
+        if seed is None:
+            seed = PromptInjectionRunOptions(
+                enabled_template_ids=self._prompt_injection_config.default_enabled_template_ids,
+                one_off_text="",
+            )
+        dialog = PromptInjectionRunDialog(
+            self._prompt_injection_config,
+            current=seed,
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self._next_run_prompt_injections = dialog.result_options()
+        template_count = len(self._next_run_prompt_injections.enabled_template_ids)
+        has_one_off = bool(self._next_run_prompt_injections.one_off_text.strip())
+        details = "with one-off context" if has_one_off else "no one-off context"
+        self._status_bar.showMessage(
+            f"Next run injection set ({template_count} template(s), {details})."
+        )
+
+    def _apply_prompt_injections_for_run(self):
+        options = normalize_run_options(
+            self._prompt_injection_config,
+            self._next_run_prompt_injections,
+        )
+        template_contents = resolve_template_contents(
+            self._prompt_injection_config,
+            options.enabled_template_ids,
+        )
+        self.canvas.set_prompt_injections(template_contents, options.one_off_text)
+        self._next_run_prompt_injections = None
 
     def _save(self):
         self._panel.commit_pending_edits()

@@ -1,6 +1,6 @@
 """WorkflowCanvas - QGraphicsView with node graph interaction."""
 
-from typing import Callable, Dict, List, Optional, Protocol, Union
+from typing import Callable, Dict, List, Optional, Protocol, Sequence, Union
 from uuid import uuid4
 
 from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
@@ -96,6 +96,8 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
 
         # Project working directory
         self._working_directory: Optional[str] = None
+        self._prompt_injection_templates: List[str] = []
+        self._prompt_injection_one_off: str = ""
 
         # Pan state
         self._panning = False
@@ -175,6 +177,17 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
 
     def set_working_directory(self, path: str) -> None:
         self._working_directory = path
+
+    def set_prompt_injections(
+        self, template_contents: Sequence[str], one_off_text: str = ""
+    ) -> None:
+        normalized_sections: List[str] = []
+        for section in template_contents:
+            normalized = str(section).strip()
+            if normalized:
+                normalized_sections.append(normalized)
+        self._prompt_injection_templates = normalized_sections
+        self._prompt_injection_one_off = one_off_text or ""
 
     def _resolve_default_llm_model_id(self) -> str:
         if get_provider_for_model(PREFERRED_DEFAULT_LLM_MODEL_ID) is not None:
