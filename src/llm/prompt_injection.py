@@ -12,6 +12,10 @@ MAX_TEMPLATE_NAME_CHARS = 80
 MAX_TEMPLATE_CONTENT_CHARS = 4000
 MAX_ONE_OFF_INJECTION_CHARS = 4000
 
+POSITION_PREPEND = "prepend"
+POSITION_APPEND = "append"
+VALID_POSITIONS = (POSITION_PREPEND, POSITION_APPEND)
+
 BUILTIN_RUNTIME_CONTEXT_TEMPLATE_ID = "runtime_context_headless"
 
 
@@ -21,6 +25,7 @@ class PromptTemplate:
     name: str
     content: str
     built_in: bool = False
+    placement: str = POSITION_APPEND
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,7 @@ class PromptInjectionConfig:
 class PromptInjectionRunOptions:
     enabled_template_ids: tuple[str, ...]
     one_off_text: str = ""
+    one_off_placement: str = POSITION_APPEND
 
 
 _BUILTIN_TEMPLATES: tuple[PromptTemplate, ...] = (
@@ -45,6 +51,7 @@ _BUILTIN_TEMPLATES: tuple[PromptTemplate, ...] = (
             "Each run starts as a fresh instance with no memory from prior runs."
         ),
         built_in=True,
+        placement=POSITION_APPEND,
     ),
 )
 _BUILTIN_TEMPLATE_IDS = {template.template_id for template in _BUILTIN_TEMPLATES}
@@ -53,6 +60,27 @@ _DEFAULT_CONFIG = PromptInjectionConfig(
     default_enabled_template_ids=(BUILTIN_RUNTIME_CONTEXT_TEMPLATE_ID,),
 )
 _CONFIG_FILENAME = ".prompt_injections.json"
+
+
+def _builtin_templates_with_placements(raw_map: object) -> tuple[PromptTemplate, ...]:
+    placement_map = raw_map if isinstance(raw_map, dict) else {}
+    return tuple(
+        PromptTemplate(
+            template_id=template.template_id,
+            name=template.name,
+            content=template.content,
+            built_in=True,
+            placement=normalize_placement(placement_map.get(template.template_id, template.placement)),
+        )
+        for template in _BUILTIN_TEMPLATES
+    )
+
+
+def normalize_placement(placement: str) -> str:
+    normalized = str(placement or "").strip().lower()
+    if normalized not in VALID_POSITIONS:
+        return POSITION_APPEND
+    return normalized
 
 
 def _normalize_name(name: str) -> str:
@@ -84,7 +112,12 @@ def normalize_one_off_text(text: str) -> str:
     return value
 
 
-def create_user_template(name: str, content: str, template_id: str | None = None) -> PromptTemplate:
+def create_user_template(
+    name: str,
+    content: str,
+    template_id: str | None = None,
+    placement: str = POSITION_APPEND,
+) -> PromptTemplate:
     normalized_id = (template_id or "").strip() or str(uuid4())
     if normalized_id in _BUILTIN_TEMPLATE_IDS:
         raise ValueError("User template id conflicts with a built-in template id.")
@@ -93,6 +126,7 @@ def create_user_template(name: str, content: str, template_id: str | None = None
         name=_normalize_name(name),
         content=_normalize_content(content),
         built_in=False,
+        placement=normalize_placement(placement),
     )
 
 
@@ -115,34 +149,51 @@ def unique_existing_template_ids(
 
 def resolve_template_contents(
     config: PromptInjectionConfig, enabled_template_ids: Sequence[str]
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     enabled = set(unique_existing_template_ids(config, enabled_template_ids))
-    return [
-        template.content
-        for template in config.templates
-        if template.template_id in enabled and template.content.strip()
-    ]
+    prepend_sections: list[str] = []
+    append_sections: list[str] = []
+    for template in config.templates:
+        if template.template_id not in enabled:
+            continue
+        content = template.content.strip()
+        if not content:
+            continue
+        if normalize_placement(template.placement) == POSITION_PREPEND:
+            prepend_sections.append(content)
+        else:
+            append_sections.append(content)
+    return prepend_sections, append_sections
 
 
 def compose_prompt(
-    base_prompt: str, template_contents: Sequence[str], one_off_text: str = ""
+    base_prompt: str,
+    prepend_template_contents: Sequence[str],
+    append_template_contents: Sequence[str],
+    one_off_text: str = "",
+    one_off_placement: str = POSITION_APPEND,
 ) -> str:
     normalized_base = base_prompt or ""
-    normalized_templates = [section.strip() for section in template_contents if section.strip()]
+    prepend = [text.strip() for text in prepend_template_contents if str(text).strip()]
+    append = [text.strip() for text in append_template_contents if str(text).strip()]
     normalized_one_off = normalize_one_off_text(one_off_text)
-    if not normalized_templates and not normalized_one_off:
-        return normalized_base
-
-    injection_sections = [
-        f"[Template {idx}]\n{section}"
-        for idx, section in enumerate(normalized_templates, start=1)
-    ]
+    normalized_one_off_placement = normalize_placement(one_off_placement)
     if normalized_one_off:
-        injection_sections.append(f"[One-Off Injection]\n{normalized_one_off}")
-    injected_context = "[Injected Context]\n" + "\n\n".join(injection_sections)
+        if normalized_one_off_placement == POSITION_PREPEND:
+            prepend.append(normalized_one_off)
+        else:
+            append.append(normalized_one_off)
+
+    if not prepend and not append:
+        return normalized_base
+    parts: list[str] = []
+    if prepend:
+        parts.extend(prepend)
     if normalized_base.strip():
-        return normalized_base.rstrip() + "\n\n" + injected_context
-    return injected_context
+        parts.append(normalized_base.rstrip())
+    if append:
+        parts.extend(append)
+    return "\n\n".join(parts)
 
 
 def normalize_run_options(
@@ -154,12 +205,14 @@ def normalize_run_options(
                 config, config.default_enabled_template_ids
             ),
             one_off_text="",
+            one_off_placement=POSITION_APPEND,
         )
     return PromptInjectionRunOptions(
         enabled_template_ids=unique_existing_template_ids(
             config, run_options.enabled_template_ids
         ),
         one_off_text=normalize_one_off_text(run_options.one_off_text),
+        one_off_placement=normalize_placement(run_options.one_off_placement),
     )
 
 
@@ -184,8 +237,11 @@ class PromptInjectionStore:
         if not isinstance(payload, dict):
             return _DEFAULT_CONFIG
 
+        builtin_templates = _builtin_templates_with_placements(
+            payload.get("builtin_template_placements", {})
+        )
         user_templates = self._load_user_templates(payload.get("templates", []))
-        all_templates = _BUILTIN_TEMPLATES + tuple(user_templates)
+        all_templates = builtin_templates + tuple(user_templates)
 
         if "default_enabled_template_ids" in payload:
             raw_default_ids = payload.get("default_enabled_template_ids", [])
@@ -205,17 +261,24 @@ class PromptInjectionStore:
 
     def save(self, config: PromptInjectionConfig) -> None:
         normalized = self._normalize_config(config)
+        builtin_template_placements = {
+            template.template_id: normalize_placement(template.placement)
+            for template in normalized.templates
+            if template.built_in
+        }
         payload = {
-            "version": 1,
+            "version": 2,
             "templates": [
                 {
                     "id": template.template_id,
                     "name": template.name,
                     "content": template.content,
+                    "placement": normalize_placement(template.placement),
                 }
                 for template in normalized.templates
                 if not template.built_in
             ],
+            "builtin_template_placements": builtin_template_placements,
             "default_enabled_template_ids": list(normalized.default_enabled_template_ids),
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -254,16 +317,33 @@ class PromptInjectionStore:
                     name=normalized_name,
                     content=normalized_content,
                     built_in=False,
+                    placement=normalize_placement(item.get("placement", POSITION_APPEND)),
                 )
             )
         return loaded
 
     def _normalize_config(self, config: PromptInjectionConfig) -> PromptInjectionConfig:
-        user_templates: list[PromptTemplate] = []
-        seen_ids = set(_BUILTIN_TEMPLATE_IDS)
-        seen_names = {template.name.casefold() for template in _BUILTIN_TEMPLATES}
+        ordered_templates: list[PromptTemplate] = []
+        seen_ids: set[str] = set()
+        seen_names: set[str] = set()
+        for base in _BUILTIN_TEMPLATES:
+            seen_ids.add(base.template_id)
+            seen_names.add(base.name.casefold())
         for template in config.templates:
             if template.template_id in _BUILTIN_TEMPLATE_IDS:
+                placement = normalize_placement(template.placement)
+                for built_in_template in _BUILTIN_TEMPLATES:
+                    if built_in_template.template_id == template.template_id:
+                        ordered_templates.append(
+                            PromptTemplate(
+                                template_id=built_in_template.template_id,
+                                name=built_in_template.name,
+                                content=built_in_template.content,
+                                built_in=True,
+                                placement=placement,
+                            )
+                        )
+                        break
                 continue
             try:
                 normalized_name = _normalize_name(template.name)
@@ -271,24 +351,39 @@ class PromptInjectionStore:
             except ValueError:
                 continue
             template_id = (template.template_id or "").strip()
-            if not template_id:
+            if not template_id or template_id in seen_ids:
                 template_id = str(uuid4())
-            if template_id in seen_ids:
-                template_id = str(uuid4())
+                while template_id in seen_ids:
+                    template_id = str(uuid4())
             name_key = normalized_name.casefold()
             if name_key in seen_names:
                 continue
             seen_ids.add(template_id)
             seen_names.add(name_key)
-            user_templates.append(
+            ordered_templates.append(
                 PromptTemplate(
                     template_id=template_id,
                     name=normalized_name,
                     content=normalized_content,
                     built_in=False,
+                    placement=normalize_placement(template.placement),
                 )
             )
-        templates = _BUILTIN_TEMPLATES + tuple(user_templates)
+        # Ensure all built-ins exist even if missing from incoming config.
+        builtin_ids_in_output = {t.template_id for t in ordered_templates if t.built_in}
+        for built_in_template in _BUILTIN_TEMPLATES:
+            if built_in_template.template_id not in builtin_ids_in_output:
+                ordered_templates.insert(
+                    0,
+                    PromptTemplate(
+                        template_id=built_in_template.template_id,
+                        name=built_in_template.name,
+                        content=built_in_template.content,
+                        built_in=True,
+                        placement=built_in_template.placement,
+                    ),
+                )
+        templates = tuple(ordered_templates)
         normalized_ids = unique_existing_template_ids(
             PromptInjectionConfig(templates, ()),
             config.default_enabled_template_ids,

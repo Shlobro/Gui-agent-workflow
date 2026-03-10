@@ -1,6 +1,6 @@
 """PropertiesPanel - resizable side panel for editing node properties."""
 
-from typing import Optional
+from typing import Optional, Sequence
 
 from PySide6.QtCore import QEvent, Signal, Qt
 from PySide6.QtGui import QFont
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.llm.prompt_injection import compose_prompt
 from ._panel_forms import (
     _AttentionForm,
     _ConditionalForm,
@@ -153,6 +154,10 @@ class PropertiesPanel(QWidget):
         self._is_committing: bool = False
         self._preferred_width: int = DEFAULT_PANEL_WIDTH
         self._text_zoom: int = DEFAULT_TEXT_ZOOM
+        self._preview_prepend_templates: list[str] = []
+        self._preview_append_templates: list[str] = []
+        self._preview_one_off_text: str = ""
+        self._preview_one_off_placement: str = "append"
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -325,6 +330,7 @@ class PropertiesPanel(QWidget):
 
     def _on_prompt_changed(self):
         self._prompt_dirty = True
+        self._refresh_llm_prompt_preview()
 
     def _flush_prompt(self):
         if self._current_node is None:
@@ -612,6 +618,7 @@ class PropertiesPanel(QWidget):
 
         self._old_title = node.title
         self._prompt_dirty = False
+        self._refresh_llm_prompt_preview()
 
     def _load_file_form(self, node) -> None:
         form = self._file_form
@@ -731,3 +738,40 @@ class PropertiesPanel(QWidget):
         if node is not self._current_node:
             return
         self.show_for_node(node)
+
+    def set_prompt_injection_preview_context(
+        self,
+        prepend_template_contents: Sequence[str],
+        append_template_contents: Sequence[str],
+        one_off_text: str = "",
+        one_off_placement: str = "append",
+    ) -> None:
+        prepend_sections: list[str] = []
+        append_sections: list[str] = []
+        for section in prepend_template_contents:
+            normalized = str(section).strip()
+            if normalized:
+                prepend_sections.append(normalized)
+        for section in append_template_contents:
+            normalized = str(section).strip()
+            if normalized:
+                append_sections.append(normalized)
+        self._preview_prepend_templates = prepend_sections
+        self._preview_append_templates = append_sections
+        self._preview_one_off_text = one_off_text or ""
+        self._preview_one_off_placement = one_off_placement or "append"
+        self._refresh_llm_prompt_preview()
+
+    def _refresh_llm_prompt_preview(self) -> None:
+        from .llm_node import LLMNode
+
+        if not isinstance(self._current_node, LLMNode):
+            return
+        preview_text = compose_prompt(
+            self._llm_form.prompt_edit.toPlainText(),
+            self._preview_prepend_templates,
+            self._preview_append_templates,
+            self._preview_one_off_text,
+            self._preview_one_off_placement,
+        )
+        self._llm_form.prompt_preview_edit.setPlainText(preview_text)

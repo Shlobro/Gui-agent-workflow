@@ -8,7 +8,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `claude_provider.py`: Claude model list and command builder.
 - `codex_provider.py`: Codex model list, reasoning-effort suffix parsing, command builder, and optional working-directory scoping/output path.
 - `gemini_provider.py`: Gemini model list and command builder.
-- `prompt_injection.py`: Prompt template models, persistent JSON storage, run-option normalization, and prompt assembly helpers that append enabled template content plus optional one-off context to each LLM prompt.
+- `prompt_injection.py`: Prompt template models, persistent JSON storage, run-option normalization, and prompt assembly helpers that place enabled template content plus optional one-off context on either side of the base prompt (`prepend` or `append`).
 - `__init__.py`: Imports all providers so they self-register at startup.
 
 ## Current Model Sets
@@ -25,7 +25,10 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 ## Prompt Injection
 - Prompt template state is persisted in repo-root `.prompt_injections.json` and loaded through `PromptInjectionStore`.
 - Built-in template `runtime_context_headless` is always available and is enabled by default on first load.
-- `compose_prompt()` performs deterministic prompt assembly: base prompt, then enabled template sections in template order, then one-off run context.
+- Each template has a persistent `placement` value (`prepend` or `append`), configured from the prompt-template dialog.
+- Built-in template placement is persisted in the same config file (`builtin_template_placements`) so user-selected built-in placement survives restart.
+- `PromptInjectionRunOptions` carries `one_off_placement` so one-off run context can also be prepended or appended.
+- `compose_prompt()` performs deterministic assembly in three regions: prepend-injections, base prompt, append-injections, joined as plain text blocks without bracketed section headers.
 
 ## When To Edit
 - Add/remove models for a provider: corresponding `*_provider.py`.

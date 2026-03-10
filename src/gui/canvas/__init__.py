@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.llm.base_provider import LLMProviderRegistry
+from src.llm.prompt_injection import normalize_placement
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import AttentionNode, FileOpNode
@@ -96,8 +97,10 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
 
         # Project working directory
         self._working_directory: Optional[str] = None
-        self._prompt_injection_templates: List[str] = []
+        self._prompt_injection_prepend_templates: List[str] = []
+        self._prompt_injection_append_templates: List[str] = []
         self._prompt_injection_one_off: str = ""
+        self._prompt_injection_one_off_placement: str = "append"
 
         # Pan state
         self._panning = False
@@ -179,15 +182,26 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         self._working_directory = path
 
     def set_prompt_injections(
-        self, template_contents: Sequence[str], one_off_text: str = ""
+        self,
+        prepend_template_contents: Sequence[str],
+        append_template_contents: Sequence[str],
+        one_off_text: str = "",
+        one_off_placement: str = "append",
     ) -> None:
-        normalized_sections: List[str] = []
-        for section in template_contents:
+        prepend_sections: List[str] = []
+        append_sections: List[str] = []
+        for section in prepend_template_contents:
             normalized = str(section).strip()
             if normalized:
-                normalized_sections.append(normalized)
-        self._prompt_injection_templates = normalized_sections
+                prepend_sections.append(normalized)
+        for section in append_template_contents:
+            normalized = str(section).strip()
+            if normalized:
+                append_sections.append(normalized)
+        self._prompt_injection_prepend_templates = prepend_sections
+        self._prompt_injection_append_templates = append_sections
         self._prompt_injection_one_off = one_off_text or ""
+        self._prompt_injection_one_off_placement = normalize_placement(one_off_placement)
 
     def _resolve_default_llm_model_id(self) -> str:
         if get_provider_for_model(PREFERRED_DEFAULT_LLM_MODEL_ID) is not None:

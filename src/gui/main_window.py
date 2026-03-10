@@ -51,12 +51,27 @@ class MainWindow(QMainWindow):
         self._prompt_injection_store = PromptInjectionStore()
         self._prompt_injection_config = self._prompt_injection_store.load()
         self._next_run_prompt_injections: PromptInjectionRunOptions | None = None
+        self._staged_run_prompt_injections: PromptInjectionRunOptions | None = None
+        self._active_run_prompt_injections: PromptInjectionRunOptions | None = None
 
         self.canvas = WorkflowCanvas()
-        self._apply_prompt_injections_for_run()
+        initial_options = self._effective_prompt_injection_options()
+        (
+            prepend_template_contents,
+            append_template_contents,
+            one_off_text,
+            one_off_placement,
+        ) = self._resolve_prompt_injection_payload(initial_options)
+        self.canvas.set_prompt_injections(
+            prepend_template_contents,
+            append_template_contents,
+            one_off_text,
+            one_off_placement,
+        )
         self._panel = PropertiesPanel()
         self._panel.set_preferred_width(self._panel_width)
         self._panel.set_text_zoom(self._panel_zoom)
+        self._sync_prompt_preview_context()
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setChildrenCollapsible(False)
@@ -352,6 +367,17 @@ class MainWindow(QMainWindow):
             self._open_folder_action.setToolTip(
                 "Choose the folder LLM calls will run in"
             )
+        if running:
+            if self._staged_run_prompt_injections is not None:
+                self._active_run_prompt_injections = self._staged_run_prompt_injections
+                self._staged_run_prompt_injections = None
+                self._next_run_prompt_injections = None
+                self._sync_prompt_preview_context()
+        else:
+            self._staged_run_prompt_injections = None
+            if self._active_run_prompt_injections is not None:
+                self._active_run_prompt_injections = None
+                self._sync_prompt_preview_context()
 
     def _on_usage_limit_hit(self, node_id: str, error_text: str) -> None:
         from .dialogs.usage_limit_dialog import UsageLimitDialog
@@ -463,7 +489,7 @@ class MainWindow(QMainWindow):
             return
         self._prompt_injection_config = self._prompt_injection_store.load()
         self._next_run_prompt_injections = None
-        self._apply_prompt_injections_for_run()
+        self._sync_prompt_preview_context()
         self._status_bar.showMessage("Prompt templates saved.")
 
     def _set_next_run_prompt_injection(self):
@@ -481,24 +507,80 @@ class MainWindow(QMainWindow):
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         self._next_run_prompt_injections = dialog.result_options()
+        self._sync_prompt_preview_context()
         template_count = len(self._next_run_prompt_injections.enabled_template_ids)
         has_one_off = bool(self._next_run_prompt_injections.one_off_text.strip())
         details = "with one-off context" if has_one_off else "no one-off context"
+        one_off_side = self._next_run_prompt_injections.one_off_placement
         self._status_bar.showMessage(
-            f"Next run injection set ({template_count} template(s), {details})."
+            f"Next run injection set ({template_count} template(s), {details}, one-off {one_off_side})."
         )
 
     def _apply_prompt_injections_for_run(self):
-        options = normalize_run_options(
+        options = self._effective_prompt_injection_options()
+        (
+            prepend_template_contents,
+            append_template_contents,
+            one_off_text,
+            one_off_placement,
+        ) = self._resolve_prompt_injection_payload(options)
+        self.canvas.set_prompt_injections(
+            prepend_template_contents,
+            append_template_contents,
+            one_off_text,
+            one_off_placement,
+        )
+        self._staged_run_prompt_injections = options
+        self._sync_prompt_preview_context()
+
+    def _effective_prompt_injection_options(self) -> PromptInjectionRunOptions:
+        return normalize_run_options(
             self._prompt_injection_config,
             self._next_run_prompt_injections,
         )
-        template_contents = resolve_template_contents(
+
+    def _effective_preview_prompt_injection_options(self) -> PromptInjectionRunOptions:
+        if self._active_run_prompt_injections is not None:
+            return normalize_run_options(
+                self._prompt_injection_config,
+                self._active_run_prompt_injections,
+            )
+        if self._staged_run_prompt_injections is not None:
+            return normalize_run_options(
+                self._prompt_injection_config,
+                self._staged_run_prompt_injections,
+            )
+        return self._effective_prompt_injection_options()
+
+    def _resolve_prompt_injection_payload(
+        self, options: PromptInjectionRunOptions
+    ) -> tuple[list[str], list[str], str, str]:
+        prepend_template_contents, append_template_contents = resolve_template_contents(
             self._prompt_injection_config,
             options.enabled_template_ids,
         )
-        self.canvas.set_prompt_injections(template_contents, options.one_off_text)
-        self._next_run_prompt_injections = None
+        return (
+            prepend_template_contents,
+            append_template_contents,
+            options.one_off_text,
+            options.one_off_placement,
+        )
+
+    def _sync_prompt_preview_context(self) -> None:
+        if not hasattr(self, "_panel"):
+            return
+        (
+            prepend_template_contents,
+            append_template_contents,
+            one_off_text,
+            one_off_placement,
+        ) = self._resolve_prompt_injection_payload(self._effective_preview_prompt_injection_options())
+        self._panel.set_prompt_injection_preview_context(
+            prepend_template_contents,
+            append_template_contents,
+            one_off_text,
+            one_off_placement,
+        )
 
     def _save(self):
         self._panel.commit_pending_edits()

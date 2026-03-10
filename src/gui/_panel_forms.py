@@ -54,7 +54,15 @@ class _LLMForm(QWidget):
         self._editor_splitter.setChildrenCollapsible(False)
 
         self._prompt_frame = QFrame()
-        prompt_layout = QVBoxLayout(self._prompt_frame)
+        prompt_container_layout = QVBoxLayout(self._prompt_frame)
+        prompt_container_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_container_layout.setSpacing(4)
+
+        self._prompt_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._prompt_splitter.setChildrenCollapsible(False)
+
+        prompt_editor_frame = QFrame()
+        prompt_layout = QVBoxLayout(prompt_editor_frame)
         prompt_layout.setContentsMargins(0, 0, 0, 0)
         prompt_layout.setSpacing(4)
         prompt_label = QLabel("Prompt")
@@ -66,6 +74,25 @@ class _LLMForm(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         prompt_layout.addWidget(self.prompt_edit)
+        self._prompt_splitter.addWidget(prompt_editor_frame)
+
+        preview_frame = QFrame()
+        preview_layout = QVBoxLayout(preview_frame)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(4)
+        preview_label = QLabel("Prompt Preview")
+        preview_layout.addWidget(preview_label)
+        self.prompt_preview_edit = QPlainTextEdit()
+        self.prompt_preview_edit.setReadOnly(True)
+        self.prompt_preview_edit.setPlaceholderText(
+            "Composed prompt preview will appear here."
+        )
+        self.prompt_preview_edit.setMinimumHeight(100)
+        preview_layout.addWidget(self.prompt_preview_edit)
+        self._prompt_splitter.addWidget(preview_frame)
+        self._prompt_splitter.setSizes([4, 1])
+
+        prompt_container_layout.addWidget(self._prompt_splitter)
         self._editor_splitter.addWidget(self._prompt_frame)
 
         self._output_frame = QFrame()

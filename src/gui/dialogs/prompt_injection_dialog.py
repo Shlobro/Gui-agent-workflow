@@ -6,6 +6,7 @@ from typing import Iterable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -22,10 +23,13 @@ from PySide6.QtWidgets import (
 
 from src.llm.prompt_injection import (
     MAX_ONE_OFF_INJECTION_CHARS,
+    POSITION_APPEND,
+    POSITION_PREPEND,
     PromptInjectionConfig,
     PromptInjectionRunOptions,
     PromptTemplate,
     create_user_template,
+    normalize_placement,
     normalize_one_off_text,
     normalize_run_options,
     unique_existing_template_ids,
@@ -57,11 +61,30 @@ QPushButton {
 }
 QPushButton:hover { background: #444; }
 QPushButton:disabled { color: #777; border-color: #3d3d3d; }
+QComboBox {
+    background: #151515;
+    color: #e8e8e8;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
 """
+
+_PLACEMENT_LABELS = {
+    POSITION_APPEND: "Append to Prompt",
+    POSITION_PREPEND: "Prepend to Prompt",
+}
 
 
 class _TemplateEditorDialog(QDialog):
-    def __init__(self, title: str, name: str = "", content: str = "", parent=None):
+    def __init__(
+        self,
+        title: str,
+        name: str = "",
+        content: str = "",
+        placement: str = POSITION_APPEND,
+        parent=None,
+    ):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -80,8 +103,13 @@ class _TemplateEditorDialog(QDialog):
         self._content_edit = QPlainTextEdit()
         self._content_edit.setPlainText(content)
         self._content_edit.setMinimumHeight(220)
+        self._placement_combo = QComboBox()
+        self._placement_combo.addItem(_PLACEMENT_LABELS[POSITION_APPEND], userData=POSITION_APPEND)
+        self._placement_combo.addItem(_PLACEMENT_LABELS[POSITION_PREPEND], userData=POSITION_PREPEND)
+        self._set_combo_placement(self._placement_combo, placement)
         form.addRow("Template name", self._name_edit)
         form.addRow("Template content", self._content_edit)
+        form.addRow("Placement", self._placement_combo)
         layout.addLayout(form)
 
         note = QLabel(
@@ -103,6 +131,19 @@ class _TemplateEditorDialog(QDialog):
     def template_content(self) -> str:
         return self._content_edit.toPlainText()
 
+    def template_placement(self) -> str:
+        return normalize_placement(self._placement_combo.currentData())
+
+    @staticmethod
+    def _set_combo_placement(combo: QComboBox, placement: str) -> None:
+        target = normalize_placement(placement)
+        combo.blockSignals(True)
+        for idx in range(combo.count()):
+            if normalize_placement(combo.itemData(idx)) == target:
+                combo.setCurrentIndex(idx)
+                break
+        combo.blockSignals(False)
+
 
 class PromptTemplateManagerDialog(QDialog):
     """Manage saved prompt templates and default enabled templates."""
@@ -123,6 +164,7 @@ class PromptTemplateManagerDialog(QDialog):
 
         info = QLabel(
             "Checked templates are enabled by default for each run. "
+            "You can set each template to prepend or append. "
             "Built-in templates cannot be edited or deleted."
         )
         info.setWordWrap(True)
@@ -140,6 +182,22 @@ class PromptTemplateManagerDialog(QDialog):
         self._preview = QPlainTextEdit()
         self._preview.setReadOnly(True)
         body.addWidget(self._preview, stretch=2)
+
+        placement_row = QHBoxLayout()
+        placement_row.setSpacing(8)
+        placement_label = QLabel("Placement")
+        self._placement_combo = QComboBox()
+        self._placement_combo.addItem(
+            _PLACEMENT_LABELS[POSITION_APPEND], userData=POSITION_APPEND
+        )
+        self._placement_combo.addItem(
+            _PLACEMENT_LABELS[POSITION_PREPEND], userData=POSITION_PREPEND
+        )
+        self._placement_combo.currentIndexChanged.connect(self._on_placement_changed)
+        self._placement_combo.setEnabled(False)
+        placement_row.addWidget(placement_label)
+        placement_row.addWidget(self._placement_combo, stretch=1)
+        root.addLayout(placement_row)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
@@ -176,8 +234,11 @@ class PromptTemplateManagerDialog(QDialog):
         self._delete_btn.setEnabled(can_edit)
         if current is None:
             self._preview.setPlainText("")
+            self._placement_combo.setEnabled(False)
             return
         self._preview.setPlainText(current.content)
+        self._set_combo_placement(self._placement_combo, current.placement)
+        self._placement_combo.setEnabled(True)
 
     def _rebuild_list(self) -> None:
         if self._list.count() > 0:
@@ -186,6 +247,8 @@ class PromptTemplateManagerDialog(QDialog):
         self._list.clear()
         for template in self._templates:
             label = template.name
+            placement = normalize_placement(template.placement)
+            label = f"{label} [{placement}]"
             if template.built_in:
                 label = f"{label} (built-in)"
             item = QListWidgetItem(label)
@@ -207,6 +270,7 @@ class PromptTemplateManagerDialog(QDialog):
             self._list.setCurrentRow(0)
         else:
             self._preview.setPlainText("")
+            self._placement_combo.setEnabled(False)
             self._edit_btn.setEnabled(False)
             self._delete_btn.setEnabled(False)
 
@@ -237,6 +301,7 @@ class PromptTemplateManagerDialog(QDialog):
             template = create_user_template(
                 name=dialog.template_name(),
                 content=dialog.template_content(),
+                placement=dialog.template_placement(),
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Invalid Template", str(exc))
@@ -256,6 +321,7 @@ class PromptTemplateManagerDialog(QDialog):
             "Edit Template",
             name=template.name,
             content=template.content,
+            placement=template.placement,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -265,6 +331,7 @@ class PromptTemplateManagerDialog(QDialog):
                 name=dialog.template_name(),
                 content=dialog.template_content(),
                 template_id=template.template_id,
+                placement=dialog.template_placement(),
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Invalid Template", str(exc))
@@ -333,6 +400,37 @@ class PromptTemplateManagerDialog(QDialog):
         self._result_config = config
         self.accept()
 
+    def _on_placement_changed(self, _index: int) -> None:
+        current = self._current_template()
+        if current is None:
+            return
+        new_placement = normalize_placement(self._placement_combo.currentData())
+        if normalize_placement(current.placement) == new_placement:
+            return
+        for idx, template in enumerate(self._templates):
+            if template.template_id != current.template_id:
+                continue
+            self._templates[idx] = PromptTemplate(
+                template_id=template.template_id,
+                name=template.name,
+                content=template.content,
+                built_in=template.built_in,
+                placement=new_placement,
+            )
+            break
+        self._rebuild_list()
+        self._select_template(current.template_id)
+
+    @staticmethod
+    def _set_combo_placement(combo: QComboBox, placement: str) -> None:
+        target = normalize_placement(placement)
+        combo.blockSignals(True)
+        for idx in range(combo.count()):
+            if normalize_placement(combo.itemData(idx)) == target:
+                combo.setCurrentIndex(idx)
+                break
+        combo.blockSignals(False)
+
 
 class PromptInjectionRunDialog(QDialog):
     """Set prompt injection options for the next workflow run only."""
@@ -358,7 +456,8 @@ class PromptInjectionRunDialog(QDialog):
 
         info = QLabel(
             "Choose templates to inject on the next run. "
-            "You can also provide one one-off block that is not saved."
+            "Template placement is configured in Manage Templates. "
+            "You can also provide one one-off block and choose prepend/append for it."
         )
         info.setWordWrap(True)
         info.setStyleSheet("color: #aaaaaa;")
@@ -373,6 +472,24 @@ class PromptInjectionRunDialog(QDialog):
         self._one_off_edit.setMinimumHeight(130)
         self._one_off_edit.setPlainText(normalized.one_off_text)
         root.addWidget(self._one_off_edit)
+
+        one_off_position_row = QHBoxLayout()
+        one_off_position_row.setSpacing(8)
+        one_off_position_label = QLabel("One-off placement")
+        self._one_off_placement_combo = QComboBox()
+        self._one_off_placement_combo.addItem(
+            _PLACEMENT_LABELS[POSITION_APPEND], userData=POSITION_APPEND
+        )
+        self._one_off_placement_combo.addItem(
+            _PLACEMENT_LABELS[POSITION_PREPEND], userData=POSITION_PREPEND
+        )
+        self._set_combo_placement(
+            self._one_off_placement_combo,
+            normalized.one_off_placement,
+        )
+        one_off_position_row.addWidget(one_off_position_label)
+        one_off_position_row.addWidget(self._one_off_placement_combo, stretch=1)
+        root.addLayout(one_off_position_row)
 
         char_note = QLabel(
             f"One-off max length: {MAX_ONE_OFF_INJECTION_CHARS} characters."
@@ -432,6 +549,7 @@ class PromptInjectionRunDialog(QDialog):
     def _restore_defaults(self) -> None:
         self._rebuild_list(self._config.default_enabled_template_ids)
         self._one_off_edit.setPlainText("")
+        self._set_combo_placement(self._one_off_placement_combo, POSITION_APPEND)
 
     def _on_accept(self) -> None:
         try:
@@ -442,5 +560,18 @@ class PromptInjectionRunDialog(QDialog):
         self._result_options = PromptInjectionRunOptions(
             enabled_template_ids=self._checked_template_ids(),
             one_off_text=one_off,
+            one_off_placement=normalize_placement(
+                self._one_off_placement_combo.currentData()
+            ),
         )
         self.accept()
+
+    @staticmethod
+    def _set_combo_placement(combo: QComboBox, placement: str) -> None:
+        target = normalize_placement(placement)
+        combo.blockSignals(True)
+        for idx in range(combo.count()):
+            if normalize_placement(combo.itemData(idx)) == target:
+                combo.setCurrentIndex(idx)
+                break
+        combo.blockSignals(False)

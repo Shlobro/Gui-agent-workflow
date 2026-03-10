@@ -323,8 +323,10 @@ class _ExecutionMixin:
 
         composed_prompt = compose_prompt(
             node.prompt_text,
-            self._prompt_injection_templates,
+            self._prompt_injection_prepend_templates,
+            self._prompt_injection_append_templates,
             self._prompt_injection_one_off,
+            self._prompt_injection_one_off_placement,
         )
         worker = LLMWorker(
             provider,
