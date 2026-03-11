@@ -30,9 +30,18 @@ GraphNode = WorkflowNode
 
 _USAGE_LIMIT_RE = re.compile(
     r"you'?ve hit your usage limit"
+    r"|you'?ve hit your limit"
     r"|you'?ve reached your \d+-hour message limit"
+    r"|you'?ve reached your rate limit"
     r"|claude usage limit reached"
+    r"|ratelimiterror"
+    r"|insufficient_quota"
+    r"|rate_limit_error"
     r"|api error: rate limit (?:reached|exceeded)"
+    r"|rate limit reached for requests"
+    r"|rate limit reached for"
+    r"|resource_exhausted"
+    r"|resource has been exhausted \(e\.g\. check quota\)"
     r"|you exceeded your current quota"
     r"|usage limit reached for"
     r"|quota exceeded for",
@@ -479,7 +488,7 @@ class _ExecutionMixin:
         continue_button = dialog.addButton(
             "Continue Workflow", QMessageBox.ButtonRole.AcceptRole
         )
-        stop_button = dialog.addButton(
+        dialog.addButton(
             "Stop Workflow", QMessageBox.ButtonRole.RejectRole
         )
         dialog.setDefaultButton(continue_button)

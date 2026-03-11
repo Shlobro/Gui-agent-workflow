@@ -49,7 +49,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 - Save/load and toolbar actions: `src/gui/main_window.py`.
 - Provider models and CLI command construction: `src/llm/*_provider.py`.
 - Subprocess streaming, cancellation, and timeouts: `src/workers/llm_worker.py`, `src/workers/git_worker.py`.
-- Usage and rate-limit detection dialog flow: `src/gui/canvas/execution.py`, `src/gui/dialogs/usage_limit_dialog.py`, `src/gui/main_window.py`.
+- Usage and rate-limit detection dialog flow, including Claude CLI quota text like `You've hit your limit · resets ...`, OpenAI-style `rate limit reached for requests` / `You exceeded your current quota`, Anthropic-style `rate_limit_error`, and Gemini-style `RESOURCE_EXHAUSTED`: `src/gui/canvas/execution.py`, `src/gui/dialogs/usage_limit_dialog.py`, `src/gui/main_window.py`.
 
 ## Attention And Git-Change Conditions
 - `AttentionNode` is a built-in compact workflow node that blocks fan-out on its own branch: it plays `QApplication.beep()`, opens a modal `QMessageBox` (which starts a nested Qt event loop, so other branches and background workers remain active), and then either continues fan-out from this node or calls `stop_all()` based on the user's choice. It is a single-branch gate, not a global workflow pause.
