@@ -42,6 +42,11 @@ _USAGE_LIMIT_RE = re.compile(
     r"|rate limit reached for"
     r"|resource_exhausted"
     r"|resource has been exhausted \(e\.g\. check quota\)"
+    r"|quota_exhausted"
+    r"|terminalquotaerror"
+    r"|you have exhausted your capacity on this model"
+    r"|exhausted your capacity on this model"
+    r"|quota will reset after"
     r"|you exceeded your current quota"
     r"|usage limit reached for"
     r"|quota exceeded for",

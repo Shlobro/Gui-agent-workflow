@@ -9,7 +9,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `codex_provider.py`: Codex model list, reasoning-effort suffix parsing, command builder, and optional working-directory scoping/output path.
 - `gemini_provider.py`: Gemini model list and command builder.
 - `prompt_injection.py`: Prompt template models, persistent JSON storage, run-option normalization, and prompt assembly helpers that place enabled template content plus optional one-off context on either side of the base prompt (`prepend` or `append`).
-- `__init__.py`: Imports all providers so they self-register at startup.
+- `__init__.py`: Explicitly re-exports all provider modules so they self-register at startup and pass static unused-import checks.
 
 ## Current Model Sets
 - Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
