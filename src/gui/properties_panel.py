@@ -122,6 +122,27 @@ _PANEL_STYLE = """
 """
 
 
+class _OverviewForm(QWidget):
+    """Read-only panel shown when no workflow node is selected."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(6)
+
+        section = QLabel("WORKFLOW OVERVIEW")
+        section.setObjectName("section_label")
+        layout.addWidget(section)
+
+        self.summary_edit = QPlainTextEdit()
+        self.summary_edit.setReadOnly(True)
+        self.summary_edit.setPlaceholderText("No workflow information yet.")
+        self.summary_edit.setMinimumHeight(220)
+        self.summary_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        layout.addWidget(self.summary_edit, stretch=1)
+
+
 class PropertiesPanel(QWidget):
     """Resizable panel that edits the currently selected node."""
 
@@ -167,7 +188,8 @@ class PropertiesPanel(QWidget):
         self._stack = QStackedWidget()
         outer_layout.addWidget(self._stack)
 
-        self._stack.addWidget(QWidget())
+        self._overview_form = _OverviewForm()
+        self._stack.addWidget(self._wrap_form(self._overview_form))
 
         self._llm_form = _LLMForm()
         self._stack.addWidget(self._wrap_form(self._llm_form))
@@ -538,10 +560,18 @@ class PropertiesPanel(QWidget):
         else:
             self._stack.setCurrentIndex(0)
 
-    def hide_panel(self) -> None:
+    def show_overview(self) -> None:
         self.commit_pending_edits()
         self._current_node = None
         self._stack.setCurrentIndex(0)
+
+    def set_overview_text(self, text: str) -> None:
+        self._overview_form.summary_edit.setPlainText(text)
+
+    def hide_panel(self) -> None:
+        # Kept for call-site compatibility: the panel now stays visible and
+        # this method switches to the overview page instead of hiding.
+        self.show_overview()
 
     def maybe_append_output(self, node, line: str) -> None:
         if node is not self._current_node:

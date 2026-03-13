@@ -81,11 +81,12 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 0)
         self.setCentralWidget(self._splitter)
-        self._panel.hide()
+        self._panel.show_overview()
 
         self.canvas.status_update.connect(self._on_status)
         self.canvas.selection_changed.connect(self._on_selection_changed)
         self.canvas.usage_limit_hit.connect(self._on_usage_limit_hit)
+        self.canvas._undo_stack.indexChanged.connect(self._on_undo_stack_changed_for_overview)
 
         self._panel.title_committed.connect(self._on_panel_title_committed)
         self._panel.model_changed.connect(self._on_panel_model_changed)
@@ -118,6 +119,8 @@ class MainWindow(QMainWindow):
             self._apply_project_folder(project_folder)
         else:
             self._status_bar.showMessage("Ready. No project folder selected.")
+        self._refresh_panel_overview()
+        QTimer.singleShot(0, self._restore_panel_width)
 
     def _load_int_setting(self, key: str, default: int) -> int:
         value = self._settings.value(key, default)
@@ -131,30 +134,14 @@ class MainWindow(QMainWindow):
         self._settings.setValue(_PANEL_TEXT_ZOOM_KEY, self._panel_zoom)
         self._settings.sync()
 
-    def _show_panel(self) -> None:
-        center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
-        if self._panel.isHidden():
-            self._panel.show()
-        QTimer.singleShot(0, lambda: self._restore_panel_width_and_recenter(center))
-
     def _hide_panel(self, preserve_center: bool = True) -> None:
-        if self._panel.isVisible():
-            self._panel_width = self._panel.preferred_width()
-            self._save_panel_preferences()
-        center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
-        self._panel.hide_panel()
-        self._panel.hide()
-        self._restoring_panel_width = True
-        try:
-            self._splitter.setSizes([1, 0])
-        finally:
-            self._restoring_panel_width = False
-        if preserve_center:
-            QTimer.singleShot(0, lambda: self.canvas.centerOn(center))
+        _ = preserve_center
+        self._panel_width = self._panel.preferred_width()
+        self._save_panel_preferences()
+        self._panel.show_overview()
+        self._restore_panel_width()
 
     def _restore_panel_width(self) -> None:
-        if self._panel.isHidden():
-            return
         total_width = max(1, self._splitter.width())
         width = min(self._panel.preferred_width(), max(1, total_width - 220))
         self._restoring_panel_width = True
@@ -162,10 +149,6 @@ class MainWindow(QMainWindow):
             self._splitter.setSizes([max(1, total_width - width), width])
         finally:
             self._restoring_panel_width = False
-
-    def _restore_panel_width_and_recenter(self, center) -> None:
-        self._restore_panel_width()
-        self.canvas.centerOn(center)
 
     def _on_splitter_moved(self, _pos: int, _index: int) -> None:
         if self._restoring_panel_width or not self._panel.isVisible():
@@ -182,9 +165,7 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._panel.isVisible():
-            center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
-            QTimer.singleShot(0, lambda: self._restore_panel_width_and_recenter(center))
+        QTimer.singleShot(0, self._restore_panel_width)
 
     def _setup_style(self):
         self.setStyleSheet("""
@@ -350,6 +331,7 @@ class MainWindow(QMainWindow):
         name = os.path.basename(folder)
         self.setWindowTitle(f"LLM Workflow - {name}")
         self._status_bar.showMessage(f"Project folder: {folder}")
+        self._refresh_panel_overview()
 
     def _open_folder(self):
         dlg = ProjectChooserDialog(self)
@@ -412,11 +394,11 @@ class MainWindow(QMainWindow):
         ]
         if len(selected) == 1:
             self._panel.show_for_node(selected[0])
-            self._show_panel()
         else:
-            self._hide_panel()
+            self._panel.show_overview()
         if self._run_from_here_action is not None:
             self._run_from_here_action.setEnabled(len(selected) == 1)
+        self._refresh_panel_overview()
 
     def _on_panel_title_committed(self, node_id: str, old_title: str, new_title: str):
         node = self.canvas._nodes.get(node_id)
@@ -435,18 +417,21 @@ class MainWindow(QMainWindow):
         if node is not None and isinstance(node, LLMNode):
             node.prompt_text = text
             self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
 
     def _on_panel_filename_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, (FileOpNode, ConditionalNode)):
             node.filename = text
             self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
 
     def _on_panel_attention_message_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, AttentionNode):
             node.message_text = text
             self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
 
     def _on_panel_op_type_changed(self, node_id: str, old_type: str, new_type: str):
         node = self.canvas._nodes.get(node_id)
@@ -469,6 +454,7 @@ class MainWindow(QMainWindow):
     def _on_panel_git_details_changed(self, node_id: str):
         if node_id in self.canvas._nodes:
             self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
 
     def _run_all(self):
         self._panel.commit_pending_edits()
@@ -589,6 +575,111 @@ class MainWindow(QMainWindow):
             one_off_text,
             one_off_placement,
         )
+        self._refresh_panel_overview()
+
+    def _on_undo_stack_changed_for_overview(self, _index: int) -> None:
+        self._refresh_panel_overview()
+
+    def _refresh_panel_overview(self) -> None:
+        if not hasattr(self, "_panel"):
+            return
+        nodes = list(self.canvas._nodes.values())
+        self.canvas.refresh_node_validation_state()
+
+        llm_count = 0
+        file_op_count = 0
+        conditional_count = 0
+        loop_count = 0
+        attention_count = 0
+        git_action_count = 0
+        invalid_nodes: list[str] = []
+        for node in nodes:
+            if getattr(node, "is_invalid", False):
+                invalid_nodes.append(getattr(node, "title", node.node_id))
+            if isinstance(node, AttentionNode):
+                attention_count += 1
+            elif isinstance(node, ConditionalNode):
+                conditional_count += 1
+            elif isinstance(node, LoopNode):
+                loop_count += 1
+            elif isinstance(node, GitActionNode):
+                git_action_count += 1
+            elif isinstance(node, FileOpNode):
+                file_op_count += 1
+            elif isinstance(node, LLMNode):
+                llm_count += 1
+
+        selected_count = len(
+            [
+                item
+                for item in self.canvas._scene.selectedItems()
+                if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
+                and not getattr(item, "is_start", False)
+            ]
+        )
+
+        options = self._effective_preview_prompt_injection_options()
+        prepend_template_contents, append_template_contents, one_off_text, one_off_placement = (
+            self._resolve_prompt_injection_payload(options)
+        )
+
+        lines = [
+            "Workflow Summary",
+            f"Working directory: {self.canvas._working_directory or '(not selected)'}",
+            f"Connections: {len(self.canvas._connections)}",
+            f"Selected nodes: {selected_count}",
+            "",
+            "Node Counts",
+            f"- Total: {len(nodes)}",
+            f"- LLM: {llm_count}",
+            f"- File Ops: {file_op_count}",
+            f"- Conditional: {conditional_count}",
+            f"- Attention: {attention_count}",
+            f"- Loop: {loop_count}",
+            f"- Git Action: {git_action_count}",
+            "",
+            f"Invalid Nodes: {len(invalid_nodes)}",
+        ]
+        if invalid_nodes:
+            for title in invalid_nodes[:10]:
+                lines.append(f"- {title}")
+            if len(invalid_nodes) > 10:
+                lines.append(f"- ... and {len(invalid_nodes) - 10} more")
+        else:
+            lines.append("- None")
+
+        lines.extend(
+            [
+                "",
+                "Prompt Injection (applies to every LLM prompt)",
+                f"- Enabled templates: {len(options.enabled_template_ids)}",
+                f"- One-off placement: {one_off_placement}",
+                "",
+                f"Prepend blocks: {len(prepend_template_contents)}",
+            ]
+        )
+        if prepend_template_contents:
+            for idx, section in enumerate(prepend_template_contents, start=1):
+                lines.append(f"[prepend #{idx}]")
+                lines.append(section)
+                lines.append("")
+        else:
+            lines.append("(none)")
+            lines.append("")
+
+        lines.append(f"Append blocks: {len(append_template_contents)}")
+        if append_template_contents:
+            for idx, section in enumerate(append_template_contents, start=1):
+                lines.append(f"[append #{idx}]")
+                lines.append(section)
+                lines.append("")
+        else:
+            lines.append("(none)")
+            lines.append("")
+
+        lines.append("One-off block:")
+        lines.append(one_off_text.strip() if one_off_text.strip() else "(none)")
+        self._panel.set_overview_text("\n".join(lines))
 
     def _save(self):
         self._panel.commit_pending_edits()
