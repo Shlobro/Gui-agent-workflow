@@ -30,6 +30,7 @@ STATUS_COLORS = {
     "done":    QColor("#3aaa5a"),
     "error":   QColor("#e05252"),
 }
+INVALID_BORDER_COLOR = QColor("#e05252")
 
 PORT_RADIUS = 7
 CORNER_RADIUS = 12
@@ -135,6 +136,7 @@ class WorkflowNode(QGraphicsItem):
         self.node_id: str = node_id or str(uuid.uuid4())
         self.label_index: int = label_index
         self.status: str = "idle"
+        self.is_invalid: bool = False
         self.output_text: str = ""
         self._connections: List["ConnectionItem"] = []
         self._height: int = 0   # subclasses set this before first paint
@@ -253,6 +255,18 @@ class WorkflowNode(QGraphicsItem):
         painter.drawPath(glow_path)
         painter.setPen(inner_glow_pen)
         painter.drawPath(glow_path)
+
+    def set_invalid(self, invalid: bool) -> None:
+        invalid = bool(invalid)
+        if self.is_invalid == invalid:
+            return
+        self.is_invalid = invalid
+        self.update()
+
+    def border_color(self) -> QColor:
+        if self.is_invalid and self.status not in _ANIMATED_STATUSES:
+            return INVALID_BORDER_COLOR
+        return STATUS_COLORS.get(self.status, STATUS_COLORS["idle"])
 
 
 # ---------------------------------------------------------------------------
@@ -408,8 +422,7 @@ class LLMNode(WorkflowNode):
         if self.status == "running":
             self._paint_running_glow(painter, path)
         else:
-            color = STATUS_COLORS.get(self.status, STATUS_COLORS["idle"])
-            border_pen = QPen(color, 2)
+            border_pen = QPen(self.border_color(), 2)
             border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(border_pen)
             painter.drawPath(path)

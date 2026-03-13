@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
         self._panel.git_action_changed.connect(
             lambda nid, old, new: self.canvas._on_git_action_changed(nid, old, new)
         )
+        self._panel.git_details_changed.connect(self._on_panel_git_details_changed)
         self._panel.text_zoom_changed.connect(self._on_panel_text_zoom_changed)
         self._splitter.splitterMoved.connect(self._on_splitter_moved)
 
@@ -433,16 +434,19 @@ class MainWindow(QMainWindow):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, LLMNode):
             node.prompt_text = text
+            self.canvas.refresh_node_validation_state()
 
     def _on_panel_filename_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, (FileOpNode, ConditionalNode)):
             node.filename = text
+            self.canvas.refresh_node_validation_state()
 
     def _on_panel_attention_message_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, AttentionNode):
             node.message_text = text
+            self.canvas.refresh_node_validation_state()
 
     def _on_panel_op_type_changed(self, node_id: str, old_type: str, new_type: str):
         node = self.canvas._nodes.get(node_id)
@@ -461,6 +465,10 @@ class MainWindow(QMainWindow):
         if node is None:
             return
         self.canvas._on_loop_count_changed(node_id, old_count, new_count)
+
+    def _on_panel_git_details_changed(self, node_id: str):
+        if node_id in self.canvas._nodes:
+            self.canvas.refresh_node_validation_state()
 
     def _run_all(self):
         self._panel.commit_pending_edits()

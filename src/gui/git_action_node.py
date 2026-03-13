@@ -184,8 +184,7 @@ class GitActionNode(WorkflowNode):
         if self.status == "running":
             self._paint_running_glow(painter, path)
         else:
-            color = STATUS_COLORS.get(self.status, STATUS_COLORS["idle"])
-            border_pen = QPen(color, 2)
+            border_pen = QPen(self.border_color(), 2)
             border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(border_pen)
             painter.drawPath(path)

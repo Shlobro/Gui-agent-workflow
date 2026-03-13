@@ -134,6 +134,7 @@ class PropertiesPanel(QWidget):
     condition_type_changed = Signal(str, str, str)
     loop_count_changed = Signal(str, int, int)
     git_action_changed = Signal(str, str, str)
+    git_details_changed = Signal(str)
     text_zoom_changed = Signal(int)
 
     def __init__(self, parent=None):
@@ -415,6 +416,7 @@ class PropertiesPanel(QWidget):
         if self._current_node is None:
             return
         self._current_node.msg_source = new_source
+        self.git_details_changed.emit(self._current_node.node_id)
 
     def _on_git_commit_msg_changed(self):
         self._git_commit_msg_dirty = True
@@ -428,6 +430,7 @@ class PropertiesPanel(QWidget):
             return
         self._current_node.commit_msg = self._git_form.commit_msg_edit.text()
         self._git_commit_msg_dirty = False
+        self.git_details_changed.emit(self._current_node.node_id)
 
     def _on_git_commit_msg_file_changed(self):
         self._git_commit_msg_file_dirty = True
@@ -441,6 +444,7 @@ class PropertiesPanel(QWidget):
             return
         self._current_node.commit_msg_file = self._git_form.commit_msg_file_edit.text()
         self._git_commit_msg_file_dirty = False
+        self.git_details_changed.emit(self._current_node.node_id)
 
     def _on_attention_title_committed(self):
         if self._current_node is None:

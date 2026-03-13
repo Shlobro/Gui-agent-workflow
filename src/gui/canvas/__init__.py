@@ -174,6 +174,7 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
 
     def notify_node_changed(self, node_id: str) -> None:
         """Re-emit selection_changed if the node is selected, so the panel refreshes."""
+        self.refresh_node_validation_state()
         node = self._nodes.get(node_id)
         if node is not None and node in self._scene.selectedItems():
             self.selection_changed.emit()

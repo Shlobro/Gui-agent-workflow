@@ -43,6 +43,7 @@ class _IOMixin:
         self._scene.addItem(node)
         self._nodes[node.node_id] = node
         self._title_committed[node.node_id] = node.title
+        self.refresh_node_validation_state()
         return node
 
     def _undo_remove_node(self: "WorkflowCanvas", node_id: str):
@@ -63,6 +64,7 @@ class _IOMixin:
         self._scene.removeItem(node)
         self._nodes.pop(node_id, None)
         self._title_committed.pop(node_id, None)
+        self.refresh_node_validation_state()
 
     def _undo_add_connection(self: "WorkflowCanvas", src, tgt: GraphNode,
                              source_port: str = "output") -> ConnectionItem:
@@ -130,6 +132,7 @@ class _IOMixin:
         self._connections.clear()
         self._node_counter = 0
         self._start_node = self._add_start_node()
+        self.refresh_node_validation_state()
         self._undo_stack.clear()
         self._title_committed.clear()
 
@@ -175,5 +178,6 @@ class _IOMixin:
                 self._scene.addItem(conn)
                 self._connections.append(conn)
 
+        self.refresh_node_validation_state()
         self._expand_scene_rect_to_fit_items()
         self._undo_stack.clear()

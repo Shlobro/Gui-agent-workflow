@@ -3,7 +3,7 @@
 import os
 import re
 from collections import deque
-from typing import TYPE_CHECKING, List, Sequence
+from typing import TYPE_CHECKING, Dict, List, Sequence
 from uuid import uuid4
 
 from PySide6.QtCore import QTimer
@@ -194,52 +194,81 @@ class _ExecutionMixin:
             for conn in self._connections
         )
 
-    def _validate_nodes(self: "WorkflowCanvas", nodes: Sequence[GraphNode]) -> List[str]:
+    def _node_validation_errors(self: "WorkflowCanvas", node: GraphNode) -> List[str]:
         from src.gui.loop_node import LoopNode
         from src.gui.git_action_node import GitActionNode
+
         valid_git_actions = {"git_add", "git_commit", "git_push"}
         valid_msg_sources = {"static", "from_file"}
-        errors = []
+        reasons: List[str] = []
+
+        if isinstance(node, ConditionalNode):
+            if condition_requires_filename(node.condition_type) and not node.filename.strip():
+                reasons.append("has no filename set")
+            if node.condition_type not in CONDITION_REGISTRY:
+                reasons.append(f'has unknown condition type "{node.condition_type}"')
+            return reasons
+
+        if isinstance(node, AttentionNode):
+            if not node.message_text.strip():
+                reasons.append("has no attention message set")
+            return reasons
+
+        if isinstance(node, FileOpNode):
+            if not node.filename.strip():
+                reasons.append("has no filename set")
+            return reasons
+
+        if isinstance(node, LoopNode):
+            # loop_count is always clamped by constructor/load path
+            return reasons
+
+        if isinstance(node, GitActionNode):
+            if node.git_action not in valid_git_actions:
+                reasons.append(f'has unknown git action "{node.git_action}"')
+                return reasons
+            if node.msg_source not in valid_msg_sources:
+                reasons.append(f'has unknown message source "{node.msg_source}"')
+                return reasons
+            if node.git_action == "git_commit":
+                if node.msg_source == "static" and not node.commit_msg.strip():
+                    reasons.append("has no commit message set")
+                elif node.msg_source == "from_file" and not node.commit_msg_file.strip():
+                    reasons.append("has no commit message file set")
+            return reasons
+
+        if not node.prompt_text.strip():
+            reasons.append("has no prompt")
+        if not node.model_id:
+            reasons.append("has no model selected")
+        elif get_provider_for_model(node.model_id) is None:
+            reasons.append(f'has unknown model "{node.model_id}"')
+        return reasons
+
+    def _validation_errors_by_node(
+        self: "WorkflowCanvas", nodes: Sequence[GraphNode]
+    ) -> Dict[str, List[str]]:
+        errors: Dict[str, List[str]] = {}
+        for node in nodes:
+            reasons = self._node_validation_errors(node)
+            if reasons:
+                errors[node.node_id] = reasons
+        return errors
+
+    def refresh_node_validation_state(self: "WorkflowCanvas") -> Dict[str, List[str]]:
+        """Update each canvas node's invalid marker based on current run validation rules."""
+        errors_by_node = self._validation_errors_by_node(list(self._nodes.values()))
+        for node in self._nodes.values():
+            node.set_invalid(node.node_id in errors_by_node)
+        return errors_by_node
+
+    def _validate_nodes(self: "WorkflowCanvas", nodes: Sequence[GraphNode]) -> List[str]:
+        errors_by_node = self.refresh_node_validation_state()
+        errors: List[str] = []
         for node in nodes:
             title = getattr(node, "title", node.node_id)
-            if isinstance(node, ConditionalNode):
-                if condition_requires_filename(node.condition_type) and not node.filename.strip():
-                    errors.append(f'\u2022 "{title}" has no filename set.')
-                if node.condition_type not in CONDITION_REGISTRY:
-                    errors.append(
-                        f'\u2022 "{title}" has unknown condition type "{node.condition_type}".'
-                    )
-            elif isinstance(node, AttentionNode):
-                if not node.message_text.strip():
-                    errors.append(f'\u2022 "{title}" has no attention message set.')
-            elif isinstance(node, FileOpNode):
-                if not node.filename.strip():
-                    errors.append(f'\u2022 "{title}" has no filename set.')
-            elif isinstance(node, LoopNode):
-                pass  # loop_count always valid (min 1, defaults to 3)
-            elif isinstance(node, GitActionNode):
-                if node.git_action not in valid_git_actions:
-                    errors.append(
-                        f'\u2022 "{title}" has unknown git action "{node.git_action}".'
-                    )
-                    continue
-                if node.msg_source not in valid_msg_sources:
-                    errors.append(
-                        f'\u2022 "{title}" has unknown message source "{node.msg_source}".'
-                    )
-                    continue
-                if node.git_action == "git_commit":
-                    if node.msg_source == "static" and not node.commit_msg.strip():
-                        errors.append(f'\u2022 "{title}" has no commit message set.')
-                    elif node.msg_source == "from_file" and not node.commit_msg_file.strip():
-                        errors.append(f'\u2022 "{title}" has no commit message file set.')
-            else:
-                if not node.prompt_text.strip():
-                    errors.append(f'\u2022 "{title}" has no prompt.')
-                if not node.model_id:
-                    errors.append(f'\u2022 "{title}" has no model selected.')
-                elif get_provider_for_model(node.model_id) is None:
-                    errors.append(f'\u2022 "{title}" has unknown model "{node.model_id}".')
+            for reason in errors_by_node.get(node.node_id, []):
+                errors.append(f'\u2022 "{title}" {reason}.')
         return errors
 
     def _direct_children(self: "WorkflowCanvas", node) -> list:

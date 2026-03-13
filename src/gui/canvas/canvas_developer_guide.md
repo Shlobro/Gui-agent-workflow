@@ -15,6 +15,7 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its two behavior mixins. Sp
 - All undo-pushable mutations go through `WorkflowCanvas._undo_stack`.
 - `_undo_in_progress` is set during undo/redo mutations so panel commit handlers do not push duplicate commands.
 - `notify_node_changed(node_id)` re-emits `selection_changed` after undo/redo attribute changes so the properties panel refreshes automatically.
+- `refresh_node_validation_state()` applies run-validation rules to all non-start nodes and toggles each node's invalid flag; invalid nodes render with a red border until required fields are fixed.
 
 ## Attention And Git-Change Conditions
 - `WorkflowCanvas.add_attention_node()` creates `AttentionNode` snapshots with a user-facing `message` field so save/load, undo, and paste treat the node like any other built-in node type.
