@@ -1,4 +1,4 @@
-"""ConnectionItem — a directed arrow between workflow nodes."""
+"""ConnectionItem - a directed arrow between workflow nodes."""
 
 import heapq
 import math
@@ -22,6 +22,9 @@ ARROW_SIZE = 10
 VISUAL_STROKE_WIDTH = 2
 HIT_STROKE_WIDTH = 16
 ARROW_HIT_PADDING = 5
+VERTEX_HANDLE_RADIUS = 4.0
+VERTEX_HIT_RADIUS = 8.0
+INSERT_SNAP_DISTANCE = 10.0
 PORT_EDGE_OFFSET = PORT_RADIUS + 2
 PORT_GUARD_OFFSET = 38
 OBSTACLE_PADDING = 12
@@ -42,6 +45,8 @@ class ConnectionItem(QGraphicsPathItem):
         self.source_node = source
         self.target_node = target
         self.source_port: str = source_port
+        self._manual_points: List[QPointF] = []
+        self._display_points: List[QPointF] = []
         self._arrow_tip = QPointF()
         self._arrow_angle = 0.0
         self._hit_path = QPainterPath()
@@ -61,26 +66,145 @@ class ConnectionItem(QGraphicsPathItem):
 
         src_edge = src_center + QPointF(PORT_EDGE_OFFSET, 0)
         dst_edge = dst_center - QPointF(PORT_EDGE_OFFSET, 0)
-        src_guard = src_edge + QPointF(PORT_GUARD_OFFSET, 0)
-        dst_guard = dst_edge - QPointF(PORT_GUARD_OFFSET, 0)
-
-        routed = self._route_points(src_guard, dst_guard, self._obstacle_rects())
-        if not routed:
-            routed = [src_guard, dst_guard]
-
-        points = self._compress_points([src_edge, *routed, dst_edge])
-        if len(points) < 2:
-            points = [src_edge, dst_edge]
+        if self._manual_points:
+            points = [src_edge, *self._manual_points, dst_edge]
+        else:
+            src_guard = src_edge + QPointF(PORT_GUARD_OFFSET, 0)
+            dst_guard = dst_edge - QPointF(PORT_GUARD_OFFSET, 0)
+            routed = self._route_points(src_guard, dst_guard, self._obstacle_rects())
+            if not routed:
+                routed = [src_guard, dst_guard]
+            points = self._compress_points([src_edge, *routed, dst_edge])
+            if len(points) < 2:
+                points = [src_edge, dst_edge]
 
         path = QPainterPath()
         path.moveTo(points[0])
         for point in points[1:]:
             path.lineTo(point)
+        self._display_points = [QPointF(point) for point in points]
         self.setPath(path)
 
         self._set_arrow_geometry(points)
         self._rebuild_hit_path(path)
         self.update()
+
+    def manual_points(self) -> List[QPointF]:
+        return [QPointF(point) for point in self._manual_points]
+
+    def manual_points_tuples(self) -> List[Tuple[float, float]]:
+        return [(point.x(), point.y()) for point in self._manual_points]
+
+    def editable_points(self) -> List[QPointF]:
+        if self._manual_points:
+            return self.manual_points()
+        if len(self._display_points) <= 2:
+            return []
+        return [QPointF(point) for point in self._display_points[1:-1]]
+
+    def set_manual_points(self, points: List[QPointF]) -> None:
+        cleaned: List[QPointF] = []
+        for point in points:
+            qpoint = QPointF(point)
+            if cleaned and (qpoint - cleaned[-1]).manhattanLength() < 0.01:
+                continue
+            cleaned.append(qpoint)
+        self._manual_points = cleaned
+        self.update_path()
+
+    def set_manual_points_from_tuples(self, points: List[Tuple[float, float]]) -> None:
+        self.set_manual_points([QPointF(float(x), float(y)) for x, y in points])
+
+    def find_vertex_index_at(
+        self,
+        scene_pos: QPointF,
+        radius: float = VERTEX_HIT_RADIUS,
+    ) -> Optional[int]:
+        points = self.editable_points()
+        if not points:
+            return None
+
+        best_idx: Optional[int] = None
+        best_dist_sq = radius * radius
+        for idx, point in enumerate(points):
+            dx = point.x() - scene_pos.x()
+            dy = point.y() - scene_pos.y()
+            dist_sq = (dx * dx) + (dy * dy)
+            if dist_sq <= best_dist_sq:
+                best_idx = idx
+                best_dist_sq = dist_sq
+        return best_idx
+
+    def move_vertex(self, index: int, scene_pos: QPointF) -> bool:
+        self._ensure_manual_points()
+        if index < 0 or index >= len(self._manual_points):
+            return False
+        self._manual_points[index] = QPointF(scene_pos)
+        self.update_path()
+        return True
+
+    def remove_vertex(self, index: int) -> bool:
+        self._ensure_manual_points()
+        if index < 0 or index >= len(self._manual_points):
+            return False
+        self._manual_points.pop(index)
+        self.update_path()
+        return True
+
+    def insert_vertex(
+        self,
+        scene_pos: QPointF,
+        max_distance: float = INSERT_SNAP_DISTANCE,
+    ) -> bool:
+        self._ensure_manual_points()
+        points = self._display_points
+        if len(points) < 2:
+            return False
+
+        segment_index = self._nearest_segment_index(scene_pos, points, max_distance)
+        if segment_index is None:
+            return False
+
+        insert_at = max(0, min(len(self._manual_points), segment_index))
+        self._manual_points.insert(insert_at, QPointF(scene_pos))
+        self.update_path()
+        return True
+
+    def _ensure_manual_points(self) -> None:
+        if self._manual_points:
+            return
+        if len(self._display_points) <= 2:
+            return
+        self._manual_points = [QPointF(point) for point in self._display_points[1:-1]]
+
+    @staticmethod
+    def _distance_to_segment(point: QPointF, start: QPointF, end: QPointF) -> float:
+        dx = end.x() - start.x()
+        dy = end.y() - start.y()
+        denom = (dx * dx) + (dy * dy)
+        if denom <= 1e-9:
+            return math.hypot(point.x() - start.x(), point.y() - start.y())
+        t = ((point.x() - start.x()) * dx + (point.y() - start.y()) * dy) / denom
+        t = max(0.0, min(1.0, t))
+        proj_x = start.x() + (t * dx)
+        proj_y = start.y() + (t * dy)
+        return math.hypot(point.x() - proj_x, point.y() - proj_y)
+
+    @classmethod
+    def _nearest_segment_index(
+        cls,
+        point: QPointF,
+        polyline: List[QPointF],
+        max_distance: float,
+    ) -> Optional[int]:
+        best_idx: Optional[int] = None
+        best_dist = max_distance
+        for idx in range(len(polyline) - 1):
+            dist = cls._distance_to_segment(point, polyline[idx], polyline[idx + 1])
+            if dist <= best_dist:
+                best_idx = idx
+                best_dist = dist
+        return best_idx
 
     def _obstacle_rects(self) -> List[QRectF]:
         scene = self.scene()
@@ -322,6 +446,10 @@ class ConnectionItem(QGraphicsPathItem):
         arrow_path = QPainterPath()
         arrow_path.addPolygon(self._arrow_polygon(ARROW_SIZE + ARROW_HIT_PADDING))
         hit_path = hit_path.united(arrow_path)
+        for point in self.editable_points():
+            handle_path = QPainterPath()
+            handle_path.addEllipse(point, VERTEX_HIT_RADIUS, VERTEX_HIT_RADIUS)
+            hit_path = hit_path.united(handle_path)
 
         hit_rect = hit_path.boundingRect()
         if hit_rect != self._hit_rect:
@@ -358,6 +486,18 @@ class ConnectionItem(QGraphicsPathItem):
         painter.setPen(QPen(color, 1))
         painter.drawPolygon(arrow)
 
+        if self.isSelected():
+            self._paint_vertex_handles(painter)
+
+    def _paint_vertex_handles(self, painter: QPainter) -> None:
+        points = self.editable_points()
+        if not points:
+            return
+        painter.setPen(QPen(QColor("#7fd0ff"), 1.2))
+        painter.setBrush(QBrush(QColor("#123247")))
+        for point in points:
+            painter.drawEllipse(point, VERTEX_HANDLE_RADIUS, VERTEX_HANDLE_RADIUS)
+
     def detach(self):
         """Remove this connection from both endpoint node bookkeeping lists."""
         self.source_node.remove_connection(self)
@@ -370,4 +510,6 @@ class ConnectionItem(QGraphicsPathItem):
         }
         if self.source_port and self.source_port != "output":
             d["source_port"] = self.source_port
+        if self._manual_points:
+            d["vertices"] = [[point.x(), point.y()] for point in self._manual_points]
         return d

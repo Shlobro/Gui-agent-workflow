@@ -66,11 +66,17 @@ class _IOMixin:
         self._title_committed.pop(node_id, None)
         self.refresh_node_validation_state()
 
-    def _undo_add_connection(self: "WorkflowCanvas", src, tgt: GraphNode,
-                             source_port: str = "output") -> ConnectionItem:
+    def _undo_add_connection(
+        self: "WorkflowCanvas",
+        src,
+        tgt: GraphNode,
+        source_port: str = "output",
+        vertices: Optional[list[tuple[float, float]]] = None,
+    ) -> ConnectionItem:
         conn = ConnectionItem(src, tgt, source_port=source_port)
+        if vertices:
+            conn.set_manual_points_from_tuples(vertices)
         self._scene.addItem(conn)
-        conn.update_path()
         self._connections.append(conn)
         return conn
 
@@ -171,12 +177,11 @@ class _IOMixin:
             src_id = c_data.get("from")
             tgt_id = c_data.get("to")
             source_port = c_data.get("source_port", "output")
+            vertices = c_data.get("vertices", [])
             src = self._start_node if src_id == "start" else self._nodes.get(src_id)
             tgt = self._nodes.get(tgt_id)
             if src and tgt:
-                conn = ConnectionItem(src, tgt, source_port=source_port)
-                self._scene.addItem(conn)
-                self._connections.append(conn)
+                self._undo_add_connection(src, tgt, source_port=source_port, vertices=vertices)
 
         self.refresh_node_validation_state()
         self._expand_scene_rect_to_fit_items()

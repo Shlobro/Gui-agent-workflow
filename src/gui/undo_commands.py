@@ -29,6 +29,20 @@ def _command_node_label(snapshot: dict) -> str:
     return base
 
 
+def _normalize_vertices(vertices) -> List[tuple[float, float]]:
+    normalized: List[tuple[float, float]] = []
+    if not vertices:
+        return normalized
+    for point in vertices:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        x, y = point[0], point[1]
+        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+            continue
+        normalized.append((float(x), float(y)))
+    return normalized
+
+
 class AddNodeCommand(QUndoCommand):
     """Push when a new workflow node is created."""
 
@@ -68,6 +82,7 @@ class RemoveNodeCommand(QUndoCommand):
         for c in self._conn_snapshots:
             src_id, tgt_id = c.get("from"), c.get("to")
             source_port = c.get("source_port", "output")
+            vertices = _normalize_vertices(c.get("vertices", []))
             if src_id == "start":
                 src = self._canvas._start_node
             else:
@@ -77,19 +92,25 @@ class RemoveNodeCommand(QUndoCommand):
             else:
                 tgt = self._canvas._nodes.get(tgt_id)
             if src and tgt:
-                self._canvas._undo_add_connection(src, tgt, source_port)
+                self._canvas._undo_add_connection(
+                    src,
+                    tgt,
+                    source_port,
+                    vertices=vertices,
+                )
 
 
 class AddConnectionCommand(QUndoCommand):
     """Push when a ConnectionItem is created."""
 
     def __init__(self, canvas: "WorkflowCanvas", src_id: str, tgt_id: str,
-                 source_port: str = "output"):
+                 source_port: str = "output", vertices=None):
         super().__init__("Add Connection")
         self._canvas = canvas
         self._src_id = src_id
         self._tgt_id = tgt_id
         self._source_port = source_port
+        self._vertices = _normalize_vertices(vertices)
 
     def _resolve(self):
         src = (self._canvas._start_node if self._src_id == "start"
@@ -101,7 +122,12 @@ class AddConnectionCommand(QUndoCommand):
     def redo(self):
         src, tgt = self._resolve()
         if src and tgt:
-            self._canvas._undo_add_connection(src, tgt, self._source_port)
+            self._canvas._undo_add_connection(
+                src,
+                tgt,
+                self._source_port,
+                vertices=self._vertices,
+            )
 
     def undo(self):
         conn = self._canvas._find_connection(self._src_id, self._tgt_id, self._source_port)
@@ -113,12 +139,13 @@ class RemoveConnectionCommand(QUndoCommand):
     """Push when a ConnectionItem is deleted."""
 
     def __init__(self, canvas: "WorkflowCanvas", src_id: str, tgt_id: str,
-                 source_port: str = "output"):
+                 source_port: str = "output", vertices=None):
         super().__init__("Delete Connection")
         self._canvas = canvas
         self._src_id = src_id
         self._tgt_id = tgt_id
         self._source_port = source_port
+        self._vertices = _normalize_vertices(vertices)
 
     def _resolve(self):
         src = (self._canvas._start_node if self._src_id == "start"
@@ -135,7 +162,44 @@ class RemoveConnectionCommand(QUndoCommand):
     def undo(self):
         src, tgt = self._resolve()
         if src and tgt:
-            self._canvas._undo_add_connection(src, tgt, self._source_port)
+            self._canvas._undo_add_connection(
+                src,
+                tgt,
+                self._source_port,
+                vertices=self._vertices,
+            )
+
+
+class EditConnectionVerticesCommand(QUndoCommand):
+    """Push when intermediate connection vertices are edited."""
+
+    def __init__(
+        self,
+        canvas: "WorkflowCanvas",
+        src_id: str,
+        tgt_id: str,
+        source_port: str,
+        old_vertices,
+        new_vertices,
+    ):
+        super().__init__("Edit Connection Vertices")
+        self._canvas = canvas
+        self._src_id = src_id
+        self._tgt_id = tgt_id
+        self._source_port = source_port
+        self._old_vertices = _normalize_vertices(old_vertices)
+        self._new_vertices = _normalize_vertices(new_vertices)
+
+    def _apply_vertices(self, vertices: List[tuple[float, float]]) -> None:
+        conn = self._canvas._find_connection(self._src_id, self._tgt_id, self._source_port)
+        if conn:
+            conn.set_manual_points_from_tuples(vertices)
+
+    def redo(self):
+        self._apply_vertices(self._new_vertices)
+
+    def undo(self):
+        self._apply_vertices(self._old_vertices)
 
 
 class MoveNodeCommand(QUndoCommand):
@@ -452,7 +516,8 @@ class PasteCommand(QUndoCommand):
                 tgt = self._canvas._nodes.get(tgt_id)
                 if src and tgt:
                     sp = conn_data.get("source_port", "output")
-                    self._canvas._undo_add_connection(src, tgt, sp)
+                    vertices = _normalize_vertices(conn_data.get("vertices", []))
+                    self._canvas._undo_add_connection(src, tgt, sp, vertices=vertices)
 
         # Select pasted nodes, deselect others
         self._canvas._scene.clearSelection()

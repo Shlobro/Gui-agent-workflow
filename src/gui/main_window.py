@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
+from .connection_item import ConnectionItem
 from .dialogs.prompt_injection_dialog import (
     PromptInjectionRunDialog,
     PromptTemplateManagerDialog,
@@ -385,19 +386,66 @@ class MainWindow(QMainWindow):
     def _on_status(self, msg: str):
         self._status_bar.showMessage(msg)
 
-    def _on_selection_changed(self):
-        selected = [
+    def _selected_nodes(self) -> list:
+        return [
             item
             for item in self.canvas._scene.selectedItems()
             if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
             and not getattr(item, "is_start", False)
         ]
-        if len(selected) == 1:
-            self._panel.show_for_node(selected[0])
+
+    def _selected_connections(self) -> list[ConnectionItem]:
+        return [
+            item
+            for item in self.canvas._scene.selectedItems()
+            if isinstance(item, ConnectionItem)
+        ]
+
+    @staticmethod
+    def _connection_endpoint_name(node) -> str:
+        if getattr(node, "is_start", False):
+            return "Start"
+        return getattr(node, "title", getattr(node, "node_id", "(unknown)"))
+
+    def _set_connection_overview(self, conn: ConnectionItem) -> None:
+        source_name = self._connection_endpoint_name(conn.source_node)
+        target_name = self._connection_endpoint_name(conn.target_node)
+        source_id = getattr(conn.source_node, "node_id", "(unknown)")
+        target_id = getattr(conn.target_node, "node_id", "(unknown)")
+        source_port = getattr(conn, "source_port", "output")
+        vertex_count = len(conn.editable_points())
+        lines = [
+            "Selected Arrow",
+            "",
+            "Endpoints",
+            f"- From: {source_name}",
+            f"- To: {target_name}",
+            "",
+            "Connection Details",
+            f"- Source node id: {source_id}",
+            f"- Target node id: {target_id}",
+            f"- Source port: {source_port}",
+            f"- Bend points: {vertex_count}",
+            "",
+            "Editing",
+            "- Double-click line segment: add bend point",
+            "- Drag bend handle: move bend point",
+            "- Shift+click bend handle: remove bend point",
+            "- Delete: delete selected arrow",
+            "- Ctrl+Z / Ctrl+Y: undo / redo",
+        ]
+        self._panel.set_overview_text("\n".join(lines))
+
+    def _on_selection_changed(self):
+        selected_nodes = self._selected_nodes()
+        selected_connections = self._selected_connections()
+
+        if len(selected_nodes) == 1 and not selected_connections:
+            self._panel.show_for_node(selected_nodes[0])
         else:
             self._panel.show_overview()
         if self._run_from_here_action is not None:
-            self._run_from_here_action.setEnabled(len(selected) == 1)
+            self._run_from_here_action.setEnabled(len(selected_nodes) == 1 and not selected_connections)
         self._refresh_panel_overview()
 
     def _on_panel_title_committed(self, node_id: str, old_title: str, new_title: str):
@@ -583,6 +631,11 @@ class MainWindow(QMainWindow):
     def _refresh_panel_overview(self) -> None:
         if not hasattr(self, "_panel"):
             return
+        selected_nodes = self._selected_nodes()
+        selected_connections = self._selected_connections()
+        if len(selected_connections) == 1 and not selected_nodes:
+            self._set_connection_overview(selected_connections[0])
+            return
         nodes = list(self.canvas._nodes.values())
         self.canvas.refresh_node_validation_state()
 
@@ -609,14 +662,8 @@ class MainWindow(QMainWindow):
             elif isinstance(node, LLMNode):
                 llm_count += 1
 
-        selected_count = len(
-            [
-                item
-                for item in self.canvas._scene.selectedItems()
-                if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
-                and not getattr(item, "is_start", False)
-            ]
-        )
+        selected_count = len(selected_nodes)
+        selected_connection_count = len(selected_connections)
 
         options = self._effective_preview_prompt_injection_options()
         prepend_template_contents, append_template_contents, one_off_text, one_off_placement = (
@@ -628,6 +675,7 @@ class MainWindow(QMainWindow):
             f"Working directory: {self.canvas._working_directory or '(not selected)'}",
             f"Connections: {len(self.canvas._connections)}",
             f"Selected nodes: {selected_count}",
+            f"Selected arrows: {selected_connection_count}",
             "",
             "Node Counts",
             f"- Total: {len(nodes)}",

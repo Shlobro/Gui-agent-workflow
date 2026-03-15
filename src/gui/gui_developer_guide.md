@@ -4,7 +4,7 @@
 Implements the interactive Qt UI for composing and running LLM workflows.
 
 ## Contents
-- `main_window.py`: Main shell with File/Prompt menus, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores/saves panel width and panel text zoom with `QSettings`, keeps the side panel permanently visible, drives node-vs-overview mode from `canvas.selection_changed`, updates overview data (working directory, node counts, invalid-node list, prompt injection payload), applies prompt injections before each run, and handles save/load/clear/project-folder flows.
+- `main_window.py`: Main shell with File/Prompt menus, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores/saves panel width and panel text zoom with `QSettings`, keeps the side panel permanently visible, drives node-vs-overview mode from `canvas.selection_changed`, updates overview data (working directory, node counts, invalid-node list, prompt injection payload), shows a focused arrow overview when exactly one connection is selected (endpoints + editing shortcuts), applies prompt injections before each run, and handles save/load/clear/project-folder flows.
 - `dialogs/`: Modal dialog classes for runtime user notifications and prompt-injection setup.
 - `canvas/` subpackage: Houses `WorkflowCanvas` and its mixins.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running/looping.
@@ -16,14 +16,14 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `workflow_io.py`: Pure serialization and validation helpers.
 - `conditional_node.py`: `ConditionalNode` and condition registry metadata.
 - `loop_node.py`: `LoopNode` with loop/done output ports.
-- `connection_item.py`: Directed edge item carrying `source_port`.
+- `connection_item.py`: Directed edge item carrying `source_port`, optional manual bend vertices, and connection-segment/handle hit targets for vertex editing.
 - `undo_commands.py`: `QUndoCommand` implementations for graph mutations.
 - `project_chooser.py`: Startup dialog for selecting/persisting project folders.
 - `assets/`: Static logo files used by the model selector.
 - `__init__.py`: Package marker.
 
 ## Key Interactions
-- The panel remains visible at all times. With exactly one selected workflow node it shows that node form; otherwise it shows the overview page.
+- The panel remains visible at all times. With exactly one selected workflow node it shows that node form; with exactly one selected connection it shows an arrow-focused overview; otherwise it shows the workflow overview page.
 - Overview data is maintained by `MainWindow` and includes:
   - Working directory
   - Connection count
@@ -39,5 +39,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - The Start node is permanent and recreated after Clear Canvas.
 - Run Selected fires only selected node(s) without fan-out. Run From Here fires selected node and descendants.
 - Mouse wheel zoom is active on canvas except while model dropdown is open.
+- Selected connections expose bend handles. Double-click a segment to add a vertex, drag a handle to move it, and Shift+click a handle to remove it.
+- Manual connection vertices are persisted in workflow JSON as `connections[].vertices` and participate in undo/redo, paste, and load flows.
 - Ctrl+mouse-wheel inside properties panel changes panel text size.
 - Properties panel output areas stream execution output for the currently selected node.

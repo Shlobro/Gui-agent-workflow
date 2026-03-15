@@ -21,6 +21,7 @@ from src.gui.loop_node import LoopNode
 from src.gui.undo_commands import (
     AddNodeCommand, RemoveNodeCommand,
     AddConnectionCommand, RemoveConnectionCommand,
+    EditConnectionVerticesCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand,
     FileOpTypeChangeCommand, ConditionTypeChangeCommand, LoopCountChangeCommand,
     GitActionTypeChangeCommand,
@@ -73,6 +74,9 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         self._conn_source: Optional[SourceNode] = None
         self._conn_source_port: str = "output"
         self._rubber_line: Optional[QGraphicsLineItem] = None
+        self._vertex_drag_connection: Optional[ConnectionItem] = None
+        self._vertex_drag_index: int = -1
+        self._vertex_drag_before: List[tuple[float, float]] = []
 
         # Execution state
         self._running = False
@@ -356,8 +360,41 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         src_id = conn.source_node.node_id
         tgt_id = conn.target_node.node_id
         source_port = getattr(conn, "source_port", "output")
-        cmd = RemoveConnectionCommand(self, src_id, tgt_id, source_port)
+        vertices = conn.manual_points_tuples()
+        cmd = RemoveConnectionCommand(self, src_id, tgt_id, source_port, vertices=vertices)
         self._undo_stack.push(cmd)
+
+    @staticmethod
+    def _vertices_equal(
+        a: List[tuple[float, float]],
+        b: List[tuple[float, float]],
+        tolerance: float = 0.01,
+    ) -> bool:
+        if len(a) != len(b):
+            return False
+        for (ax, ay), (bx, by) in zip(a, b):
+            if abs(ax - bx) > tolerance or abs(ay - by) > tolerance:
+                return False
+        return True
+
+    def _push_vertex_edit_command(
+        self,
+        conn: ConnectionItem,
+        old_vertices: List[tuple[float, float]],
+        new_vertices: List[tuple[float, float]],
+    ) -> None:
+        if self._vertices_equal(old_vertices, new_vertices):
+            return
+        self._undo_stack.push(
+            EditConnectionVerticesCommand(
+                self,
+                conn.source_node.node_id,
+                conn.target_node.node_id,
+                getattr(conn, "source_port", "output"),
+                old_vertices,
+                new_vertices,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Panel commit handlers (called by MainWindow)
@@ -428,10 +465,43 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
     # Mouse interaction
     # ------------------------------------------------------------------
 
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            scene_pos = self.mapToScene(event.pos())
+            item_under = self._scene.itemAt(scene_pos, self.transform())
+            if isinstance(item_under, ConnectionItem):
+                old_vertices = item_under.manual_points_tuples()
+                if item_under.insert_vertex(scene_pos):
+                    item_under.setSelected(True)
+                    new_vertices = item_under.manual_points_tuples()
+                    self._push_vertex_edit_command(item_under, old_vertices, new_vertices)
+                    event.accept()
+                    return
+        super().mouseDoubleClickEvent(event)
+
     def mousePressEvent(self, event):
         scene_pos = self.mapToScene(event.pos())
 
         if event.button() == Qt.MouseButton.LeftButton:
+            item_under = self._scene.itemAt(scene_pos, self.transform())
+            if isinstance(item_under, ConnectionItem):
+                vertex_index = item_under.find_vertex_index_at(scene_pos)
+                if vertex_index is not None:
+                    old_vertices = item_under.manual_points_tuples()
+                    if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                        if item_under.remove_vertex(vertex_index):
+                            item_under.setSelected(True)
+                            new_vertices = item_under.manual_points_tuples()
+                            self._push_vertex_edit_command(item_under, old_vertices, new_vertices)
+                        event.accept()
+                        return
+                    self._vertex_drag_connection = item_under
+                    self._vertex_drag_index = vertex_index
+                    self._vertex_drag_before = old_vertices
+                    item_under.setSelected(True)
+                    event.accept()
+                    return
+
             if self._start_node.is_near_output_port(scene_pos):
                 self._start_connection(self._start_node, scene_pos)
                 return
@@ -478,6 +548,12 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
                     self._drag_start_positions[bid] = QPointF(item.pos())
 
     def mouseMoveEvent(self, event):
+        if self._vertex_drag_connection is not None:
+            scene_pos = self.mapToScene(event.pos())
+            self._vertex_drag_connection.move_vertex(self._vertex_drag_index, scene_pos)
+            event.accept()
+            return
+
         if self._panning:
             delta = event.pos() - self._pan_start
             self._pan_start = event.pos()
@@ -498,6 +574,18 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._vertex_drag_connection is not None:
+            conn = self._vertex_drag_connection
+            old_vertices = self._vertex_drag_before
+            self._vertex_drag_connection = None
+            self._vertex_drag_index = -1
+            self._vertex_drag_before = []
+            if conn.scene() is not None:
+                new_vertices = conn.manual_points_tuples()
+                self._push_vertex_edit_command(conn, old_vertices, new_vertices)
+            event.accept()
+            return
+
         if self._panning and event.button() == self._pan_button:
             self._panning = False
             self._pan_button = None

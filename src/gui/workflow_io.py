@@ -177,6 +177,21 @@ def parse_workflow_data(data: dict) -> dict:
                 continue  # other nodes only have "output" port; drop
         if source_port != "output":
             conn_record["source_port"] = source_port
+        raw_vertices = c_data.get("vertices", [])
+        if isinstance(raw_vertices, list):
+            parsed_vertices: List[list[float]] = []
+            valid_vertices = True
+            for point in raw_vertices:
+                if not isinstance(point, (list, tuple)) or len(point) < 2:
+                    valid_vertices = False
+                    break
+                x, y = point[0], point[1]
+                if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                    valid_vertices = False
+                    break
+                parsed_vertices.append([float(x), float(y)])
+            if valid_vertices and parsed_vertices:
+                conn_record["vertices"] = parsed_vertices
         normalized_connections.append(conn_record)
 
     return {
