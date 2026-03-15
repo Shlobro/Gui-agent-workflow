@@ -86,6 +86,8 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         self._exec_lineage: Dict[int, str] = {}
         self._retired_exec_ids: set = set()
         self._current_run_exec_ids: set = set()
+        self._exec_streamed_output: Dict[int, bool] = {}
+        self._llm_invocation_counts: Dict[str, int] = {}
         self._pending_child_triggers: int = 0
         self._seeding_roots: bool = False
         self._exec_counter: int = 0

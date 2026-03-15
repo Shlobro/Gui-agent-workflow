@@ -20,7 +20,7 @@ from src.gui.conditional_node import (
     condition_execution_mode,
     condition_requires_filename,
 )
-from src.gui.llm_node import StartNode, WorkflowNode
+from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.workflow_io import get_provider_for_model
 
 if TYPE_CHECKING:
@@ -155,6 +155,8 @@ class _ExecutionMixin:
         self._pending_child_triggers = 0
         self._seeding_roots = False
         self._loop_counters.clear()
+        self._llm_invocation_counts.clear()
+        self._exec_streamed_output.clear()
         self._exec_lineage.clear()
         for worker in list(self._active_workers.values()):
             if worker is not None:
@@ -284,6 +286,8 @@ class _ExecutionMixin:
     def _run_workflow(self: "WorkflowCanvas", nodes: list, roots: list, no_fanout: bool = False):
         if self._running:
             return
+        self._llm_invocation_counts.clear()
+        self._exec_streamed_output.clear()
         for node in nodes:
             node.set_status("idle")
             node.clear_output()
@@ -371,6 +375,7 @@ class _ExecutionMixin:
             self._prompt_injection_one_off,
             self._prompt_injection_one_off_placement,
         )
+        self._start_llm_output_block(node)
         worker = LLMWorker(
             provider,
             composed_prompt,
@@ -378,10 +383,12 @@ class _ExecutionMixin:
             working_directory=self._working_directory,
         )
         self._active_workers[exec_id] = worker
+        self._exec_streamed_output[exec_id] = False
         run_id = self._run_id
 
         def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
             if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
+                self._exec_streamed_output[_e] = True
                 _n.append_output(line)
                 if self.on_output_line:
                     self.on_output_line(_n, line)
@@ -396,6 +403,18 @@ class _ExecutionMixin:
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
         worker.start()
+
+    def _start_llm_output_block(self: "WorkflowCanvas", node: LLMNode) -> None:
+        call_index = self._llm_invocation_counts.get(node.node_id, 0) + 1
+        self._llm_invocation_counts[node.node_id] = call_index
+        if node.output_text.strip():
+            node.append_output("")
+            if self.on_output_line:
+                self.on_output_line(node, "")
+        header = f"=== Call {call_index} ==="
+        node.append_output(header)
+        if self.on_output_line:
+            self.on_output_line(node, header)
 
     def _fire_condition_check(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int,
                               lineage_token: str = "", loop_token: str = ""):
@@ -812,6 +831,7 @@ class _ExecutionMixin:
                             lineage_token: str = "", loop_token: str = ""):
         if exec_id not in self._active_workers:
             return
+        streamed_output = self._exec_streamed_output.pop(exec_id, False)
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
         del self._active_workers[exec_id]
@@ -859,6 +879,12 @@ class _ExecutionMixin:
                     node.append_output(result)
                     if self.on_output_line:
                         self.on_output_line(node, result)
+            elif isinstance(node, LLMNode):
+                if not streamed_output and result.strip():
+                    for line in result.splitlines():
+                        node.append_output(line)
+                        if self.on_output_line:
+                            self.on_output_line(node, line)
             else:
                 node.output_text = result
             node.set_status("done")

@@ -81,6 +81,26 @@ _PANEL_STYLE = """
         border: 1px solid #555; selection-background-color: #3a8ef5;
     }
     QScrollArea { background: transparent; border: none; }
+    QTabWidget::pane {
+        border: 1px solid #3b3b3b;
+        border-radius: 4px;
+        top: -1px;
+    }
+    QTabBar::tab {
+        background: #2a2a2a;
+        border: 1px solid #3b3b3b;
+        border-bottom: none;
+        padding: 5px 12px;
+        margin-right: 2px;
+        color: #bbbbbb;
+    }
+    QTabBar::tab:selected {
+        background: #1f2833;
+        color: #f0f0f0;
+    }
+    QTabBar::tab:hover:!selected {
+        background: #323943;
+    }
     QScrollBar:vertical {
         background: #20242b;
         width: 18px;

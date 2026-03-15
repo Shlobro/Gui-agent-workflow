@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QSizePolicy,
     QSplitter,
+    QTabWidget,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -50,8 +51,15 @@ class _LLMForm(QWidget):
 
         layout.addSpacing(4)
 
-        self._editor_splitter = QSplitter(Qt.Orientation.Vertical)
-        self._editor_splitter.setChildrenCollapsible(False)
+        self._tabs = QTabWidget()
+        self._tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self._tabs.setDocumentMode(True)
+        layout.addWidget(self._tabs, stretch=1)
+
+        self._prompt_tab = QWidget()
+        prompt_tab_layout = QVBoxLayout(self._prompt_tab)
+        prompt_tab_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_tab_layout.setSpacing(0)
 
         self._prompt_frame = QFrame()
         prompt_container_layout = QVBoxLayout(self._prompt_frame)
@@ -93,10 +101,15 @@ class _LLMForm(QWidget):
         self._prompt_splitter.setSizes([4, 1])
 
         prompt_container_layout.addWidget(self._prompt_splitter)
-        self._editor_splitter.addWidget(self._prompt_frame)
+        prompt_tab_layout.addWidget(self._prompt_frame)
+        self._tabs.addTab(self._prompt_tab, "Prompt")
+
+        self._output_tab = QWidget()
+        output_tab_layout = QVBoxLayout(self._output_tab)
+        output_tab_layout.setContentsMargins(0, 0, 0, 0)
+        output_tab_layout.setSpacing(4)
 
         self._output_frame = QFrame()
-        self._output_frame.setVisible(False)
         out_layout = QVBoxLayout(self._output_frame)
         out_layout.setContentsMargins(0, 0, 0, 0)
         out_layout.setSpacing(4)
@@ -105,18 +118,14 @@ class _LLMForm(QWidget):
         self.output_edit = QPlainTextEdit()
         self.output_edit.setReadOnly(True)
         self.output_edit.setMinimumHeight(80)
+        self.output_edit.setPlaceholderText("No output yet.")
         out_layout.addWidget(self.output_edit)
-        self._editor_splitter.addWidget(self._output_frame)
-        self._editor_splitter.setSizes([1, 0])
-        layout.addWidget(self._editor_splitter, stretch=1)
+        output_tab_layout.addWidget(self._output_frame, stretch=1)
+        self._tabs.addTab(self._output_tab, "Output")
 
     def show_output(self, visible: bool):
-        was_visible = self._output_frame.isVisible()
-        self._output_frame.setVisible(visible)
-        if visible and not was_visible:
-            self._editor_splitter.setSizes([1, 1])
-        elif not visible:
-            self._editor_splitter.setSizes([1, 0])
+        _ = visible
+        self._tabs.setTabEnabled(1, True)
 
 
 _OP_TYPE_OPTIONS = [

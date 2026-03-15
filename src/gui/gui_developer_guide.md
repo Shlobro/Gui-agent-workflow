@@ -12,7 +12,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.
 - `git_action_node.py`: Compact node for git operations with action/message settings.
 - `_panel_forms.py`: Form widget classes used by `PropertiesPanel`.
-- `properties_panel.py`: Resizable side panel with `_OverviewForm` (page 0), `_LLMForm` (page 1), `_FileOpForm` (page 2), `_ConditionalForm` (page 3), `_LoopForm` (page 4), `_GitActionForm` (page 5), and `_AttentionForm` (page 6). Exposes `show_overview()` and `set_overview_text(...)` for no-selection state. Emits node edit signals and `text_zoom_changed`.
+- `properties_panel.py`: Resizable side panel with `_OverviewForm` (page 0), `_LLMForm` (page 1), `_FileOpForm` (page 2), `_ConditionalForm` (page 3), `_LoopForm` (page 4), `_GitActionForm` (page 5), and `_AttentionForm` (page 6). LLM form uses Prompt/Output tabs, where Prompt contains prompt edit + preview and Output contains the execution log. Exposes `show_overview()` and `set_overview_text(...)` for no-selection state. Emits node edit signals and `text_zoom_changed`.
 - `workflow_io.py`: Pure serialization and validation helpers.
 - `conditional_node.py`: `ConditionalNode` and condition registry metadata.
 - `loop_node.py`: `LoopNode` with loop/done output ports.
@@ -41,5 +41,6 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Mouse wheel zoom is active on canvas except while model dropdown is open.
 - Selected connections expose bend handles. Double-click a segment to add a vertex, drag a handle to move it, and Shift+click a handle to remove it.
 - Manual connection vertices are persisted in workflow JSON as `connections[].vertices` and participate in undo/redo, paste, and load flows.
+- LLM output logs include per-invocation separators (`=== Call N ===`) so repeated loop-triggered calls are easy to distinguish.
 - Ctrl+mouse-wheel inside properties panel changes panel text size.
 - Properties panel output areas stream execution output for the currently selected node.
