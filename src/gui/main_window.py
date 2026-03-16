@@ -3,7 +3,7 @@
 import json
 import os
 
-from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtCore import QDateTime, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -54,6 +54,9 @@ class MainWindow(QMainWindow):
         self._next_run_prompt_injections: PromptInjectionRunOptions | None = None
         self._staged_run_prompt_injections: PromptInjectionRunOptions | None = None
         self._active_run_prompt_injections: PromptInjectionRunOptions | None = None
+        self._usage_limit_resume_timer: QTimer | None = None
+        self._usage_limit_resume_node_id: str | None = None
+        self._usage_limit_resume_target: QDateTime | None = None
 
         self.canvas = WorkflowCanvas()
         initial_options = self._effective_prompt_injection_options()
@@ -342,6 +345,10 @@ class MainWindow(QMainWindow):
     def _on_run_state_changed(self, running: bool) -> None:
         if self._open_folder_action is None:
             return
+        if running:
+            self._clear_scheduled_usage_limit_resume(
+                "Scheduled usage-limit auto-resume canceled because a run started."
+            )
         self._open_folder_action.setEnabled(not running)
         if running:
             self._open_folder_action.setToolTip(
@@ -370,10 +377,103 @@ class MainWindow(QMainWindow):
         node_title = getattr(node, "title", node_id) if node else node_id
         dlg = UsageLimitDialog(node_title=node_title, error_text=error_text, parent=self)
         dlg.exec()
-        if dlg.result_code() == UsageLimitDialog.CHANGE_MODEL and node is not None:
-            self.canvas._scene.clearSelection()
-            node.setSelected(True)
-            QTimer.singleShot(0, lambda: self.canvas.ensureVisible(node))
+        result_code = dlg.result_code()
+        if result_code == UsageLimitDialog.CHANGE_MODEL and node is not None:
+            self._select_node(node_id)
+            return
+        if result_code == UsageLimitDialog.SCHEDULE_RESUME:
+            self._schedule_usage_limit_resume(node_id, dlg.scheduled_time())
+
+    def _select_node(self, node_id: str) -> bool:
+        node = self.canvas._nodes.get(node_id)
+        if node is None:
+            return False
+        self.canvas._scene.clearSelection()
+        node.setSelected(True)
+        QTimer.singleShot(0, lambda _node=node: self.canvas.ensureVisible(_node))
+        return True
+
+    def _schedule_usage_limit_resume(self, node_id: str, target_time: QDateTime) -> None:
+        if node_id not in self.canvas._nodes:
+            QMessageBox.warning(
+                self,
+                "Schedule Resume",
+                "Cannot schedule auto-resume because the node no longer exists.",
+            )
+            return
+        if not target_time.isValid():
+            QMessageBox.warning(self, "Schedule Resume", "Invalid resume time.")
+            return
+        now = QDateTime.currentDateTime()
+        if target_time <= now:
+            target_time = now.addSecs(1)
+        delay_ms = int(now.msecsTo(target_time))
+        max_qtimer_ms = 2_147_483_647
+        if delay_ms > max_qtimer_ms:
+            QMessageBox.warning(
+                self,
+                "Schedule Resume",
+                "Resume time is too far in the future for a single timer.",
+            )
+            return
+
+        self._clear_scheduled_usage_limit_resume()
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._fire_scheduled_usage_limit_resume)
+        timer.start(delay_ms)
+        self._usage_limit_resume_timer = timer
+        self._usage_limit_resume_node_id = node_id
+        self._usage_limit_resume_target = target_time
+        node_title = getattr(self.canvas._nodes[node_id], "title", node_id)
+        when_text = target_time.toString("yyyy-MM-dd HH:mm")
+        self._status_bar.showMessage(
+            f'Auto-resume scheduled for "{node_title}" at {when_text}.'
+        )
+
+    def _clear_scheduled_usage_limit_resume(self, status_message: str = "") -> None:
+        had_schedule = (
+            self._usage_limit_resume_timer is not None
+            or self._usage_limit_resume_node_id is not None
+            or self._usage_limit_resume_target is not None
+        )
+        if self._usage_limit_resume_timer is not None:
+            self._usage_limit_resume_timer.stop()
+            self._usage_limit_resume_timer.deleteLater()
+        self._usage_limit_resume_timer = None
+        self._usage_limit_resume_node_id = None
+        self._usage_limit_resume_target = None
+        if status_message and had_schedule:
+            self._status_bar.showMessage(status_message)
+
+    def _fire_scheduled_usage_limit_resume(self) -> None:
+        node_id = self._usage_limit_resume_node_id
+        scheduled_for = self._usage_limit_resume_target
+        self._clear_scheduled_usage_limit_resume()
+        if not node_id:
+            return
+        if self.canvas._running:
+            self._status_bar.showMessage(
+                "Skipped scheduled auto-resume because a workflow is already running."
+            )
+            return
+        node = self.canvas._nodes.get(node_id)
+        if node is None:
+            self._status_bar.showMessage(
+                "Scheduled auto-resume canceled because the node was removed."
+            )
+            return
+        when_text = scheduled_for.toString("yyyy-MM-dd HH:mm") if scheduled_for else "scheduled time"
+        self._status_bar.showMessage(
+            f'Auto-resume triggered for "{node.title}" ({when_text}).'
+        )
+        self._run_from_specific_node(node_id)
+
+    def _run_from_specific_node(self, node_id: str) -> bool:
+        if not self._select_node(node_id):
+            return False
+        self._run_from_here()
+        return True
 
     def _undo(self):
         self._panel.commit_pending_edits()

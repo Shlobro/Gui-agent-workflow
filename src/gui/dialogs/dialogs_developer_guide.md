@@ -4,7 +4,7 @@
 Hosts modal dialog classes used by `MainWindow` for user-facing runtime notifications and run setup that require explicit user input.
 
 ## Contents
-- `usage_limit_dialog.py`: `UsageLimitDialog(QDialog)` shown when an LLM CLI subprocess exits with a non-zero return code and output matches a known usage/rate-limit pattern. Presents node name and truncated error text with two choices: `CHANGE_MODEL` and `STOP_WORKFLOW`.
+- `usage_limit_dialog.py`: `UsageLimitDialog(QDialog)` shown when an LLM CLI subprocess exits with a non-zero return code and output matches a known usage/rate-limit pattern. Presents node name and truncated error text with three choices: `CHANGE_MODEL`, `SCHEDULE_RESUME`, and `STOP_WORKFLOW`. The schedule UI is collapsed on initial open and expands only after clicking `Schedule Resume`; expanded mode uses `QCalendarWidget` (exact day) plus clock-style hour/minute `QDial` controls.
 - `prompt_injection_dialog.py`: Prompt injection configuration dialogs. `PromptTemplateManagerDialog` manages saved templates, default enabled state, and per-template placement (`prepend`/`append`). `PromptInjectionRunDialog` configures template toggles plus one-off text and one-off placement for the next run only.
 - `__init__.py`: Package marker.
 

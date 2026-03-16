@@ -4,7 +4,7 @@
 Implements the interactive Qt UI for composing and running LLM workflows.
 
 ## Contents
-- `main_window.py`: Main shell with File/Prompt menus, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores/saves panel width and panel text zoom with `QSettings`, keeps the side panel permanently visible, drives node-vs-overview mode from `canvas.selection_changed`, updates overview data (working directory, node counts, invalid-node list, prompt injection payload), shows a focused arrow overview when exactly one connection is selected (endpoints + editing shortcuts), applies prompt injections before each run, and handles save/load/clear/project-folder flows.
+- `main_window.py`: Main shell with File/Prompt menus, toolbar, and status bar. Hosts `WorkflowCanvas` and `PropertiesPanel` in a horizontal `QSplitter`, restores/saves panel width and panel text zoom with `QSettings`, keeps the side panel permanently visible, drives node-vs-overview mode from `canvas.selection_changed`, updates overview data (working directory, node counts, invalid-node list, prompt injection payload), shows a focused arrow overview when exactly one connection is selected (endpoints + editing shortcuts), applies prompt injections before each run, and handles save/load/clear/project-folder flows. It also handles usage-limit dialogs: users can change model, schedule an automatic resume from the failed node (schedule UI expands only after clicking `Schedule Resume`) via calendar day picker plus clock-style hour/minute dials, or stop workflow.
 - `dialogs/`: Modal dialog classes for runtime user notifications and prompt-injection setup.
 - `canvas/` subpackage: Houses `WorkflowCanvas` and its mixins.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running/looping.
@@ -38,6 +38,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 ## Behavior Notes
 - The Start node is permanent and recreated after Clear Canvas.
 - Run Selected fires only selected node(s) without fan-out. Run From Here fires selected node and descendants.
+- Usage-limit dialogs can schedule auto-resume from the failed node. A scheduled auto-resume is canceled if any workflow run starts before the timer fires.
 - Mouse wheel zoom is active on canvas except while model dropdown is open.
 - Selected connections expose bend handles. Double-click a segment to add a vertex, drag a handle to move it, and Shift+click a handle to remove it.
 - Manual connection vertices are persisted in workflow JSON as `connections[].vertices` and participate in undo/redo, paste, and load flows.
