@@ -1,0 +1,97 @@
+{
+  "nodes": [
+    {
+      "node_type": "create_file",
+      "id": "d56b511b-05fd-42b1-b1c8-1f364241c075",
+      "label_index": 1,
+      "x": -411.0,
+      "y": -321.0,
+      "name": "File Op 1",
+      "filename": "hi.txt"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "16f1002d-526e-4df5-8de0-74d0d2e2c3bb",
+      "label_index": 3,
+      "x": 158.0,
+      "y": -325.0,
+      "name": "File Op 1",
+      "filename": "hi.txt"
+    },
+    {
+      "id": "648eee33-4fd7-47e7-8dc6-a761881d0a55",
+      "label_index": 4,
+      "x": -280.0,
+      "y": -71.0,
+      "name": "LLM 4",
+      "model": "gemini-2.5-flash-lite",
+      "prompt": "hi"
+    },
+    {
+      "id": "2216d8cd-967e-40f3-9035-003ec1f478c8",
+      "label_index": 5,
+      "x": -259.0,
+      "y": 125.0,
+      "name": "LLM 4",
+      "model": "gemini-2.5-flash-lite",
+      "prompt": "hi"
+    },
+    {
+      "node_type": "join",
+      "id": "be678abd-d6ef-4146-872f-347ccab07157",
+      "label_index": 6,
+      "x": 743.0,
+      "y": -32.0,
+      "name": "Join 6",
+      "wait_for_count": 3
+    },
+    {
+      "node_type": "attention",
+      "id": "11078ec6-49e9-481b-ad3e-24b1d312546b",
+      "label_index": 7,
+      "x": 1296.0,
+      "y": -51.0,
+      "name": "Attention 7",
+      "message": "User attention needed."
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "d56b511b-05fd-42b1-b1c8-1f364241c075"
+    },
+    {
+      "from": "d56b511b-05fd-42b1-b1c8-1f364241c075",
+      "to": "16f1002d-526e-4df5-8de0-74d0d2e2c3bb"
+    },
+    {
+      "from": "start",
+      "to": "648eee33-4fd7-47e7-8dc6-a761881d0a55"
+    },
+    {
+      "from": "start",
+      "to": "2216d8cd-967e-40f3-9035-003ec1f478c8"
+    },
+    {
+      "from": "16f1002d-526e-4df5-8de0-74d0d2e2c3bb",
+      "to": "be678abd-d6ef-4146-872f-347ccab07157"
+    },
+    {
+      "from": "648eee33-4fd7-47e7-8dc6-a761881d0a55",
+      "to": "be678abd-d6ef-4146-872f-347ccab07157"
+    },
+    {
+      "from": "2216d8cd-967e-40f3-9035-003ec1f478c8",
+      "to": "be678abd-d6ef-4146-872f-347ccab07157"
+    },
+    {
+      "from": "be678abd-d6ef-4146-872f-347ccab07157",
+      "to": "11078ec6-49e9-481b-ad3e-24b1d312546b"
+    }
+  ],
+  "node_counter": 7,
+  "start_pos": [
+    -641.0,
+    -89.0
+  ]
+}

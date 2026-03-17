@@ -20,6 +20,7 @@ from src.gui.conditional_node import (
     condition_execution_mode,
     condition_requires_filename,
 )
+from src.gui.control_flow.join_node import JoinNode
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.workflow_io import get_provider_for_model
 
@@ -155,6 +156,8 @@ class _ExecutionMixin:
         self._pending_child_triggers = 0
         self._seeding_roots = False
         self._loop_counters.clear()
+        self._join_wait_counts.clear()
+        self._pending_join_waits = 0
         self._llm_invocation_counts.clear()
         self._exec_streamed_output.clear()
         self._exec_lineage.clear()
@@ -225,6 +228,9 @@ class _ExecutionMixin:
             # loop_count is always clamped by constructor/load path
             return reasons
 
+        if isinstance(node, JoinNode):
+            return reasons
+
         if isinstance(node, GitActionNode):
             if node.git_action not in valid_git_actions:
                 reasons.append(f'has unknown git action "{node.git_action}"')
@@ -288,6 +294,8 @@ class _ExecutionMixin:
             return
         self._llm_invocation_counts.clear()
         self._exec_streamed_output.clear()
+        self._join_wait_counts.clear()
+        self._pending_join_waits = 0
         for node in nodes:
             node.set_status("idle")
             node.clear_output()
@@ -303,24 +311,26 @@ class _ExecutionMixin:
         n = len(roots)
         self.status_update.emit(f"Running\u2026 ({n} node{'s' if n != 1 else ''} triggered)")
         try:
+            shared_join_token = str(uuid4()) if len(roots) > 1 and not no_fanout else ""
             for node in roots:
                 lineage_token = str(uuid4())
-                self._trigger_node(node, lineage_token)
+                root_join_token = shared_join_token or lineage_token
+                self._trigger_node(node, lineage_token, join_token=root_join_token)
         finally:
             self._seeding_roots = False
         self._check_drain()
 
     def _trigger_node(self: "WorkflowCanvas", node: GraphNode, lineage_token: str = "",
-                      loop_token: str = ""):
+                      loop_token: str = "", join_token: str = ""):
         if not self._running:
             return
         self._exec_counter += 1
         if not lineage_token:
             lineage_token = str(uuid4())
-        self._fire_invocation(node, self._exec_counter, lineage_token, loop_token)
+        self._fire_invocation(node, self._exec_counter, lineage_token, loop_token, join_token)
 
     def _fire_invocation(self: "WorkflowCanvas", node: GraphNode, exec_id: int,
-                         lineage_token: str = "", loop_token: str = ""):
+                         lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         from src.gui.loop_node import LoopNode
         self._active_workers[exec_id] = None
         self._exec_node[exec_id] = node.node_id
@@ -328,21 +338,25 @@ class _ExecutionMixin:
         self._current_run_exec_ids.add(exec_id)
         if isinstance(node, LoopNode):
             node.set_status("looping")
-            self._fire_loop(node, exec_id, lineage_token, loop_token)
+            self._fire_loop(node, exec_id, lineage_token, loop_token, join_token)
+            return
+        if isinstance(node, JoinNode):
+            node.set_status("running")
+            self._fire_join(node, exec_id, lineage_token, loop_token, join_token)
             return
         node.set_status("running")
         if isinstance(node, ConditionalNode):
-            self._fire_condition_check(node, exec_id, lineage_token, loop_token)
+            self._fire_condition_check(node, exec_id, lineage_token, loop_token, join_token)
             return
         if isinstance(node, AttentionNode):
-            self._fire_attention(node, exec_id, lineage_token, loop_token)
+            self._fire_attention(node, exec_id, lineage_token, loop_token, join_token)
             return
         if isinstance(node, FileOpNode):
-            self._fire_file_op(node, exec_id, lineage_token, loop_token)
+            self._fire_file_op(node, exec_id, lineage_token, loop_token, join_token)
             return
         from src.gui.git_action_node import GitActionNode
         if isinstance(node, GitActionNode):
-            self._fire_git_action(node, exec_id, lineage_token, loop_token)
+            self._fire_git_action(node, exec_id, lineage_token, loop_token, join_token)
             return
         model_id = node.model_id
         if not model_id:
@@ -393,11 +407,45 @@ class _ExecutionMixin:
                 if self.on_output_line:
                     self.on_output_line(_n, line)
 
-        def on_finished(full: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token):
-            self._on_invocation_done(_n, _e, full, error=False, run_id=_r, lineage_token=_lt, loop_token=_lp)
+        def on_finished(
+            full: str,
+            _n=node,
+            _e=exec_id,
+            _r=run_id,
+            _lt=lineage_token,
+            _lp=loop_token,
+            _jt=join_token,
+        ):
+            self._on_invocation_done(
+                _n,
+                _e,
+                full,
+                error=False,
+                run_id=_r,
+                lineage_token=_lt,
+                loop_token=_lp,
+                join_token=_jt,
+            )
 
-        def on_error(msg: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token):
-            self._on_invocation_done(_n, _e, msg, error=True, run_id=_r, lineage_token=_lt, loop_token=_lp)
+        def on_error(
+            msg: str,
+            _n=node,
+            _e=exec_id,
+            _r=run_id,
+            _lt=lineage_token,
+            _lp=loop_token,
+            _jt=join_token,
+        ):
+            self._on_invocation_done(
+                _n,
+                _e,
+                msg,
+                error=True,
+                run_id=_r,
+                lineage_token=_lt,
+                loop_token=_lp,
+                join_token=_jt,
+            )
 
         worker.output_line.connect(on_output)
         worker.finished.connect(on_finished)
@@ -417,7 +465,7 @@ class _ExecutionMixin:
             self.on_output_line(node, header)
 
     def _fire_condition_check(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int,
-                              lineage_token: str = "", loop_token: str = ""):
+                              lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         run_id = self._run_id
         try:
             resolved_path = None
@@ -430,6 +478,7 @@ class _ExecutionMixin:
                     run_id,
                     lineage_token=lineage_token,
                     loop_token=loop_token,
+                    join_token=join_token,
                 )
                 return
             result = node.evaluate(
@@ -441,11 +490,26 @@ class _ExecutionMixin:
             node.append_output(f"Condition '{display_name}': {branch}")
             if self.on_output_line:
                 self.on_output_line(node, f"Condition '{display_name}': {branch}")
-            self._on_condition_done(node, exec_id, branch, run_id=run_id,
-                                    lineage_token=lineage_token, loop_token=loop_token)
+            self._on_condition_done(
+                node,
+                exec_id,
+                branch,
+                run_id=run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+                join_token=join_token,
+            )
         except Exception as exc:
-            self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id,
-                                     lineage_token=lineage_token, loop_token=loop_token)
+            self._on_invocation_done(
+                node,
+                exec_id,
+                str(exc),
+                error=True,
+                run_id=run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+                join_token=join_token,
+            )
 
     def _fire_git_changes_condition(
         self: "WorkflowCanvas",
@@ -454,6 +518,7 @@ class _ExecutionMixin:
         run_id: int,
         lineage_token: str = "",
         loop_token: str = "",
+        join_token: str = "",
     ):
         cwd = self._working_directory or ""
         if not cwd:
@@ -486,7 +551,9 @@ class _ExecutionMixin:
                 if self.on_output_line:
                     self.on_output_line(_n, line)
 
-        def on_finished(full: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token):
+        def on_finished(
+            full: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token, _jt=join_token
+        ):
             branch = "true" if bool(full.strip()) else "false"
             display_name = condition_display_name(_n.condition_type)
             if (
@@ -505,9 +572,12 @@ class _ExecutionMixin:
                 run_id=_r,
                 lineage_token=_lt,
                 loop_token=_lp,
+                join_token=_jt,
             )
 
-        def on_error(msg: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token):
+        def on_error(
+            msg: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token, _jt=join_token
+        ):
             if msg.startswith("Timed out after "):
                 msg = (
                     "git status timed out after "
@@ -521,6 +591,7 @@ class _ExecutionMixin:
                 run_id=_r,
                 lineage_token=_lt,
                 loop_token=_lp,
+                join_token=_jt,
             )
 
         worker.output_line.connect(on_output)
@@ -529,7 +600,7 @@ class _ExecutionMixin:
         worker.start()
 
     def _fire_attention(self: "WorkflowCanvas", node: AttentionNode, exec_id: int,
-                        lineage_token: str = "", loop_token: str = ""):
+                        lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         run_id = self._run_id
         message = node.message_text.strip()
         QApplication.beep()
@@ -573,11 +644,12 @@ class _ExecutionMixin:
             run_id=run_id,
             lineage_token=lineage_token,
             loop_token=loop_token,
+            join_token=join_token,
         )
 
     def _on_condition_done(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int,
                            branch: str, run_id: int = 0, lineage_token: str = "",
-                           loop_token: str = ""):
+                           loop_token: str = "", join_token: str = ""):
         """Complete a ConditionalNode invocation and queue only the matching branch."""
         if exec_id not in self._active_workers:
             return
@@ -596,11 +668,11 @@ class _ExecutionMixin:
         node.set_status("done")
         if not self._no_fanout:
             self._queue_child_triggers(node, run_id, branch=branch,
-                                       lineage_token=lineage_token, loop_token=loop_token)
+                                       lineage_token=lineage_token, loop_token=loop_token, join_token=join_token)
         self._check_drain()
 
     def _fire_loop(self: "WorkflowCanvas", node, exec_id: int, lineage_token: str,
-                   loop_token: str = ""):
+                   loop_token: str = "", join_token: str = ""):
         run_id = self._run_id
         # loop_token is stable for the lifetime of this loop thread; assign on first entry.
         if not loop_token:
@@ -613,13 +685,13 @@ class _ExecutionMixin:
             if self.on_output_line:
                 self.on_output_line(node, line)
             self._loop_counters[key] = count
-            self._on_loop_iteration(node, exec_id, "loop", lineage_token, loop_token, run_id)
+            self._on_loop_iteration(node, exec_id, "loop", lineage_token, loop_token, join_token, run_id)
         else:
             self._loop_counters.pop(key, None)
-            self._on_loop_iteration(node, exec_id, "done", lineage_token, loop_token, run_id)
+            self._on_loop_iteration(node, exec_id, "done", lineage_token, loop_token, join_token, run_id)
 
     def _on_loop_iteration(self: "WorkflowCanvas", node, exec_id: int, branch: str,
-                           lineage_token: str, loop_token: str, run_id: int):
+                           lineage_token: str, loop_token: str, join_token: str, run_id: int):
         """Complete a LoopNode invocation and queue only the correct branch."""
         if exec_id not in self._active_workers:
             return
@@ -645,7 +717,7 @@ class _ExecutionMixin:
             child_loop_token = loop_token if branch == "loop" else ""
             children_queued = self._queue_child_triggers(
                 node, run_id, branch=branch,
-                lineage_token=lineage_token, loop_token=child_loop_token,
+                lineage_token=lineage_token, loop_token=child_loop_token, join_token=join_token,
             )
             # No outgoing connections on the loop branch means the loop can
             # never iterate - mark done so the node does not stay visually "running".
@@ -656,6 +728,109 @@ class _ExecutionMixin:
             # Run Selected / no-fanout: loop cannot iterate, clear counter and mark done.
             self._loop_counters.pop((node.node_id, loop_token), None)
             node.set_status("done")
+        self._check_drain()
+
+    def _join_group_key(self, lineage_token: str, join_token: str) -> str:
+        return join_token or lineage_token or f"run-{self._run_id}"
+
+    def _clear_join_state_for_node(self, node_id: str) -> None:
+        for key, count in list(self._join_wait_counts.items()):
+            if key[0] != node_id:
+                continue
+            self._pending_join_waits = max(0, self._pending_join_waits - count)
+            self._join_wait_counts.pop(key, None)
+
+    def _has_pending_join_waits_for_node(self, node_id: str) -> bool:
+        return any(key[0] == node_id for key in self._join_wait_counts)
+
+    def _fire_join(
+        self: "WorkflowCanvas",
+        node: JoinNode,
+        exec_id: int,
+        lineage_token: str = "",
+        loop_token: str = "",
+        join_token: str = "",
+    ) -> None:
+        run_id = self._run_id
+        group_key = self._join_group_key(lineage_token, join_token)
+        join_key = (node.node_id, group_key)
+        current_count = self._join_wait_counts.get(join_key, 0) + 1
+        self._join_wait_counts[join_key] = current_count
+        self._pending_join_waits += 1
+
+        if current_count < node.wait_for_count:
+            line = f"Join waiting: {current_count}/{node.wait_for_count}"
+            node.append_output(line)
+            if self.on_output_line:
+                self.on_output_line(node, line)
+            self._on_join_waiting(node, exec_id, run_id=run_id)
+            return
+
+        remainder = current_count - node.wait_for_count
+        if remainder > 0:
+            self._join_wait_counts[join_key] = remainder
+        else:
+            self._join_wait_counts.pop(join_key, None)
+        self._pending_join_waits = max(0, self._pending_join_waits - node.wait_for_count)
+        line = f"Join released: {node.wait_for_count}/{node.wait_for_count}"
+        node.append_output(line)
+        if self.on_output_line:
+            self.on_output_line(node, line)
+        released_lineage = str(uuid4())
+        self._on_join_release(
+            node,
+            exec_id,
+            run_id=run_id,
+            lineage_token=released_lineage,
+            loop_token=loop_token,
+        )
+
+    def _on_join_waiting(self: "WorkflowCanvas", node: JoinNode, exec_id: int, run_id: int = 0) -> None:
+        if exec_id not in self._active_workers:
+            return
+        retired = exec_id in self._retired_exec_ids
+        self._retired_exec_ids.discard(exec_id)
+        del self._active_workers[exec_id]
+        self._exec_node.pop(exec_id, None)
+        self._exec_lineage.pop(exec_id, None)
+        self._current_run_exec_ids.discard(exec_id)
+        if run_id != self._run_id or not self._running or retired:
+            self._check_drain()
+            return
+        node.set_status("running")
+        self._check_drain()
+
+    def _on_join_release(
+        self: "WorkflowCanvas",
+        node: JoinNode,
+        exec_id: int,
+        run_id: int = 0,
+        lineage_token: str = "",
+        loop_token: str = "",
+    ) -> None:
+        if exec_id not in self._active_workers:
+            return
+        retired = exec_id in self._retired_exec_ids
+        self._retired_exec_ids.discard(exec_id)
+        del self._active_workers[exec_id]
+        self._exec_node.pop(exec_id, None)
+        self._exec_lineage.pop(exec_id, None)
+        self._current_run_exec_ids.discard(exec_id)
+        if run_id != self._run_id or not self._running or retired:
+            self._check_drain()
+            return
+        if self._has_pending_join_waits_for_node(node.node_id):
+            node.set_status("running")
+        else:
+            node.set_status("done")
+        if not self._no_fanout:
+            self._queue_child_triggers(
+                node,
+                run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+                join_token="",
+            )
         self._check_drain()
 
     def _resolve_file_op_path(self: "WorkflowCanvas", filename: str) -> str:
@@ -680,7 +855,7 @@ class _ExecutionMixin:
         return target
 
     def _fire_file_op(self: "WorkflowCanvas", node: FileOpNode, exec_id: int,
-                      lineage_token: str = "", loop_token: str = ""):
+                      lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         run_id = self._run_id
         filename = node.filename.strip()
         try:
@@ -705,14 +880,30 @@ class _ExecutionMixin:
                 result = f"Deleted: {filepath}"
             else:
                 raise ValueError(f"Unknown file op: {op}")
-            self._on_invocation_done(node, exec_id, result, error=False, run_id=run_id,
-                                     lineage_token=lineage_token, loop_token=loop_token)
+            self._on_invocation_done(
+                node,
+                exec_id,
+                result,
+                error=False,
+                run_id=run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+                join_token=join_token,
+            )
         except Exception as exc:
-            self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id,
-                                     lineage_token=lineage_token, loop_token=loop_token)
+            self._on_invocation_done(
+                node,
+                exec_id,
+                str(exc),
+                error=True,
+                run_id=run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+                join_token=join_token,
+            )
 
     def _fire_git_action(self: "WorkflowCanvas", node, exec_id: int,
-                         lineage_token: str = "", loop_token: str = ""):
+                         lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         run_id = self._run_id
         cwd = self._working_directory or os.getcwd()
         try:
@@ -734,8 +925,16 @@ class _ExecutionMixin:
             else:
                 raise ValueError(f"Unknown git action: {action}")
         except Exception as exc:
-            self._on_invocation_done(node, exec_id, str(exc), error=True, run_id=run_id,
-                                     lineage_token=lineage_token, loop_token=loop_token)
+            self._on_invocation_done(
+                node,
+                exec_id,
+                str(exc),
+                error=True,
+                run_id=run_id,
+                lineage_token=lineage_token,
+                loop_token=loop_token,
+                join_token=join_token,
+            )
             return
 
         worker = GitWorker(command=command, working_directory=cwd)
@@ -748,7 +947,7 @@ class _ExecutionMixin:
                     self.on_output_line(_n, line)
 
         def on_finished(full: str, _n=node, _e=exec_id, _r=run_id,
-                        _lt=lineage_token, _lp=loop_token, _action=action):
+                        _lt=lineage_token, _lp=loop_token, _jt=join_token, _action=action):
             result = ""
             if not full.strip():
                 if _action == "git_add":
@@ -757,13 +956,29 @@ class _ExecutionMixin:
                     result = "git commit: committed successfully."
                 elif _action == "git_push":
                     result = "git push: pushed successfully."
-            self._on_invocation_done(_n, _e, result, error=False, run_id=_r,
-                                     lineage_token=_lt, loop_token=_lp)
+            self._on_invocation_done(
+                _n,
+                _e,
+                result,
+                error=False,
+                run_id=_r,
+                lineage_token=_lt,
+                loop_token=_lp,
+                join_token=_jt,
+            )
 
         def on_error(msg: str, _n=node, _e=exec_id, _r=run_id,
-                     _lt=lineage_token, _lp=loop_token):
-            self._on_invocation_done(_n, _e, msg, error=True, run_id=_r,
-                                     lineage_token=_lt, loop_token=_lp)
+                     _lt=lineage_token, _lp=loop_token, _jt=join_token):
+            self._on_invocation_done(
+                _n,
+                _e,
+                msg,
+                error=True,
+                run_id=_r,
+                lineage_token=_lt,
+                loop_token=_lp,
+                join_token=_jt,
+            )
 
         worker.output_line.connect(on_output)
         worker.finished.connect(on_finished)
@@ -772,7 +987,7 @@ class _ExecutionMixin:
 
     def _queue_child_triggers(self: "WorkflowCanvas", node: GraphNode, run_id: int,
                               branch: str = "output", lineage_token: str = "",
-                              loop_token: str = "") -> int:
+                              loop_token: str = "", join_token: str = "") -> int:
         """Queue deferred triggers for node's children. Returns the number of children queued."""
         from src.gui.loop_node import LoopNode
         if isinstance(node, (ConditionalNode, LoopNode)):
@@ -792,20 +1007,25 @@ class _ExecutionMixin:
         # Fan-out: each child gets a new unique lineage token; single child inherits same token.
         if len(edge_pairs) == 1:
             lineage_tokens = [lineage_token]
+            join_tokens = [join_token]
         else:
             lineage_tokens = [str(uuid4()) for _ in edge_pairs]
-        for (source_id, target_id, source_port), child_lt in zip(edge_pairs, lineage_tokens):
+            shared_join_token = lineage_token or join_token
+            join_tokens = [shared_join_token for _ in edge_pairs]
+        for (source_id, target_id, source_port), child_lt, child_jt in zip(
+            edge_pairs, lineage_tokens, join_tokens
+        ):
             QTimer.singleShot(
                 0,
                 lambda _src=source_id, _tgt=target_id, _run_id=run_id, _sp=source_port,
-                       _lt=child_lt, _loop=loop_token:
-                    self._trigger_node_if_active(_src, _tgt, _run_id, _sp, _lt, _loop),
+                       _lt=child_lt, _loop=loop_token, _jt=child_jt:
+                    self._trigger_node_if_active(_src, _tgt, _run_id, _sp, _lt, _loop, _jt),
             )
         return len(edge_pairs)
 
     def _trigger_node_if_active(self: "WorkflowCanvas", source_id: str, target_id: str,
                                 run_id: int, source_port: str = "output",
-                                lineage_token: str = "", loop_token: str = ""):
+                                lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         try:
             if run_id != self._run_id or not self._running or self._no_fanout:
                 return
@@ -820,7 +1040,7 @@ class _ExecutionMixin:
             node = self._nodes.get(target_id)
             if node is None:
                 return
-            self._trigger_node(node, lineage_token, loop_token)
+            self._trigger_node(node, lineage_token, loop_token, join_token)
         finally:
             if run_id == self._run_id and self._pending_child_triggers > 0:
                 self._pending_child_triggers -= 1
@@ -828,7 +1048,7 @@ class _ExecutionMixin:
 
     def _on_invocation_done(self: "WorkflowCanvas", node: GraphNode, exec_id: int,
                             result: str, error: bool, run_id: int = 0,
-                            lineage_token: str = "", loop_token: str = ""):
+                            lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         if exec_id not in self._active_workers:
             return
         streamed_output = self._exec_streamed_output.pop(exec_id, False)
@@ -890,7 +1110,7 @@ class _ExecutionMixin:
             node.set_status("done")
             if not self._no_fanout:
                 self._queue_child_triggers(node, run_id, lineage_token=lineage_token,
-                                           loop_token=loop_token)
+                                           loop_token=loop_token, join_token=join_token)
 
         self._check_drain()
 
@@ -900,9 +1120,11 @@ class _ExecutionMixin:
             and not self._seeding_roots
             and not self._current_run_exec_ids
             and self._pending_child_triggers == 0
+            and self._pending_join_waits == 0
         ):
             self._running = False
             self._loop_counters.clear()
+            self._join_wait_counts.clear()
             for node in self._nodes.values():
                 if node.status in {"running", "looping"}:
                     node.set_status("done")

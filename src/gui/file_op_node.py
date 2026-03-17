@@ -316,6 +316,11 @@ def _git_action_factory(node_id=None, label_index=1):
     return GitActionNode(node_id=node_id, label_index=label_index)
 
 
+def _join_factory(node_id=None, label_index=1):
+    from .control_flow.join_node import JoinNode
+    return JoinNode(node_id=node_id, label_index=label_index)
+
+
 def _attention_factory(node_id=None, label_index=1):
     return AttentionNode(node_id=node_id, label_index=label_index)
 
@@ -326,6 +331,7 @@ NODE_TYPE_MAP = {
     "delete_file":   DeleteFileNode,
     "conditional":   _conditional_factory,
     "loop":          _loop_factory,
+    "join":          _join_factory,
     "git_action":    _git_action_factory,
     "attention":     _attention_factory,
 }

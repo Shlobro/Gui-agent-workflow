@@ -50,6 +50,7 @@ class _IOMixin:
         node = self._nodes.get(node_id)
         if node is None:
             return
+        self._clear_join_state_for_node(node_id)
         for exec_id, nid in list(self._exec_node.items()):
             if nid == node_id:
                 worker = self._active_workers.get(exec_id)

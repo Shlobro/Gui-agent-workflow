@@ -24,6 +24,7 @@ from ._panel_forms import (
     _ConditionalForm,
     _FileOpForm,
     _GitActionForm,
+    _JoinForm,
     _LLMForm,
     _LoopForm,
 )
@@ -174,6 +175,7 @@ class PropertiesPanel(QWidget):
     op_type_changed = Signal(str, str, str)
     condition_type_changed = Signal(str, str, str)
     loop_count_changed = Signal(str, int, int)
+    join_count_changed = Signal(str, int, int)
     git_action_changed = Signal(str, str, str)
     git_details_changed = Signal(str)
     text_zoom_changed = Signal(int)
@@ -223,6 +225,9 @@ class PropertiesPanel(QWidget):
         self._loop_form = _LoopForm()
         self._stack.addWidget(self._wrap_form(self._loop_form))
 
+        self._join_form = _JoinForm()
+        self._stack.addWidget(self._wrap_form(self._join_form))
+
         self._git_form = _GitActionForm()
         self._stack.addWidget(self._wrap_form(self._git_form))
 
@@ -260,6 +265,9 @@ class PropertiesPanel(QWidget):
 
         self._loop_form.title_edit.editingFinished.connect(self._on_loop_title_committed)
         self._loop_form.loop_count_changed.connect(self._on_loop_count_changed)
+
+        self._join_form.title_edit.editingFinished.connect(self._on_join_title_committed)
+        self._join_form.wait_for_count_changed.connect(self._on_join_count_changed)
 
         self._git_form.title_edit.editingFinished.connect(self._on_git_title_committed)
         self._git_form.git_action_changed.connect(self._on_git_action_changed)
@@ -441,6 +449,19 @@ class PropertiesPanel(QWidget):
             return
         self.loop_count_changed.emit(self._current_node.node_id, old_count, new_count)
 
+    def _on_join_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._join_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_join_count_changed(self, old_count: int, new_count: int):
+        if self._current_node is None:
+            return
+        self.join_count_changed.emit(self._current_node.node_id, old_count, new_count)
+
     def _on_git_title_committed(self):
         if self._current_node is None:
             return
@@ -515,6 +536,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
         from .llm_node import LLMNode
+        from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
 
         self._is_committing = True
@@ -537,6 +559,8 @@ class PropertiesPanel(QWidget):
                 self._on_cond_title_committed()
             elif isinstance(self._current_node, LoopNode):
                 self._on_loop_title_committed()
+            elif isinstance(self._current_node, JoinNode):
+                self._on_join_title_committed()
             elif isinstance(self._current_node, GitActionNode):
                 if self._git_commit_msg_dirty:
                     self._flush_git_commit_msg()
@@ -552,6 +576,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
         from .llm_node import LLMNode
+        from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
 
         if self._current_node is not None and self._current_node is not node:
@@ -567,13 +592,16 @@ class PropertiesPanel(QWidget):
             self._stack.setCurrentIndex(3)
         elif isinstance(node, AttentionNode):
             self._load_attention_form(node)
-            self._stack.setCurrentIndex(6)
+            self._stack.setCurrentIndex(7)
         elif isinstance(node, LoopNode):
             self._load_loop_form(node)
             self._stack.setCurrentIndex(4)
+        elif isinstance(node, JoinNode):
+            self._load_join_form(node)
+            self._stack.setCurrentIndex(5)
         elif isinstance(node, GitActionNode):
             self._load_git_form(node)
-            self._stack.setCurrentIndex(5)
+            self._stack.setCurrentIndex(6)
         elif isinstance(node, FileOpNode):
             self._load_file_form(node)
             self._stack.setCurrentIndex(2)
@@ -600,6 +628,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
         from .llm_node import LLMNode
+        from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
 
         if isinstance(node, LLMNode):
@@ -614,6 +643,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, LoopNode):
             self._loop_form.show_output(True)
             self._loop_form.output_edit.appendPlainText(line)
+        elif isinstance(node, JoinNode):
+            self._join_form.show_output(True)
+            self._join_form.output_edit.appendPlainText(line)
         elif isinstance(node, GitActionNode):
             self._git_form.show_output(True)
             self._git_form.output_edit.appendPlainText(line)
@@ -628,6 +660,7 @@ class PropertiesPanel(QWidget):
         from .file_op_node import AttentionNode, FileOpNode
         from .git_action_node import GitActionNode
         from .llm_node import LLMNode
+        from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
 
         if isinstance(node, LLMNode):
@@ -642,6 +675,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, LoopNode):
             self._loop_form.output_edit.clear()
             self._loop_form.show_output(False)
+        elif isinstance(node, JoinNode):
+            self._join_form.output_edit.clear()
+            self._join_form.show_output(False)
         elif isinstance(node, GitActionNode):
             self._git_form.output_edit.clear()
             self._git_form.show_output(False)
@@ -702,6 +738,23 @@ class PropertiesPanel(QWidget):
 
         form.title_edit.setText(node.title)
         form.set_loop_count(node.loop_count)
+
+        if node.output_text:
+            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
+        else:
+            form.output_edit.clear()
+            form.show_output(False)
+
+        form.title_edit.blockSignals(False)
+        self._old_title = node.title
+
+    def _load_join_form(self, node) -> None:
+        form = self._join_form
+        form.title_edit.blockSignals(True)
+
+        form.title_edit.setText(node.title)
+        form.set_wait_for_count(node.wait_for_count)
 
         if node.output_text:
             form.output_edit.setPlainText(node.output_text.rstrip("\n"))

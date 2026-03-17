@@ -434,6 +434,45 @@ class LoopCountChangeCommand(QUndoCommand):
             self._canvas.notify_node_changed(self._node_id)
 
 
+class JoinCountChangeCommand(QUndoCommand):
+    """Push when the user changes the wait count of a JoinNode."""
+
+    def __init__(self, canvas: "WorkflowCanvas", node_id: str,
+                 old_count: int, new_count: int):
+        super().__init__("Change Join Wait Count")
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_count = old_count
+        self._new_count = new_count
+
+    def _node(self):
+        from .control_flow.join_node import JoinNode
+        node = self._canvas._nodes.get(self._node_id)
+        return node if isinstance(node, JoinNode) else None
+
+    def redo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.wait_for_count = self._new_count
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+    def undo(self):
+        node = self._node()
+        if node:
+            self._canvas._undo_in_progress = True
+            try:
+                node.wait_for_count = self._old_count
+                node.update()
+            finally:
+                self._canvas._undo_in_progress = False
+            self._canvas.notify_node_changed(self._node_id)
+
+
 class GitActionTypeChangeCommand(QUndoCommand):
     """Push when the user changes the git action type of a GitActionNode."""
 

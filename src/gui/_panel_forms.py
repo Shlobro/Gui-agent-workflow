@@ -383,6 +383,76 @@ class _LoopForm(QWidget):
         self._output_frame.setVisible(visible)
 
 
+class _JoinForm(QWidget):
+    """Form widget for editing a JoinNode's properties."""
+
+    wait_for_count_changed = Signal(int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(6)
+
+        type_label = QLabel("JOIN")
+        type_label.setObjectName("section_label")
+        layout.addWidget(type_label)
+
+        layout.addSpacing(4)
+
+        name_label = QLabel("Name")
+        layout.addWidget(name_label)
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Node name...")
+        layout.addWidget(self.title_edit)
+
+        layout.addSpacing(4)
+
+        wait_label = QLabel("Wait For Arrivals")
+        layout.addWidget(wait_label)
+        self.count_spin = QSpinBox()
+        self.count_spin.setMinimum(1)
+        self.count_spin.setMaximum(9999)
+        self.count_spin.setValue(2)
+        layout.addWidget(self.count_spin)
+
+        layout.addSpacing(4)
+
+        self._output_frame = QFrame()
+        self._output_frame.setVisible(False)
+        out_layout = QVBoxLayout(self._output_frame)
+        out_layout.setContentsMargins(0, 0, 0, 0)
+        out_layout.setSpacing(4)
+        self.output_label = QLabel("Output")
+        out_layout.addWidget(self.output_label)
+        self.output_edit = QPlainTextEdit()
+        self.output_edit.setReadOnly(True)
+        self.output_edit.setMinimumHeight(60)
+        out_layout.addWidget(self.output_edit)
+        layout.addWidget(self._output_frame)
+
+        layout.addStretch(1)
+
+        self._current_count: int = 2
+        self.count_spin.valueChanged.connect(self._on_count_changed)
+
+    def _on_count_changed(self, value: int):
+        if value != self._current_count:
+            old = self._current_count
+            self._current_count = value
+            self.wait_for_count_changed.emit(old, value)
+
+    def set_wait_for_count(self, count: int):
+        self.count_spin.blockSignals(True)
+        self.count_spin.setValue(count)
+        self._current_count = self.count_spin.value()
+        self.count_spin.blockSignals(False)
+
+    def show_output(self, visible: bool):
+        self._output_frame.setVisible(visible)
+
+
 _GIT_ACTION_OPTIONS = [
     ("git_add", "Git Add"),
     ("git_commit", "Git Commit"),

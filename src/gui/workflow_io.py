@@ -90,6 +90,14 @@ def parse_workflow_data(data: dict) -> dict:
                     f"'{lc}' (must be an integer 1-9999)."
                 )
 
+        if node_type == "join":
+            wc = b_data.get("wait_for_count", 2)
+            if not isinstance(wc, int) or isinstance(wc, bool) or wc < 1 or wc > 9999:
+                raise ValueError(
+                    f"Node record at index {idx_in_list} has invalid wait_for_count "
+                    f"'{wc}' (must be an integer 1-9999)."
+                )
+
         # For git_action nodes, validate git_action and msg_source fields.
         if node_type == "git_action":
             ga = b_data.get("git_action", "")
@@ -169,6 +177,9 @@ def parse_workflow_data(data: dict) -> dict:
         elif src_node_type == "loop":
             if source_port not in ("loop", "done"):
                 continue  # invalid port for LoopNode; drop
+        elif src_node_type == "join":
+            if source_port != "output":
+                continue  # join nodes only have "output" port; drop
         elif src_node_type == "git_action":
             if source_port != "output":
                 continue  # git_action nodes only have "output" port; drop

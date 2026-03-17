@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
 from .connection_item import ConnectionItem
+from .control_flow.join_node import JoinNode
 from .dialogs.prompt_injection_dialog import (
     PromptInjectionRunDialog,
     PromptTemplateManagerDialog,
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
         self._panel.op_type_changed.connect(self._on_panel_op_type_changed)
         self._panel.condition_type_changed.connect(self._on_panel_condition_type_changed)
         self._panel.loop_count_changed.connect(self._on_panel_loop_count_changed)
+        self._panel.join_count_changed.connect(self._on_panel_join_count_changed)
         self._panel.git_action_changed.connect(
             lambda nid, old, new: self.canvas._on_git_action_changed(nid, old, new)
         )
@@ -293,6 +295,7 @@ class MainWindow(QMainWindow):
         act("Add Conditional", self.canvas.add_conditional_node, tip="Add a conditional node that routes execution to true/false branches")
         act("Add Attention", self.canvas.add_attention_node, tip="Add a node that alerts the user and asks whether to continue")
         act("Add Loop", self.canvas.add_loop_node, tip="Add a loop node that repeats N times")
+        act("Add Join", self.canvas.add_join_node, tip="Add a barrier node that waits for N arrivals before continuing")
         act("Add Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
         tb.addSeparator()
         act("Run All", self._run_all, shortcut="F5", tip="Run all nodes reachable from Start")
@@ -490,7 +493,7 @@ class MainWindow(QMainWindow):
         return [
             item
             for item in self.canvas._scene.selectedItems()
-            if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, GitActionNode))
+            if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, JoinNode, GitActionNode))
             and not getattr(item, "is_start", False)
         ]
 
@@ -598,6 +601,12 @@ class MainWindow(QMainWindow):
         if node is None:
             return
         self.canvas._on_loop_count_changed(node_id, old_count, new_count)
+
+    def _on_panel_join_count_changed(self, node_id: str, old_count: int, new_count: int):
+        node = self.canvas._nodes.get(node_id)
+        if node is None:
+            return
+        self.canvas._on_join_count_changed(node_id, old_count, new_count)
 
     def _on_panel_git_details_changed(self, node_id: str):
         if node_id in self.canvas._nodes:
@@ -743,6 +752,7 @@ class MainWindow(QMainWindow):
         file_op_count = 0
         conditional_count = 0
         loop_count = 0
+        join_count = 0
         attention_count = 0
         git_action_count = 0
         invalid_nodes: list[str] = []
@@ -755,6 +765,8 @@ class MainWindow(QMainWindow):
                 conditional_count += 1
             elif isinstance(node, LoopNode):
                 loop_count += 1
+            elif isinstance(node, JoinNode):
+                join_count += 1
             elif isinstance(node, GitActionNode):
                 git_action_count += 1
             elif isinstance(node, FileOpNode):
@@ -784,6 +796,7 @@ class MainWindow(QMainWindow):
             f"- Conditional: {conditional_count}",
             f"- Attention: {attention_count}",
             f"- Loop: {loop_count}",
+            f"- Join: {join_count}",
             f"- Git Action: {git_action_count}",
             "",
             f"Invalid Nodes: {len(invalid_nodes)}",

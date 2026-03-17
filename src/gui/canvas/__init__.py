@@ -17,13 +17,15 @@ from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import AttentionNode, FileOpNode
 from src.gui.conditional_node import ConditionalNode
+from src.gui.control_flow.join_node import JoinNode
 from src.gui.loop_node import LoopNode
 from src.gui.undo_commands import (
     AddNodeCommand, RemoveNodeCommand,
     AddConnectionCommand, RemoveConnectionCommand,
     EditConnectionVerticesCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand,
-    FileOpTypeChangeCommand, ConditionTypeChangeCommand, LoopCountChangeCommand,
+    FileOpTypeChangeCommand, ConditionTypeChangeCommand, JoinCountChangeCommand,
+    LoopCountChangeCommand,
     GitActionTypeChangeCommand,
 )
 from src.gui.workflow_io import get_provider_for_model
@@ -93,6 +95,8 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         self._exec_counter: int = 0
         self._run_id: int = 0
         self._loop_counters: Dict[tuple, int] = {}
+        self._join_wait_counts: Dict[tuple[str, str], int] = {}
+        self._pending_join_waits: int = 0
         self._exec_signals = _ExecutionSignals()
         self._exec_signals.status_update.connect(self.status_update)
 
@@ -282,6 +286,27 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
             raise RuntimeError("Expected a LoopNode after add command.")
         return node
 
+    def add_join_node(self) -> JoinNode:
+        """Add a join node that waits for N arrivals before continuing once."""
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "join",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 32,
+            "name": f"Join {label_index}",
+            "wait_for_count": 2,
+        }
+        cmd = AddNodeCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, JoinNode):
+            raise RuntimeError("Expected a JoinNode after add command.")
+        return node
+
     def add_attention_node(self) -> AttentionNode:
         """Add an attention node that gates its own branch and asks whether to continue."""
         self._node_counter += 1
@@ -432,6 +457,16 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         if old_count == new_count:
             return
         self._undo_stack.push(LoopCountChangeCommand(self, node_id, old_count, new_count))
+
+    def _on_join_count_changed(self, node_id: str, old_count: int, new_count: int):
+        if self._undo_in_progress:
+            return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_count == new_count:
+            return
+        self._undo_stack.push(JoinCountChangeCommand(self, node_id, old_count, new_count))
 
     def _on_condition_type_changed(self, node_id: str, old_type: str, new_type: str):
         if self._undo_in_progress:
