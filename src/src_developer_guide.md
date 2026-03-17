@@ -23,7 +23,7 @@
 ## Current Built-In Models
 - Claude provider: Opus 4.6, Sonnet 4.6, Haiku 4.5.
 - Codex CLI / OpenAI provider: GPT-5.4 and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` effort options.
-- Gemini provider: models declared in `llm/gemini_provider.py`.
+- Gemini provider: Gemini 3.1 Pro (Preview), Gemini 3 Flash (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, and Gemini 2.5 Flash Lite. `WorkflowCanvas` prefers Gemini 3.1 Pro (Preview) as the default new-node model when the provider is registered.
 
 ## When To Edit What
 - Graph interaction and serialization behavior: `gui/`.

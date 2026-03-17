@@ -23,7 +23,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 ## Built-In Models
 - Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
 - Codex CLI / OpenAI: GPT-5.4 and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` reasoning effort.
-- Gemini: model catalog defined in `src/llm/gemini_provider.py`.
+- Gemini: Gemini 3.1 Pro (Preview), Gemini 3 Flash (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, and Gemini 2.5 Flash Lite. The default new-node model is Gemini 3.1 Pro (Preview) when available.
 
 ## User Data and Artifacts
 - Workflow graphs are user-saved JSON files chosen from the Save/Load dialogs. Workflow files can be saved anywhere.

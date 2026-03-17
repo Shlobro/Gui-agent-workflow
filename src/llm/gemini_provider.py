@@ -6,7 +6,7 @@ from .base_provider import BaseLLMProvider, LLMProviderRegistry
 
 class GeminiProvider(BaseLLMProvider):
     MODELS = [
-        ("gemini-3-pro-preview", "Gemini 3 Pro (Preview)"),
+        ("gemini-3.1-pro-preview", "Gemini 3.1 Pro (Preview)"),
         ("gemini-3-flash-preview", "Gemini 3 Flash (Preview)"),
         ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ("gemini-2.5-flash", "Gemini 2.5 Flash"),

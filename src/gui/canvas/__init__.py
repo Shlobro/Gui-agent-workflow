@@ -32,7 +32,7 @@ from src.gui.canvas.io import _IOMixin
 
 GraphNode = WorkflowNode
 SourceNode = Union[StartNode, WorkflowNode]
-PREFERRED_DEFAULT_LLM_MODEL_ID = "gemini-3-pro-preview"
+PREFERRED_DEFAULT_LLM_MODEL_ID = "gemini-3.1-pro-preview"
 
 
 class _CancelableWorker(Protocol):
