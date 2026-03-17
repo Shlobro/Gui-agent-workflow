@@ -356,7 +356,8 @@ class PropertiesPanel(QWidget):
         for button in self.findChildren(QPushButton):
             self._set_font_size(button, field_size)
         for editor in self.findChildren(QPlainTextEdit):
-            self._set_font_size(editor, mono_size)
+            size = mono_size + 2 if editor.objectName() == "llm_call_output_edit" else mono_size
+            self._set_font_size(editor, size)
 
     def _on_llm_title_committed(self):
         if self._current_node is None:
@@ -633,7 +634,7 @@ class PropertiesPanel(QWidget):
 
         if isinstance(node, LLMNode):
             self._llm_form.show_output(True)
-            self._llm_form.output_edit.appendPlainText(line)
+            self._llm_form.append_output_line(line)
         elif isinstance(node, ConditionalNode):
             self._cond_form.show_output(True)
             self._cond_form.output_edit.appendPlainText(line)
@@ -664,7 +665,7 @@ class PropertiesPanel(QWidget):
         from .loop_node import LoopNode
 
         if isinstance(node, LLMNode):
-            self._llm_form.output_edit.clear()
+            self._llm_form.clear_output()
             self._llm_form.show_output(False)
         elif isinstance(node, ConditionalNode):
             self._cond_form.output_edit.clear()
@@ -696,10 +697,10 @@ class PropertiesPanel(QWidget):
         form.prompt_edit.setPlainText(node.prompt_text)
 
         if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.set_output_text(node.output_text.rstrip("\n"))
             form.show_output(True)
         else:
-            form.output_edit.clear()
+            form.clear_output()
             form.show_output(False)
 
         form.title_edit.blockSignals(False)

@@ -1,5 +1,7 @@
 """Form widgets used inside PropertiesPanel (one form class per node type)."""
 
+import re
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -21,6 +23,9 @@ from .llm_widget import ModelSelector, populate_model_selector
 
 class _LLMForm(QWidget):
     """Form widget for editing an LLMNode's properties."""
+
+    _CALL_HEADER_RE = re.compile(r"^=== Call (\d+) ===$")
+    _CALL_OUTPUT_FONT_BUMP = 1
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,6 +120,11 @@ class _LLMForm(QWidget):
         out_layout.setSpacing(4)
         self.output_label = QLabel("Output")
         out_layout.addWidget(self.output_label)
+        self.output_tabs = QTabWidget()
+        self.output_tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.output_tabs.setDocumentMode(True)
+        self.output_tabs.setVisible(False)
+        out_layout.addWidget(self.output_tabs, stretch=1)
         self.output_edit = QPlainTextEdit()
         self.output_edit.setReadOnly(True)
         self.output_edit.setMinimumHeight(80)
@@ -123,9 +133,91 @@ class _LLMForm(QWidget):
         output_tab_layout.addWidget(self._output_frame, stretch=1)
         self._tabs.addTab(self._output_tab, "Output")
 
+        self._call_editors: list[QPlainTextEdit] = []
+
     def show_output(self, visible: bool):
         _ = visible
         self._tabs.setTabEnabled(1, True)
+
+    def clear_output(self) -> None:
+        self.output_edit.clear()
+        self.output_edit.setVisible(True)
+        while self.output_tabs.count():
+            self.output_tabs.removeTab(0)
+        self._call_editors.clear()
+        self.output_tabs.setVisible(False)
+
+    def set_output_text(self, text: str) -> None:
+        self.clear_output()
+        call_blocks = self._parse_call_blocks(text.splitlines())
+        if not call_blocks:
+            self.output_edit.setPlainText(text)
+            return
+
+        self.output_edit.setVisible(False)
+        self.output_tabs.setVisible(True)
+        for call_number, call_lines in call_blocks:
+            editor = self._create_call_editor()
+            editor.setPlainText("\n".join(call_lines).rstrip("\n"))
+            self.output_tabs.addTab(editor, f"Call {call_number}")
+            self._call_editors.append(editor)
+        self.output_tabs.setCurrentIndex(self.output_tabs.count() - 1)
+
+    def append_output_line(self, line: str) -> None:
+        match = self._CALL_HEADER_RE.fullmatch(line.strip())
+        if match:
+            call_number = match.group(1)
+            editor = self._create_call_editor()
+            self.output_edit.setVisible(False)
+            self.output_tabs.setVisible(True)
+            self.output_tabs.addTab(editor, f"Call {call_number}")
+            self._call_editors.append(editor)
+            self.output_tabs.setCurrentIndex(self.output_tabs.count() - 1)
+            return
+
+        if self._call_editors:
+            self._call_editors[-1].appendPlainText(line)
+            return
+
+        self.output_edit.appendPlainText(line)
+
+    def _create_call_editor(self) -> QPlainTextEdit:
+        editor = QPlainTextEdit()
+        editor.setReadOnly(True)
+        editor.setMinimumHeight(80)
+        editor.setPlaceholderText("No output yet.")
+        editor.setObjectName("llm_call_output_edit")
+        font = editor.font()
+        base_size = max(font.pointSize(), self.output_edit.font().pointSize(), 8)
+        font.setPointSize(base_size + self._CALL_OUTPUT_FONT_BUMP)
+        editor.setFont(font)
+        return editor
+
+    @classmethod
+    def _parse_call_blocks(cls, lines: list[str]) -> list[tuple[int, list[str]]]:
+        blocks: list[tuple[int, list[str]]] = []
+        current_call_number: int | None = None
+        current_lines: list[str] = []
+        saw_call_header = False
+
+        for line in lines:
+            match = cls._CALL_HEADER_RE.fullmatch(line.strip())
+            if match:
+                saw_call_header = True
+                if current_call_number is not None:
+                    blocks.append((current_call_number, current_lines))
+                current_call_number = int(match.group(1))
+                current_lines = []
+                continue
+            if current_call_number is not None:
+                current_lines.append(line)
+
+        if current_call_number is not None:
+            blocks.append((current_call_number, current_lines))
+
+        if not saw_call_header:
+            return []
+        return blocks
 
 
 _OP_TYPE_OPTIONS = [
