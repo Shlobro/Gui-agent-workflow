@@ -128,7 +128,7 @@ class _ExecutionMixin:
             return
         self._run_workflow(selected, roots=list(selected), no_fanout=True)
 
-    def run_from_here(self: "WorkflowCanvas"):
+    def run_from_here(self: "WorkflowCanvas", resume: bool | None = None):
         if not self._check_project_folder():
             return
         selected = [
@@ -147,7 +147,10 @@ class _ExecutionMixin:
                 "Fix these issues before running:\n\n" + "\n".join(errors),
             )
             return
-        self._run_workflow(nodes, roots=[start])
+
+        if resume is None:
+            resume = bool(start.last_lineage_token)
+        self._run_workflow(nodes, roots=[start], resume=resume)
 
     def stop_all(self: "WorkflowCanvas"):
         self._running = False
@@ -155,12 +158,6 @@ class _ExecutionMixin:
         self._no_fanout = False
         self._pending_child_triggers = 0
         self._seeding_roots = False
-        self._loop_counters.clear()
-        self._join_wait_counts.clear()
-        self._pending_join_waits = 0
-        self._llm_invocation_counts.clear()
-        self._exec_streamed_output.clear()
-        self._exec_lineage.clear()
         for worker in list(self._active_workers.values()):
             if worker is not None:
                 worker.cancel()
@@ -289,13 +286,21 @@ class _ExecutionMixin:
     # Internal run engine
     # ------------------------------------------------------------------
 
-    def _run_workflow(self: "WorkflowCanvas", nodes: list, roots: list, no_fanout: bool = False):
+    def _run_workflow(self: "WorkflowCanvas", nodes: list, roots: list, no_fanout: bool = False, resume: bool = False):
         if self._running:
             return
-        self._llm_invocation_counts.clear()
-        self._exec_streamed_output.clear()
-        self._join_wait_counts.clear()
-        self._pending_join_waits = 0
+        if not resume:
+            self._llm_invocation_counts.clear()
+            self._exec_streamed_output.clear()
+            self._join_wait_counts.clear()
+            self._pending_join_waits = 0
+            self._loop_counters.clear()
+            self._exec_lineage.clear()
+            for n in self._nodes.values():
+                n.last_lineage_token = ""
+                n.last_loop_token = ""
+                n.last_join_token = ""
+
         for node in nodes:
             node.set_status("idle")
             node.clear_output()
@@ -309,13 +314,20 @@ class _ExecutionMixin:
         self._pending_child_triggers = 0
         self._seeding_roots = True
         n = len(roots)
-        self.status_update.emit(f"Running\u2026 ({n} node{'s' if n != 1 else ''} triggered)")
+        verb = "Resuming" if resume else "Running"
+        self.status_update.emit(f"{verb}\u2026 ({n} node{'s' if n != 1 else ''} triggered)")
         try:
             shared_join_token = str(uuid4()) if len(roots) > 1 and not no_fanout else ""
             for node in roots:
-                lineage_token = str(uuid4())
-                root_join_token = shared_join_token or lineage_token
-                self._trigger_node(node, lineage_token, join_token=root_join_token)
+                if resume and node.last_lineage_token:
+                    lineage_token = node.last_lineage_token
+                    loop_token = node.last_loop_token
+                    join_token = node.last_join_token
+                else:
+                    lineage_token = str(uuid4())
+                    loop_token = ""
+                    join_token = shared_join_token or lineage_token
+                self._trigger_node(node, lineage_token, loop_token=loop_token, join_token=join_token)
         finally:
             self._seeding_roots = False
         self._check_drain()
@@ -327,6 +339,9 @@ class _ExecutionMixin:
         self._exec_counter += 1
         if not lineage_token:
             lineage_token = str(uuid4())
+        node.last_lineage_token = lineage_token
+        node.last_loop_token = loop_token
+        node.last_join_token = join_token
         self._fire_invocation(node, self._exec_counter, lineage_token, loop_token, join_token)
 
     def _fire_invocation(self: "WorkflowCanvas", node: GraphNode, exec_id: int,

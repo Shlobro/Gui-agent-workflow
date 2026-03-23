@@ -138,6 +138,9 @@ class WorkflowNode(QGraphicsItem):
         self.status: str = "idle"
         self.is_invalid: bool = False
         self.output_text: str = ""
+        self.last_lineage_token: str = ""
+        self.last_loop_token: str = ""
+        self.last_join_token: str = ""
         self._connections: List["ConnectionItem"] = []
         self._height: int = 0   # subclasses set this before first paint
 
