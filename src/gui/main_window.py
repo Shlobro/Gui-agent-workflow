@@ -28,6 +28,7 @@ from .llm_node import LLMNode
 from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 from .properties_panel import DEFAULT_PANEL_WIDTH, DEFAULT_TEXT_ZOOM, PropertiesPanel
+from .script_runner.script_node import SCRIPT_FILE_FILTER, ScriptNode
 from src.llm.prompt_injection import (
     PromptInjectionRunOptions,
     PromptInjectionStore,
@@ -106,6 +107,9 @@ class MainWindow(QMainWindow):
             lambda nid, old, new: self.canvas._on_git_action_changed(nid, old, new)
         )
         self._panel.git_details_changed.connect(self._on_panel_git_details_changed)
+        self._panel.script_path_committed.connect(self._on_panel_script_path_committed)
+        self._panel.script_browse_requested.connect(self._on_panel_script_browse_requested)
+        self._panel.script_auto_send_enter_changed.connect(self._on_panel_script_auto_send_enter_changed)
         self._panel.text_zoom_changed.connect(self._on_panel_text_zoom_changed)
         self._splitter.splitterMoved.connect(self._on_splitter_moved)
 
@@ -297,6 +301,7 @@ class MainWindow(QMainWindow):
         act("Add Loop", self.canvas.add_loop_node, tip="Add a loop node that repeats N times")
         act("Add Join", self.canvas.add_join_node, tip="Add a barrier node that waits for N arrivals before continuing")
         act("Add Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
+        act("Add Script", self.canvas.add_script_node, tip="Add a node that runs a .bat, .cmd, or .ps1 script")
         tb.addSeparator()
         act("Run All", self._run_all, shortcut="F5", tip="Run all nodes reachable from Start")
         act("Run Selected", self._run_selected_only, tip="Run only the selected node(s) without fan-out")
@@ -493,7 +498,7 @@ class MainWindow(QMainWindow):
         return [
             item
             for item in self.canvas._scene.selectedItems()
-            if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, JoinNode, GitActionNode))
+            if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, JoinNode, GitActionNode, ScriptNode))
             and not getattr(item, "is_start", False)
         ]
 
@@ -611,6 +616,53 @@ class MainWindow(QMainWindow):
     def _on_panel_git_details_changed(self, node_id: str):
         if node_id in self.canvas._nodes:
             self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
+
+    def _on_panel_script_path_committed(self, node_id: str, path: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, ScriptNode):
+            node.script_path = path
+            self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
+
+    def _on_panel_script_browse_requested(self, node_id: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is None or not isinstance(node, ScriptNode):
+            return
+        working_directory = self.canvas._working_directory
+        if not working_directory:
+            QMessageBox.warning(
+                self,
+                "No Project Folder",
+                "Open a project folder before selecting a script file.",
+            )
+            return
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Script",
+            working_directory,
+            SCRIPT_FILE_FILTER,
+            options=QFileDialog.Option.DontUseNativeDialog,
+        )
+        if not selected_path:
+            return
+        try:
+            relative_path = os.path.relpath(selected_path, working_directory)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Script", "Selected script must be inside the current project folder.")
+            return
+        if relative_path.startswith(".."):
+            QMessageBox.warning(self, "Invalid Script", "Selected script must be inside the current project folder.")
+            return
+        node.script_path = relative_path
+        self._panel.refresh_if_current(node)
+        self.canvas.refresh_node_validation_state()
+        self._refresh_panel_overview()
+
+    def _on_panel_script_auto_send_enter_changed(self, node_id: str, checked: bool):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, ScriptNode):
+            node.auto_send_enter = bool(checked)
             self._refresh_panel_overview()
 
     def _run_all(self):
@@ -755,6 +807,7 @@ class MainWindow(QMainWindow):
         join_count = 0
         attention_count = 0
         git_action_count = 0
+        script_count = 0
         invalid_nodes: list[str] = []
         for node in nodes:
             if getattr(node, "is_invalid", False):
@@ -769,6 +822,8 @@ class MainWindow(QMainWindow):
                 join_count += 1
             elif isinstance(node, GitActionNode):
                 git_action_count += 1
+            elif isinstance(node, ScriptNode):
+                script_count += 1
             elif isinstance(node, FileOpNode):
                 file_op_count += 1
             elif isinstance(node, LLMNode):
@@ -798,6 +853,7 @@ class MainWindow(QMainWindow):
             f"- Loop: {loop_count}",
             f"- Join: {join_count}",
             f"- Git Action: {git_action_count}",
+            f"- Script: {script_count}",
             "",
             f"Invalid Nodes: {len(invalid_nodes)}",
         ]
@@ -867,7 +923,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Workflow",
-            "",
+            os.getcwd(),
             "JSON Files (*.json)",
             options=QFileDialog.Option.DontUseNativeDialog,
         )

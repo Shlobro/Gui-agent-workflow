@@ -27,6 +27,7 @@ from ._panel_forms import (
     _JoinForm,
     _LLMForm,
     _LoopForm,
+    _ScriptForm,
 )
 
 DEFAULT_PANEL_WIDTH = 420
@@ -178,6 +179,9 @@ class PropertiesPanel(QWidget):
     join_count_changed = Signal(str, int, int)
     git_action_changed = Signal(str, str, str)
     git_details_changed = Signal(str)
+    script_path_committed = Signal(str, str)
+    script_browse_requested = Signal(str)
+    script_auto_send_enter_changed = Signal(str, bool)
     text_zoom_changed = Signal(int)
 
     def __init__(self, parent=None):
@@ -195,6 +199,7 @@ class PropertiesPanel(QWidget):
         self._attention_message_dirty: bool = False
         self._git_commit_msg_dirty: bool = False
         self._git_commit_msg_file_dirty: bool = False
+        self._script_path_dirty: bool = False
         self._is_committing: bool = False
         self._preferred_width: int = DEFAULT_PANEL_WIDTH
         self._text_zoom: int = DEFAULT_TEXT_ZOOM
@@ -233,6 +238,9 @@ class PropertiesPanel(QWidget):
 
         self._attention_form = _AttentionForm()
         self._stack.addWidget(self._wrap_form(self._attention_form))
+
+        self._script_form = _ScriptForm()
+        self._stack.addWidget(self._wrap_form(self._script_form))
 
         self._wire_signals()
         self._install_zoom_filters()
@@ -283,6 +291,13 @@ class PropertiesPanel(QWidget):
         self._attention_form.message_edit.textChanged.connect(self._on_attention_message_changed)
         self._attention_form.message_edit.installEventFilter(self)
 
+        self._script_form.title_edit.editingFinished.connect(self._on_script_title_committed)
+        self._script_form.script_path_edit.textChanged.connect(self._on_script_path_changed)
+        self._script_form.script_path_edit.editingFinished.connect(self._on_script_path_committed)
+        self._script_form.script_path_edit.installEventFilter(self)
+        self._script_form.browse_requested.connect(self._on_script_browse_requested)
+        self._script_form.auto_send_enter_changed.connect(self._on_script_auto_send_enter_changed)
+
     def _install_zoom_filters(self) -> None:
         for widget in self.findChildren(QWidget):
             widget.installEventFilter(self)
@@ -308,6 +323,8 @@ class PropertiesPanel(QWidget):
                 self._flush_git_commit_msg()
             elif obj is self._git_form.commit_msg_file_edit and self._git_commit_msg_file_dirty:
                 self._flush_git_commit_msg_file()
+            elif obj is self._script_form.script_path_edit and self._script_path_dirty:
+                self._flush_script_path()
         return super().eventFilter(obj, event)
 
     def preferred_width(self) -> int:
@@ -528,6 +545,37 @@ class PropertiesPanel(QWidget):
         self.attention_message_committed.emit(self._current_node.node_id, text)
         self._attention_message_dirty = False
 
+    def _on_script_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._script_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_script_path_changed(self):
+        self._script_path_dirty = True
+
+    def _on_script_path_committed(self):
+        if self._script_path_dirty:
+            self._flush_script_path()
+
+    def _flush_script_path(self):
+        if self._current_node is None:
+            return
+        self.script_path_committed.emit(self._current_node.node_id, self._script_form.script_path_edit.text())
+        self._script_path_dirty = False
+
+    def _on_script_browse_requested(self):
+        if self._current_node is None:
+            return
+        self.script_browse_requested.emit(self._current_node.node_id)
+
+    def _on_script_auto_send_enter_changed(self, checked: bool):
+        if self._current_node is None:
+            return
+        self.script_auto_send_enter_changed.emit(self._current_node.node_id, checked)
+
     def commit_pending_edits(self) -> None:
         """Commit visible-form edits in a stable order."""
         if self._is_committing:
@@ -539,6 +587,7 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
+        from .script_runner import ScriptNode
 
         self._is_committing = True
         try:
@@ -554,6 +603,10 @@ class PropertiesPanel(QWidget):
                 if self._filename_dirty:
                     self._flush_filename()
                 self._on_file_title_committed()
+            elif isinstance(self._current_node, ScriptNode):
+                if self._script_path_dirty:
+                    self._flush_script_path()
+                self._on_script_title_committed()
             elif isinstance(self._current_node, ConditionalNode):
                 if self._cond_filename_dirty:
                     self._flush_cond_filename()
@@ -579,6 +632,7 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
+        from .script_runner import ScriptNode
 
         if self._current_node is not None and self._current_node is not node:
             self.commit_pending_edits()
@@ -594,6 +648,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, AttentionNode):
             self._load_attention_form(node)
             self._stack.setCurrentIndex(7)
+        elif isinstance(node, ScriptNode):
+            self._load_script_form(node)
+            self._stack.setCurrentIndex(8)
         elif isinstance(node, LoopNode):
             self._load_loop_form(node)
             self._stack.setCurrentIndex(4)
@@ -631,6 +688,7 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
+        from .script_runner import ScriptNode
 
         if isinstance(node, LLMNode):
             self._llm_form.show_output(True)
@@ -641,6 +699,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, AttentionNode):
             self._attention_form.show_output(True)
             self._attention_form.output_edit.appendPlainText(line)
+        elif isinstance(node, ScriptNode):
+            self._script_form.show_output(True)
+            self._script_form.output_edit.appendPlainText(line)
         elif isinstance(node, LoopNode):
             self._loop_form.show_output(True)
             self._loop_form.output_edit.appendPlainText(line)
@@ -663,6 +724,7 @@ class PropertiesPanel(QWidget):
         from .llm_node import LLMNode
         from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
+        from .script_runner import ScriptNode
 
         if isinstance(node, LLMNode):
             self._llm_form.clear_output()
@@ -673,6 +735,9 @@ class PropertiesPanel(QWidget):
         elif isinstance(node, AttentionNode):
             self._attention_form.output_edit.clear()
             self._attention_form.show_output(False)
+        elif isinstance(node, ScriptNode):
+            self._script_form.output_edit.clear()
+            self._script_form.show_output(False)
         elif isinstance(node, LoopNode):
             self._loop_form.output_edit.clear()
             self._loop_form.show_output(False)
@@ -840,6 +905,30 @@ class PropertiesPanel(QWidget):
 
         self._old_title = node.title
         self._attention_message_dirty = False
+
+    def _load_script_form(self, node) -> None:
+        form = self._script_form
+        form.title_edit.blockSignals(True)
+        form.script_path_edit.blockSignals(True)
+        form.auto_send_enter_checkbox.blockSignals(True)
+
+        form.title_edit.setText(node.title)
+        form.script_path_edit.setText(node.script_path)
+        form.auto_send_enter_checkbox.setChecked(bool(node.auto_send_enter))
+
+        if node.output_text:
+            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
+            form.show_output(True)
+        else:
+            form.output_edit.clear()
+            form.show_output(False)
+
+        form.title_edit.blockSignals(False)
+        form.script_path_edit.blockSignals(False)
+        form.auto_send_enter_checkbox.blockSignals(False)
+
+        self._old_title = node.title
+        self._script_path_dirty = False
 
     def refresh_if_current(self, node) -> None:
         """Reload form fields if this node is currently shown."""

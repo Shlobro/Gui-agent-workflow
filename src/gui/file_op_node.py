@@ -31,6 +31,7 @@ _OP_ACCENT = {
     "truncate_file": QColor("#7a6a1a"),
     "delete_file":   QColor("#7a2a2a"),
     "attention":     QColor("#8a4f14"),
+    "script_runner": QColor("#365f86"),
 }
 
 NODE_TYPE_DISPLAY_NAMES = {
@@ -38,6 +39,7 @@ NODE_TYPE_DISPLAY_NAMES = {
     "truncate_file": "Truncate File",
     "delete_file":   "Delete File",
     "attention":     "Attention",
+    "script_runner": "Run Script",
 }
 
 CORNER_RADIUS = 12
@@ -325,6 +327,11 @@ def _attention_factory(node_id=None, label_index=1):
     return AttentionNode(node_id=node_id, label_index=label_index)
 
 
+def _script_node_factory(node_id=None, label_index=1):
+    from .script_runner import ScriptNode
+    return ScriptNode(node_id=node_id, label_index=label_index)
+
+
 NODE_TYPE_MAP = {
     "create_file":   CreateFileNode,
     "truncate_file": TruncateFileNode,
@@ -334,4 +341,5 @@ NODE_TYPE_MAP = {
     "join":          _join_factory,
     "git_action":    _git_action_factory,
     "attention":     _attention_factory,
+    "script_runner": _script_node_factory,
 }

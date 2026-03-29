@@ -22,3 +22,6 @@ env/
 %TEMP%/
 /tmp/
 /Temp/
+
+# IDE settings
+.idea/

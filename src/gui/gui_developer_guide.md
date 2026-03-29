@@ -13,11 +13,12 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.
 - `git_action_node.py`: Compact node for git operations with action/message settings.
 - `_panel_forms.py`: Form widget classes used by `PropertiesPanel`.
-- `properties_panel.py`: Resizable side panel with `_OverviewForm` (page 0), `_LLMForm` (page 1), `_FileOpForm` (page 2), `_ConditionalForm` (page 3), `_LoopForm` (page 4), `_JoinForm` (page 5), `_GitActionForm` (page 6), and `_AttentionForm` (page 7). LLM form uses Prompt/Output tabs, where Prompt contains prompt edit + preview and Output turns stored `=== Call N ===` headers into separate nested `Call N` tabs with a slightly larger monospace font. Exposes `show_overview()` and `set_overview_text(...)` for no-selection state. Emits node edit signals and `text_zoom_changed`.
+- `properties_panel.py`: Resizable side panel with `_OverviewForm` (page 0), `_LLMForm` (page 1), `_FileOpForm` (page 2), `_ConditionalForm` (page 3), `_LoopForm` (page 4), `_JoinForm` (page 5), `_GitActionForm` (page 6), `_AttentionForm` (page 7), and `_ScriptForm` (page 8). LLM form uses Prompt/Output tabs, where Prompt contains prompt edit + preview and Output turns stored `=== Call N ===` headers into separate nested `Call N` tabs with a slightly larger monospace font. Script form stores a project-relative script path, exposes a browse action filtered to `.bat`, `.cmd`, and `.ps1`, and includes an option to send one Enter keypress automatically to stdin. Exposes `show_overview()` and `set_overview_text(...)` for no-selection state. Emits node edit signals and `text_zoom_changed`.
 - `workflow_io.py`: Pure serialization and validation helpers.
 - `conditional_node.py`: `ConditionalNode` and condition registry metadata.
 - `loop_node.py`: `LoopNode` with loop/done output ports.
 - `control_flow/join_node.py`: `JoinNode`, a barrier node that waits for a configured number of arrivals before releasing once.
+- `script_runner/`: Script execution node package with `ScriptNode`.
 - `connection_item.py`: Directed edge item carrying `source_port`, optional manual bend vertices, and connection-segment/handle hit targets for vertex editing.
 - `undo_commands.py`: `QUndoCommand` implementations for graph mutations.
 - `project_chooser.py`: Startup dialog for selecting/persisting project folders.
@@ -33,7 +34,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
   - Node counts by type
   - Invalid node count and titles
   - Active prompt injection payload (prepend/append/one-off)
-- Before any run, reachable nodes are validated with node-type rules (`LLMNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, `LoopNode`, `JoinNode`, `GitActionNode`).
+- Before any run, reachable nodes are validated with node-type rules (`LLMNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, `LoopNode`, `JoinNode`, `GitActionNode`, `ScriptNode`).
 - The same validation rules drive live node highlighting: invalid nodes get a red border until required fields are valid.
 - Prompt injection preview in selected LLM forms stays aligned with current preview/run context.
 - `JoinNode` is a barrier: it waits for `wait_for_count` arrivals from the same parallel split group before it releases one downstream continuation.

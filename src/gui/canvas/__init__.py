@@ -19,6 +19,7 @@ from src.gui.file_op_node import AttentionNode, FileOpNode
 from src.gui.conditional_node import ConditionalNode
 from src.gui.control_flow.join_node import JoinNode
 from src.gui.loop_node import LoopNode
+from src.gui.script_runner import ScriptNode
 from src.gui.undo_commands import (
     AddNodeCommand, RemoveNodeCommand,
     AddConnectionCommand, RemoveConnectionCommand,
@@ -31,6 +32,7 @@ from src.gui.undo_commands import (
 from src.gui.workflow_io import get_provider_for_model
 from src.gui.canvas.execution import _ExecutionMixin
 from src.gui.canvas.io import _IOMixin
+from src.gui.canvas.subprocess_execution import _SubprocessExecutionMixin
 
 GraphNode = WorkflowNode
 SourceNode = Union[StartNode, WorkflowNode]
@@ -47,7 +49,7 @@ class _ExecutionSignals(QObject):
     run_finished = Signal()
 
 
-class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
+class WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _IOMixin, QGraphicsView):
     status_update = Signal(str)
     selection_changed = Signal()
     run_state_changed = Signal(bool)
@@ -351,6 +353,28 @@ class WorkflowCanvas(_ExecutionMixin, _IOMixin, QGraphicsView):
         node = self._nodes[snapshot["id"]]
         if not isinstance(node, GitActionNode):
             raise RuntimeError("Expected a GitActionNode after add command.")
+        return node
+
+    def add_script_node(self) -> ScriptNode:
+        """Add a script runner node for .bat, .cmd, or .ps1 files."""
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "script_runner",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 32,
+            "name": f"Run Script {label_index}",
+            "script_path": "",
+            "auto_send_enter": False,
+        }
+        cmd = AddNodeCommand(self, snapshot, label_index)
+        self._undo_stack.push(cmd)
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, ScriptNode):
+            raise RuntimeError("Expected a ScriptNode after add command.")
         return node
 
     def add_conditional_node(self) -> ConditionalNode:

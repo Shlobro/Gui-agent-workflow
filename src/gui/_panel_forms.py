@@ -4,11 +4,14 @@ import re
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QCheckBox,
     QComboBox,
     QFrame,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
     QSizePolicy,
     QSplitter,
     QTabWidget,
@@ -743,6 +746,76 @@ class _AttentionForm(QWidget):
         self.output_edit.setMinimumHeight(60)
         out_layout.addWidget(self.output_edit)
         layout.addWidget(self._output_frame)
+
+    def show_output(self, visible: bool):
+        self._output_frame.setVisible(visible)
+
+
+class _ScriptForm(QWidget):
+    """Form widget for editing a ScriptNode's properties."""
+
+    browse_requested = Signal()
+    auto_send_enter_changed = Signal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(6)
+
+        type_label = QLabel("SCRIPT")
+        type_label.setObjectName("section_label")
+        layout.addWidget(type_label)
+
+        layout.addSpacing(4)
+
+        name_label = QLabel("Name")
+        layout.addWidget(name_label)
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Node name...")
+        layout.addWidget(self.title_edit)
+
+        layout.addSpacing(4)
+
+        path_label = QLabel("Script Path")
+        layout.addWidget(path_label)
+
+        path_row = QHBoxLayout()
+        path_row.setContentsMargins(0, 0, 0, 0)
+        path_row.setSpacing(6)
+        self.script_path_edit = QLineEdit()
+        self.script_path_edit.setPlaceholderText(r"e.g. scripts\build.ps1")
+        path_row.addWidget(self.script_path_edit, stretch=1)
+        self.browse_button = QPushButton("Browse...")
+        path_row.addWidget(self.browse_button)
+        layout.addLayout(path_row)
+
+        note = QLabel("Supported: .bat, .cmd, .ps1 inside the selected project folder.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        layout.addSpacing(4)
+
+        self.auto_send_enter_checkbox = QCheckBox("Send Enter automatically to stdin")
+        layout.addWidget(self.auto_send_enter_checkbox)
+
+        self._output_frame = QFrame()
+        self._output_frame.setVisible(False)
+        out_layout = QVBoxLayout(self._output_frame)
+        out_layout.setContentsMargins(0, 0, 0, 0)
+        out_layout.setSpacing(4)
+        self.output_label = QLabel("Output")
+        out_layout.addWidget(self.output_label)
+        self.output_edit = QPlainTextEdit()
+        self.output_edit.setReadOnly(True)
+        self.output_edit.setMinimumHeight(60)
+        out_layout.addWidget(self.output_edit)
+        layout.addWidget(self._output_frame)
+
+        layout.addStretch(1)
+        self.browse_button.clicked.connect(self.browse_requested.emit)
+        self.auto_send_enter_checkbox.toggled.connect(self.auto_send_enter_changed)
 
     def show_output(self, visible: bool):
         self._output_frame.setVisible(visible)

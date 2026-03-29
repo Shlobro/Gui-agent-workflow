@@ -75,11 +75,15 @@ def parse_workflow_data(data: dict) -> dict:
         # (0, false, [], null) are caught rather than silently collapsed to "".
         for str_field in ("name", "model", "prompt", "filename", "condition_type",
                           "git_action", "msg_source", "commit_msg", "commit_msg_file",
-                          "message"):
+                          "message", "script_path"):
             if str_field in b_data and not isinstance(b_data[str_field], str):
                 raise ValueError(
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
                 )
+        if "auto_send_enter" in b_data and not isinstance(b_data["auto_send_enter"], bool):
+            raise ValueError(
+                f"Node record at index {idx_in_list} has non-boolean 'auto_send_enter'."
+            )
 
         # For loop nodes, validate loop_count is a positive integer.
         if node_type == "loop":
@@ -122,6 +126,14 @@ def parse_workflow_data(data: dict) -> dict:
                 raise ValueError(
                     f"Node record at index {idx_in_list} has unknown condition_type "
                     f"'{ct}'. Known types: {list(CONDITION_REGISTRY)}."
+                )
+
+        if node_type == "script_runner":
+            script_path = b_data.get("script_path", "")
+            if script_path and not script_path.lower().endswith((".bat", ".cmd", ".ps1")):
+                raise ValueError(
+                    f"Node record at index {idx_in_list} has invalid script_path "
+                    f"'{script_path}'. Script nodes support .bat, .cmd, and .ps1 files."
                 )
 
         node_cls = NODE_TYPE_MAP.get(node_type, LLMNode)
@@ -183,6 +195,9 @@ def parse_workflow_data(data: dict) -> dict:
         elif src_node_type == "git_action":
             if source_port != "output":
                 continue  # git_action nodes only have "output" port; drop
+        elif src_node_type == "script_runner":
+            if source_port != "output":
+                continue  # script nodes only have "output" port; drop
         else:
             if source_port != "output":
                 continue  # other nodes only have "output" port; drop
