@@ -164,8 +164,7 @@ class ProjectChooserDialog(QDialog):
         folder = QFileDialog.getExistingDirectory(
             self, "Choose Project Folder", "",
             QFileDialog.Option.ShowDirsOnly
-            | QFileDialog.Option.DontResolveSymlinks
-            | QFileDialog.Option.DontUseNativeDialog,
+            | QFileDialog.Option.DontResolveSymlinks,
         )
         if folder:
             self._chosen = folder

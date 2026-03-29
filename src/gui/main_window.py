@@ -642,7 +642,6 @@ class MainWindow(QMainWindow):
             "Select Script",
             working_directory,
             SCRIPT_FILE_FILTER,
-            options=QFileDialog.Option.DontUseNativeDialog,
         )
         if not selected_path:
             return
@@ -905,7 +904,6 @@ class MainWindow(QMainWindow):
             "Save Workflow",
             "",
             "JSON Files (*.json)",
-            options=QFileDialog.Option.DontUseNativeDialog,
         )
         if not path:
             return
@@ -923,9 +921,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Workflow",
-            os.getcwd(),
+            self.canvas._working_directory or os.getcwd(),
             "JSON Files (*.json)",
-            options=QFileDialog.Option.DontUseNativeDialog,
         )
         if not path:
             return
