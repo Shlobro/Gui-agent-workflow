@@ -16,11 +16,22 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
-from .connection_item import ConnectionItem
 from .control_flow.join_node import JoinNode
 from .dialogs.prompt_injection_dialog import (
     PromptInjectionRunDialog,
     PromptTemplateManagerDialog,
+)
+from .llm_sessions.main_window_handlers import (
+    handle_panel_model_changed,
+    handle_panel_resume_named_session_changed,
+    handle_panel_save_session_changed,
+    handle_panel_save_session_name_committed,
+    refresh_llm_panel_for_node,
+)
+from .llm_sessions.overview import (
+    refresh_panel_overview,
+    selected_connections,
+    selected_nodes,
 )
 from .file_op_node import AttentionNode, FileOpNode
 from .git_action_node import GitActionNode
@@ -29,6 +40,7 @@ from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 from .properties_panel import DEFAULT_PANEL_WIDTH, DEFAULT_TEXT_ZOOM, PropertiesPanel
 from .script_runner.script_node import SCRIPT_FILE_FILTER, ScriptNode
+from .workflow_io import get_provider_for_model
 from src.llm.prompt_injection import (
     PromptInjectionRunOptions,
     PromptInjectionStore,
@@ -59,6 +71,7 @@ class MainWindow(QMainWindow):
         self._usage_limit_resume_timer: QTimer | None = None
         self._usage_limit_resume_node_id: str | None = None
         self._usage_limit_resume_target: QDateTime | None = None
+        self._loaded_workflow_resume_choice_pending: bool = False
 
         self.canvas = WorkflowCanvas()
         initial_options = self._effective_prompt_injection_options()
@@ -96,6 +109,14 @@ class MainWindow(QMainWindow):
 
         self._panel.title_committed.connect(self._on_panel_title_committed)
         self._panel.model_changed.connect(self._on_panel_model_changed)
+        self._panel.resume_session_changed.connect(self._on_panel_resume_session_changed)
+        self._panel.save_session_changed.connect(self._on_panel_save_session_changed)
+        self._panel.save_session_name_committed.connect(
+            self._on_panel_save_session_name_committed
+        )
+        self._panel.resume_named_session_changed.connect(
+            self._on_panel_resume_named_session_changed
+        )
         self._panel.prompt_committed.connect(self._on_panel_prompt_committed)
         self._panel.filename_committed.connect(self._on_panel_filename_committed)
         self._panel.attention_message_committed.connect(self._on_panel_attention_message_committed)
@@ -494,66 +515,20 @@ class MainWindow(QMainWindow):
     def _on_status(self, msg: str):
         self._status_bar.showMessage(msg)
 
-    def _selected_nodes(self) -> list:
-        return [
-            item
-            for item in self.canvas._scene.selectedItems()
-            if isinstance(item, (LLMNode, AttentionNode, FileOpNode, ConditionalNode, LoopNode, JoinNode, GitActionNode, ScriptNode))
-            and not getattr(item, "is_start", False)
-        ]
-
-    def _selected_connections(self) -> list[ConnectionItem]:
-        return [
-            item
-            for item in self.canvas._scene.selectedItems()
-            if isinstance(item, ConnectionItem)
-        ]
-
-    @staticmethod
-    def _connection_endpoint_name(node) -> str:
-        if getattr(node, "is_start", False):
-            return "Start"
-        return getattr(node, "title", getattr(node, "node_id", "(unknown)"))
-
-    def _set_connection_overview(self, conn: ConnectionItem) -> None:
-        source_name = self._connection_endpoint_name(conn.source_node)
-        target_name = self._connection_endpoint_name(conn.target_node)
-        source_id = getattr(conn.source_node, "node_id", "(unknown)")
-        target_id = getattr(conn.target_node, "node_id", "(unknown)")
-        source_port = getattr(conn, "source_port", "output")
-        vertex_count = len(conn.editable_points())
-        lines = [
-            "Selected Arrow",
-            "",
-            "Endpoints",
-            f"- From: {source_name}",
-            f"- To: {target_name}",
-            "",
-            "Connection Details",
-            f"- Source node id: {source_id}",
-            f"- Target node id: {target_id}",
-            f"- Source port: {source_port}",
-            f"- Bend points: {vertex_count}",
-            "",
-            "Editing",
-            "- Double-click line segment: add bend point",
-            "- Drag bend handle: move bend point",
-            "- Shift+click bend handle: remove bend point",
-            "- Delete: delete selected arrow",
-            "- Ctrl+Z / Ctrl+Y: undo / redo",
-        ]
-        self._panel.set_overview_text("\n".join(lines))
+    def _refresh_llm_panel_for_node(self, node) -> None:
+        refresh_llm_panel_for_node(self, node)
 
     def _on_selection_changed(self):
-        selected_nodes = self._selected_nodes()
-        selected_connections = self._selected_connections()
+        node_items = selected_nodes(self)
+        connection_items = selected_connections(self)
 
-        if len(selected_nodes) == 1 and not selected_connections:
-            self._panel.show_for_node(selected_nodes[0])
+        if len(node_items) == 1 and not connection_items:
+            self._refresh_llm_panel_for_node(node_items[0])
+            self._panel.show_for_node(node_items[0])
         else:
             self._panel.show_overview()
         if self._run_from_here_action is not None:
-            self._run_from_here_action.setEnabled(len(selected_nodes) == 1 and not selected_connections)
+            self._run_from_here_action.setEnabled(len(node_items) == 1 and not connection_items)
         self._refresh_panel_overview()
 
     def _on_panel_title_committed(self, node_id: str, old_title: str, new_title: str):
@@ -563,10 +538,33 @@ class MainWindow(QMainWindow):
         self.canvas._on_title_editing_finished(node_id, new_title)
 
     def _on_panel_model_changed(self, node_id: str, old_model_id: str, new_model_id: str):
+        handle_panel_model_changed(self, node_id, old_model_id, new_model_id)
+
+    def _on_panel_resume_session_changed(self, node_id: str, checked: bool):
         node = self.canvas._nodes.get(node_id)
-        if node is None:
+        if node is None or not isinstance(node, LLMNode):
             return
-        self.canvas._on_model_changed(node_id, old_model_id, new_model_id)
+        provider = get_provider_for_model(node.model_id or "")
+        normalized_checked = bool(
+            checked and provider is not None and provider.supports_session_resume(node.model_id)
+        )
+        self.canvas._on_resume_session_changed(
+            node_id,
+            node.resume_session_enabled,
+            normalized_checked,
+        )
+        self._refresh_llm_panel_for_node(node)
+        self._panel.refresh_if_current(node)
+        self._refresh_panel_overview()
+
+    def _on_panel_save_session_changed(self, node_id: str, checked: bool):
+        handle_panel_save_session_changed(self, node_id, checked)
+
+    def _on_panel_save_session_name_committed(self, node_id: str, text: str):
+        handle_panel_save_session_name_committed(self, node_id, text)
+
+    def _on_panel_resume_named_session_changed(self, node_id: str, session_name: str):
+        handle_panel_resume_named_session_changed(self, node_id, session_name)
 
     def _on_panel_prompt_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
@@ -666,16 +664,22 @@ class MainWindow(QMainWindow):
 
     def _run_all(self):
         self._panel.commit_pending_edits()
+        if not self._confirm_loaded_workflow_resume_choice():
+            return
         self._apply_prompt_injections_for_run()
         self.canvas.run_all()
 
     def _run_selected_only(self):
         self._panel.commit_pending_edits()
+        if not self._confirm_loaded_workflow_resume_choice():
+            return
         self._apply_prompt_injections_for_run()
         self.canvas.run_selected_only()
 
     def _run_from_here(self):
         self._panel.commit_pending_edits()
+        if not self._confirm_loaded_workflow_resume_choice():
+            return
         self._apply_prompt_injections_for_run()
         self.canvas.run_from_here()
 
@@ -789,113 +793,7 @@ class MainWindow(QMainWindow):
         self._refresh_panel_overview()
 
     def _refresh_panel_overview(self) -> None:
-        if not hasattr(self, "_panel"):
-            return
-        selected_nodes = self._selected_nodes()
-        selected_connections = self._selected_connections()
-        if len(selected_connections) == 1 and not selected_nodes:
-            self._set_connection_overview(selected_connections[0])
-            return
-        nodes = list(self.canvas._nodes.values())
-        self.canvas.refresh_node_validation_state()
-
-        llm_count = 0
-        file_op_count = 0
-        conditional_count = 0
-        loop_count = 0
-        join_count = 0
-        attention_count = 0
-        git_action_count = 0
-        script_count = 0
-        invalid_nodes: list[str] = []
-        for node in nodes:
-            if getattr(node, "is_invalid", False):
-                invalid_nodes.append(getattr(node, "title", node.node_id))
-            if isinstance(node, AttentionNode):
-                attention_count += 1
-            elif isinstance(node, ConditionalNode):
-                conditional_count += 1
-            elif isinstance(node, LoopNode):
-                loop_count += 1
-            elif isinstance(node, JoinNode):
-                join_count += 1
-            elif isinstance(node, GitActionNode):
-                git_action_count += 1
-            elif isinstance(node, ScriptNode):
-                script_count += 1
-            elif isinstance(node, FileOpNode):
-                file_op_count += 1
-            elif isinstance(node, LLMNode):
-                llm_count += 1
-
-        selected_count = len(selected_nodes)
-        selected_connection_count = len(selected_connections)
-
-        options = self._effective_preview_prompt_injection_options()
-        prepend_template_contents, append_template_contents, one_off_text, one_off_placement = (
-            self._resolve_prompt_injection_payload(options)
-        )
-
-        lines = [
-            "Workflow Summary",
-            f"Working directory: {self.canvas._working_directory or '(not selected)'}",
-            f"Connections: {len(self.canvas._connections)}",
-            f"Selected nodes: {selected_count}",
-            f"Selected arrows: {selected_connection_count}",
-            "",
-            "Node Counts",
-            f"- Total: {len(nodes)}",
-            f"- LLM: {llm_count}",
-            f"- File Ops: {file_op_count}",
-            f"- Conditional: {conditional_count}",
-            f"- Attention: {attention_count}",
-            f"- Loop: {loop_count}",
-            f"- Join: {join_count}",
-            f"- Git Action: {git_action_count}",
-            f"- Script: {script_count}",
-            "",
-            f"Invalid Nodes: {len(invalid_nodes)}",
-        ]
-        if invalid_nodes:
-            for title in invalid_nodes[:10]:
-                lines.append(f"- {title}")
-            if len(invalid_nodes) > 10:
-                lines.append(f"- ... and {len(invalid_nodes) - 10} more")
-        else:
-            lines.append("- None")
-
-        lines.extend(
-            [
-                "",
-                "Prompt Injection (applies to every LLM prompt)",
-                f"- Enabled templates: {len(options.enabled_template_ids)}",
-                f"- One-off placement: {one_off_placement}",
-                "",
-                f"Prepend blocks: {len(prepend_template_contents)}",
-            ]
-        )
-        if prepend_template_contents:
-            for idx, section in enumerate(prepend_template_contents, start=1):
-                lines.append(f"[prepend #{idx}]")
-                lines.append(section)
-                lines.append("")
-        else:
-            lines.append("(none)")
-            lines.append("")
-
-        lines.append(f"Append blocks: {len(append_template_contents)}")
-        if append_template_contents:
-            for idx, section in enumerate(append_template_contents, start=1):
-                lines.append(f"[append #{idx}]")
-                lines.append(section)
-                lines.append("")
-        else:
-            lines.append("(none)")
-            lines.append("")
-
-        lines.append("One-off block:")
-        lines.append(one_off_text.strip() if one_off_text.strip() else "(none)")
-        self._panel.set_overview_text("\n".join(lines))
+        refresh_panel_overview(self)
 
     def _save(self):
         self._panel.commit_pending_edits()
@@ -927,10 +825,12 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
+            self._loaded_workflow_resume_choice_pending = False
             with open(path, "r", encoding="utf-8") as file_obj:
                 data = json.load(file_obj)
             self._hide_panel(preserve_center=False)
             self.canvas.load_workflow_data(data)
+            self._loaded_workflow_resume_choice_pending = self.canvas.has_saved_llm_sessions()
             self._status_bar.showMessage(f"Loaded from {path}")
         except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
             QMessageBox.critical(self, "Load Error", str(exc))
@@ -945,4 +845,42 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             self._hide_panel(preserve_center=False)
             self.canvas.clear_canvas()
+            self._loaded_workflow_resume_choice_pending = False
             self._status_bar.showMessage("Canvas cleared.")
+
+    def _confirm_loaded_workflow_resume_choice(self) -> bool:
+        if not self._loaded_workflow_resume_choice_pending:
+            return True
+        saved_count = self.canvas.total_saved_session_count()
+        if saved_count == 0:
+            self._loaded_workflow_resume_choice_pending = False
+            return True
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Saved LLM Sessions")
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setText(
+            f"This workflow has {saved_count} saved LLM session"
+            f"{'s' if saved_count != 1 else ''}."
+        )
+        dialog.setInformativeText(
+            "Would you like these nodes to resume from their saved sessions or start fresh?"
+        )
+        resume_button = dialog.addButton("Resume Saved Sessions", QMessageBox.ButtonRole.AcceptRole)
+        fresh_button = dialog.addButton("Start Fresh", QMessageBox.ButtonRole.DestructiveRole)
+        dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(resume_button)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked is resume_button:
+            self._loaded_workflow_resume_choice_pending = False
+            return True
+        if clicked is fresh_button:
+            self.canvas.clear_all_llm_sessions()
+            self._loaded_workflow_resume_choice_pending = False
+            current_node = getattr(self._panel, "_current_node", None)
+            if current_node is not None:
+                self._refresh_llm_panel_for_node(current_node)
+                self._panel.refresh_if_current(current_node)
+            self._refresh_panel_overview()
+            return True
+        return False

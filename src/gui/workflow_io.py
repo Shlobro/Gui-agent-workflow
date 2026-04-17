@@ -12,6 +12,7 @@ from src.llm.base_provider import LLMProviderRegistry
 from .llm_node import LLMNode
 from .file_op_node import NODE_TYPE_MAP
 from .conditional_node import CONDITION_REGISTRY
+from .llm_sessions.session_state import build_named_sessions_payload, parse_named_sessions
 
 
 def get_provider_for_model(model_id: str):
@@ -75,7 +76,9 @@ def parse_workflow_data(data: dict) -> dict:
         # (0, false, [], null) are caught rather than silently collapsed to "".
         for str_field in ("name", "model", "prompt", "filename", "condition_type",
                           "git_action", "msg_source", "commit_msg", "commit_msg_file",
-                          "message", "script_path"):
+                          "message", "script_path", "save_session_name",
+                          "resume_named_session_name",
+                          "saved_session_id", "saved_session_provider"):
             if str_field in b_data and not isinstance(b_data[str_field], str):
                 raise ValueError(
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
@@ -83,6 +86,20 @@ def parse_workflow_data(data: dict) -> dict:
         if "auto_send_enter" in b_data and not isinstance(b_data["auto_send_enter"], bool):
             raise ValueError(
                 f"Node record at index {idx_in_list} has non-boolean 'auto_send_enter'."
+            )
+        if (
+            "resume_session_enabled" in b_data
+            and not isinstance(b_data["resume_session_enabled"], bool)
+        ):
+            raise ValueError(
+                f"Node record at index {idx_in_list} has non-boolean 'resume_session_enabled'."
+            )
+        if (
+            "save_session_enabled" in b_data
+            and not isinstance(b_data["save_session_enabled"], bool)
+        ):
+            raise ValueError(
+                f"Node record at index {idx_in_list} has non-boolean 'save_session_enabled'."
             )
 
         # For loop nodes, validate loop_count is a positive integer.
@@ -220,15 +237,20 @@ def parse_workflow_data(data: dict) -> dict:
                 conn_record["vertices"] = parsed_vertices
         normalized_connections.append(conn_record)
 
+    named_sessions = parse_named_sessions(data.get("named_sessions"))
+
     return {
         "node_counter": node_counter,
         "start_pos": normalized_start_pos,
         "nodes": normalized_nodes,
         "connections": normalized_connections,
+        "named_sessions": named_sessions,
     }
 
 
-def build_workflow_data(nodes, connections, node_counter: int, start_node) -> dict:
+def build_workflow_data(
+    nodes, connections, node_counter: int, start_node, named_sessions: dict[str, dict[str, str]]
+) -> dict:
     """Serialise the current canvas state to a JSON-serialisable dict."""
     sp = start_node.pos()
     return {
@@ -236,4 +258,5 @@ def build_workflow_data(nodes, connections, node_counter: int, start_node) -> di
         "connections": [c.to_dict() for c in connections],
         "node_counter": node_counter,
         "start_pos": [sp.x(), sp.y()],
+        "named_sessions": build_named_sessions_payload(named_sessions),
     }

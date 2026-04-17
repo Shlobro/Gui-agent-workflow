@@ -59,6 +59,56 @@ class _LLMForm(QWidget):
 
         layout.addSpacing(4)
 
+        self._resume_session_widget = QWidget()
+        resume_session_layout = QVBoxLayout(self._resume_session_widget)
+        resume_session_layout.setContentsMargins(0, 0, 0, 0)
+        resume_session_layout.setSpacing(4)
+
+        self.resume_session_checkbox = QCheckBox("Resume previous session")
+        self.resume_session_checkbox.setToolTip(
+            "Resume this node's previous Claude/Codex session on the next call."
+        )
+        resume_session_layout.addWidget(self.resume_session_checkbox)
+
+        self.resume_session_note = QLabel("")
+        self.resume_session_note.setWordWrap(True)
+        self.resume_session_note.setVisible(False)
+        resume_session_layout.addWidget(self.resume_session_note)
+
+        layout.addWidget(self._resume_session_widget)
+        layout.addSpacing(4)
+
+        self.named_session_controls = QWidget()
+        named_layout = QVBoxLayout(self.named_session_controls)
+        named_layout.setContentsMargins(0, 0, 0, 0)
+        named_layout.setSpacing(6)
+
+        self.save_session_checkbox = QCheckBox("Save session ID")
+        self.save_session_checkbox.setToolTip(
+            "Store this node's captured Claude/Codex session under a workflow-level name."
+        )
+        named_layout.addWidget(self.save_session_checkbox)
+
+        self.save_session_name_edit = QLineEdit()
+        self.save_session_name_edit.setPlaceholderText("Saved session name...")
+        named_layout.addWidget(self.save_session_name_edit)
+
+        resume_named_label = QLabel("Resume session ID")
+        named_layout.addWidget(resume_named_label)
+
+        self.resume_named_session_combo = QComboBox()
+        self.resume_named_session_combo.setPlaceholderText("")
+        named_layout.addWidget(self.resume_named_session_combo)
+
+        self.named_session_note = QLabel("")
+        self.named_session_note.setWordWrap(True)
+        self.named_session_note.setVisible(False)
+        named_layout.addWidget(self.named_session_note)
+
+        layout.addWidget(self.named_session_controls)
+
+        layout.addSpacing(4)
+
         self._tabs = QTabWidget()
         self._tabs.setTabPosition(QTabWidget.TabPosition.North)
         self._tabs.setDocumentMode(True)
@@ -137,6 +187,57 @@ class _LLMForm(QWidget):
         self._tabs.addTab(self._output_tab, "Output")
 
         self._call_editors: list[QPlainTextEdit] = []
+
+    def set_resume_session_state(self, checked: bool, enabled: bool, note: str = "") -> None:
+        self._resume_session_widget.setVisible(bool(enabled))
+        self.resume_session_checkbox.blockSignals(True)
+        self.resume_session_checkbox.setChecked(bool(checked))
+        self.resume_session_checkbox.blockSignals(False)
+        normalized_note = note.strip()
+        self.resume_session_note.setText(normalized_note)
+        self.resume_session_note.setVisible(bool(normalized_note))
+
+    def set_named_session_controls_visible(self, visible: bool) -> None:
+        self.named_session_controls.setVisible(bool(visible))
+
+    def set_named_session_state(
+        self,
+        *,
+        save_enabled: bool,
+        save_name: str,
+        resume_name: str,
+        options: list[tuple[str, str]],
+        note: str = "",
+    ) -> None:
+        self.save_session_checkbox.blockSignals(True)
+        self.save_session_name_edit.blockSignals(True)
+        self.resume_named_session_combo.blockSignals(True)
+
+        self.save_session_checkbox.setChecked(bool(save_enabled))
+        self.save_session_name_edit.setText(save_name)
+
+        self.resume_named_session_combo.clear()
+        for value, label in options:
+            self.resume_named_session_combo.addItem(label, userData=value)
+
+        target_index = -1
+        for index in range(self.resume_named_session_combo.count()):
+            if self.resume_named_session_combo.itemData(index) == resume_name:
+                target_index = index
+                break
+        self.resume_named_session_combo.setCurrentIndex(target_index)
+
+        self.save_session_checkbox.blockSignals(False)
+        self.save_session_name_edit.blockSignals(False)
+        self.resume_named_session_combo.blockSignals(False)
+
+        save_blocked = bool(resume_name)
+        self.save_session_checkbox.setEnabled(not save_blocked)
+        self.save_session_name_edit.setEnabled(bool(save_enabled) and not save_blocked)
+
+        normalized_note = note.strip()
+        self.named_session_note.setText(normalized_note)
+        self.named_session_note.setVisible(bool(normalized_note))
 
     def show_output(self, visible: bool):
         _ = visible

@@ -1,7 +1,6 @@
 """LLMNode and WorkflowNode base — draggable nodes on the workflow canvas."""
 
 import math
-import uuid
 import weakref
 from typing import List, Optional, TYPE_CHECKING
 
@@ -285,6 +284,12 @@ class LLMNode(WorkflowNode):
         self._title: str = f"LLM {label_index}"
         self._model_id: Optional[str] = None
         self._prompt_text: str = ""
+        self.resume_session_enabled: bool = False
+        self.save_session_enabled: bool = False
+        self.save_session_name: str = ""
+        self.resume_named_session_name: str = ""
+        self.saved_session_id: str = ""
+        self.saved_session_provider: str = ""
         self._height = _COMPACT_NODE_HEIGHT
 
     # ------------------------------------------------------------------
@@ -465,6 +470,12 @@ class LLMNode(WorkflowNode):
             "name": self._title,
             "model": self._model_id or "",
             "prompt": self._prompt_text,
+            "resume_session_enabled": self.resume_session_enabled,
+            "save_session_enabled": self.save_session_enabled,
+            "save_session_name": self.save_session_name,
+            "resume_named_session_name": self.resume_named_session_name,
+            "saved_session_id": self.saved_session_id,
+            "saved_session_provider": self.saved_session_provider,
         }
 
     def from_dict(self, data: dict) -> None:
@@ -475,6 +486,22 @@ class LLMNode(WorkflowNode):
         if data.get("model"):
             self._model_id = data["model"]
         self._prompt_text = data.get("prompt", "")
+        self.resume_session_enabled = bool(data.get("resume_session_enabled", False))
+        self.save_session_enabled = bool(data.get("save_session_enabled", False))
+        save_session_name = data.get("save_session_name", "")
+        self.save_session_name = (
+            save_session_name if isinstance(save_session_name, str) else ""
+        )
+        resume_named_session_name = data.get("resume_named_session_name", "")
+        self.resume_named_session_name = (
+            resume_named_session_name if isinstance(resume_named_session_name, str) else ""
+        )
+        saved_session_id = data.get("saved_session_id", "")
+        self.saved_session_id = saved_session_id if isinstance(saved_session_id, str) else ""
+        saved_session_provider = data.get("saved_session_provider", "")
+        self.saved_session_provider = (
+            saved_session_provider if isinstance(saved_session_provider, str) else ""
+        )
 
 
 # ---------------------------------------------------------------------------

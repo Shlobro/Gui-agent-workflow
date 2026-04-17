@@ -9,6 +9,7 @@ from PySide6.QtCore import QPointF
 from PySide6.QtGui import QUndoCommand
 
 from .file_op_node import NODE_TYPE_DISPLAY_NAMES
+from .llm_sessions.session_state import clone_named_sessions
 
 if TYPE_CHECKING:
     from .canvas import WorkflowCanvas
@@ -43,6 +44,26 @@ def _normalize_vertices(vertices) -> List[tuple[float, float]]:
     return normalized
 
 
+def _apply_llm_session_state(
+    node: "LLMNode",
+    *,
+    model_id: str,
+    resume_session_enabled: bool,
+    save_session_enabled: bool,
+    save_session_name: str,
+    resume_named_session_name: str,
+    saved_session_id: str,
+    saved_session_provider: str,
+) -> None:
+    node.model_id = model_id
+    node.resume_session_enabled = bool(resume_session_enabled)
+    node.save_session_enabled = bool(save_session_enabled)
+    node.save_session_name = save_session_name
+    node.resume_named_session_name = resume_named_session_name
+    node.saved_session_id = saved_session_id
+    node.saved_session_provider = saved_session_provider
+
+
 class AddNodeCommand(QUndoCommand):
     """Push when a new workflow node is created."""
 
@@ -67,6 +88,7 @@ class RemoveNodeCommand(QUndoCommand):
         self._snapshot = node.to_dict()
         super().__init__(f"Delete {_command_node_label(self._snapshot)}")
         self._label_index = node.label_index
+        self._named_session_snapshots = canvas.named_sessions_owned_by(node.node_id)
         # Capture connected edges before node is removed (includes source_port)
         self._conn_snapshots: List[dict] = [
             conn.to_dict() for conn in node.connections()
@@ -79,6 +101,8 @@ class RemoveNodeCommand(QUndoCommand):
         node = self._canvas._undo_add_node(self._snapshot, self._label_index)
         if node is None:
             return
+        if self._named_session_snapshots:
+            self._canvas.restore_named_sessions(self._named_session_snapshots)
         for c in self._conn_snapshots:
             src_id, tgt_id = c.get("from"), c.get("to")
             source_port = c.get("source_port", "output")
@@ -97,7 +121,10 @@ class RemoveNodeCommand(QUndoCommand):
                     tgt,
                     source_port,
                     vertices=vertices,
+                    reconcile=False,
                 )
+        self._canvas.reconcile_named_sessions()
+        self._canvas.notify_node_changed(node.node_id)
 
 
 class AddConnectionCommand(QUndoCommand):
@@ -283,38 +310,123 @@ class TitleChangeCommand(QUndoCommand):
 class ModelChangeCommand(QUndoCommand):
     """Push when the user selects a different model."""
 
-    def __init__(self, canvas: "WorkflowCanvas", node_id: str,
-                 old_model_id: str, new_model_id: str):
+    def __init__(
+        self,
+        canvas: "WorkflowCanvas",
+        node_id: str,
+        old_state: Dict[str, object],
+        new_state: Dict[str, object],
+        old_named_sessions: Dict[str, Dict[str, str]],
+        new_named_sessions: Dict[str, Dict[str, str]],
+    ):
         super().__init__("Change Model")
         self._canvas = canvas
         self._node_id = node_id
-        self._old_model_id = old_model_id
-        self._new_model_id = new_model_id
+        self._old_state = dict(old_state)
+        self._new_state = dict(new_state)
+        self._old_named_sessions = clone_named_sessions(old_named_sessions)
+        self._new_named_sessions = clone_named_sessions(new_named_sessions)
 
     def _node(self) -> Optional["LLMNode"]:
         from .llm_node import LLMNode
         node = self._canvas._nodes.get(self._node_id)
         return node if isinstance(node, LLMNode) else None
 
-    def redo(self):
+    def _apply(self, node_state: Dict[str, object], named_sessions: Dict[str, Dict[str, str]]) -> None:
         node = self._node()
         if node:
             self._canvas._undo_in_progress = True
             try:
-                node.model_id = self._new_model_id
+                _apply_llm_session_state(
+                    node,
+                    model_id=str(node_state.get("model_id", "") or ""),
+                    resume_session_enabled=bool(node_state.get("resume_session_enabled", False)),
+                    save_session_enabled=bool(node_state.get("save_session_enabled", False)),
+                    save_session_name=str(node_state.get("save_session_name", "") or ""),
+                    resume_named_session_name=str(
+                        node_state.get("resume_named_session_name", "") or ""
+                    ),
+                    saved_session_id=str(node_state.get("saved_session_id", "") or ""),
+                    saved_session_provider=str(
+                        node_state.get("saved_session_provider", "") or ""
+                    ),
+                )
+                self._canvas._named_sessions = clone_named_sessions(named_sessions)
+                self._canvas.reconcile_named_sessions()
             finally:
                 self._canvas._undo_in_progress = False
             self._canvas.notify_node_changed(self._node_id)
 
+    def redo(self):
+        self._apply(self._new_state, self._new_named_sessions)
+
     def undo(self):
+        self._apply(self._old_state, self._old_named_sessions)
+
+
+class NamedSessionConfigCommand(QUndoCommand):
+    """Push when workflow-level named-session settings change for a node."""
+
+    def __init__(
+        self,
+        canvas: "WorkflowCanvas",
+        node_id: str,
+        text: str,
+        old_state: Dict[str, object],
+        new_state: Dict[str, object],
+        old_named_sessions: Dict[str, Dict[str, str]],
+        new_named_sessions: Dict[str, Dict[str, str]],
+    ):
+        super().__init__(text)
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_state = dict(old_state)
+        self._new_state = dict(new_state)
+        self._old_named_sessions = clone_named_sessions(old_named_sessions)
+        self._new_named_sessions = clone_named_sessions(new_named_sessions)
+
+    def redo(self):
+        self._canvas.apply_named_session_update(
+            self._node_id, self._new_state, self._new_named_sessions
+        )
+
+    def undo(self):
+        self._canvas.apply_named_session_update(
+            self._node_id, self._old_state, self._old_named_sessions
+        )
+
+
+class ResumeSessionToggleCommand(QUndoCommand):
+    """Push when the user toggles LLM session resume for a node."""
+
+    def __init__(self, canvas: "WorkflowCanvas", node_id: str, old_checked: bool, new_checked: bool):
+        super().__init__("Toggle Resume Session")
+        self._canvas = canvas
+        self._node_id = node_id
+        self._old_checked = old_checked
+        self._new_checked = new_checked
+
+    def _node(self) -> Optional["LLMNode"]:
+        from .llm_node import LLMNode
+        node = self._canvas._nodes.get(self._node_id)
+        return node if isinstance(node, LLMNode) else None
+
+    def _apply(self, checked: bool) -> None:
         node = self._node()
-        if node:
-            self._canvas._undo_in_progress = True
-            try:
-                node.model_id = self._old_model_id
-            finally:
-                self._canvas._undo_in_progress = False
-            self._canvas.notify_node_changed(self._node_id)
+        if node is None:
+            return
+        self._canvas._undo_in_progress = True
+        try:
+            node.resume_session_enabled = bool(checked)
+        finally:
+            self._canvas._undo_in_progress = False
+        self._canvas.notify_node_changed(self._node_id)
+
+    def redo(self):
+        self._apply(self._new_checked)
+
+    def undo(self):
+        self._apply(self._old_checked)
 
 
 class FileOpTypeChangeCommand(QUndoCommand):
@@ -536,6 +648,13 @@ class PasteCommand(QUndoCommand):
             snap["x"] = data.get("x", 0) + offset
             snap["y"] = data.get("y", 0) + offset
             snap["label_index"] = canvas._node_counter
+            if snap.get("node_type", "llm") == "llm":
+                snap["resume_session_enabled"] = bool(snap.get("resume_session_enabled", False))
+                snap["save_session_enabled"] = False
+                snap["save_session_name"] = ""
+                snap["resume_named_session_name"] = ""
+                snap["saved_session_id"] = ""
+                snap["saved_session_provider"] = ""
             self._node_snapshots.append(snap)
             self._label_indices.append(canvas._node_counter)
 

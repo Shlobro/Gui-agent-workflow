@@ -6,7 +6,7 @@ from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import NODE_TYPE_MAP
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.undo_commands import PasteCommand
-from src.gui.workflow_io import parse_workflow_data, build_workflow_data
+from src.gui.workflow_io import parse_workflow_data, build_workflow_data, get_provider_for_model
 
 if TYPE_CHECKING:
     from src.gui.canvas import WorkflowCanvas
@@ -39,6 +39,15 @@ class _IOMixin:
             if node_id:
                 node.node_id = node_id
             node.label_index = label_index
+        if isinstance(node, LLMNode):
+            provider = get_provider_for_model(node.model_id or "")
+            if provider is None or not provider.supports_session_resume(node.model_id):
+                node.resume_session_enabled = False
+                node.save_session_enabled = False
+                node.save_session_name = ""
+                node.resume_named_session_name = ""
+                node.saved_session_id = ""
+                node.saved_session_provider = ""
 
         self._scene.addItem(node)
         self._nodes[node.node_id] = node
@@ -58,6 +67,20 @@ class _IOMixin:
                     worker.cancel()
                 self._exec_node.pop(exec_id, None)
                 self._retired_exec_ids.add(exec_id)
+        serial_keys_to_remove = {f"node:{node_id}"}
+        for session_name, record in self._named_sessions.items():
+            if record.get("owner_node_id") == node_id:
+                serial_keys_to_remove.add(f"named:{session_name}")
+        for serial_key in serial_keys_to_remove:
+            for _queued_key, exec_id, _worker, _run_id, _lt, _lp, _jt in self._llm_serial_wait_queues.get(serial_key, []):
+                self._active_workers.pop(exec_id, None)
+                self._exec_node.pop(exec_id, None)
+                self._exec_lineage.pop(exec_id, None)
+                self._exec_streamed_output.pop(exec_id, None)
+                self._current_run_exec_ids.discard(exec_id)
+                self._llm_serial_waiting_exec_ids.discard(exec_id)
+            self._llm_serial_wait_queues.pop(serial_key, None)
+            self._llm_serial_resume_nodes.discard(serial_key)
         if node.status == "running":
             node.set_status("idle")
         for conn in list(node.connections()):
@@ -65,6 +88,10 @@ class _IOMixin:
         self._scene.removeItem(node)
         self._nodes.pop(node_id, None)
         self._title_committed.pop(node_id, None)
+        for session_name, record in list(self._named_sessions.items()):
+            if record.get("owner_node_id") == node_id:
+                self._named_sessions.pop(session_name, None)
+        self.reconcile_named_sessions()
         self.refresh_node_validation_state()
 
     def _undo_add_connection(
@@ -73,19 +100,26 @@ class _IOMixin:
         tgt: GraphNode,
         source_port: str = "output",
         vertices: Optional[list[tuple[float, float]]] = None,
+        reconcile: bool = True,
     ) -> ConnectionItem:
         conn = ConnectionItem(src, tgt, source_port=source_port)
         if vertices:
             conn.set_manual_points_from_tuples(vertices)
         self._scene.addItem(conn)
         self._connections.append(conn)
+        if reconcile:
+            self.reconcile_named_sessions()
         return conn
 
-    def _undo_remove_connection_item(self: "WorkflowCanvas", conn: ConnectionItem):
+    def _undo_remove_connection_item(
+        self: "WorkflowCanvas", conn: ConnectionItem, reconcile: bool = True
+    ):
         conn.detach()
         self._scene.removeItem(conn)
         if conn in self._connections:
             self._connections.remove(conn)
+        if reconcile:
+            self.reconcile_named_sessions()
 
     def _find_connection(self: "WorkflowCanvas", src_id: str, tgt_id: str,
                          source_port: str = "output") -> Optional[ConnectionItem]:
@@ -142,6 +176,10 @@ class _IOMixin:
         self.refresh_node_validation_state()
         self._undo_stack.clear()
         self._title_committed.clear()
+        self._llm_serial_resume_nodes.clear()
+        self._llm_serial_waiting_exec_ids.clear()
+        self._llm_serial_wait_queues.clear()
+        self._named_sessions.clear()
 
     # ------------------------------------------------------------------
     # Workflow save / load
@@ -149,13 +187,18 @@ class _IOMixin:
 
     def get_workflow_data(self: "WorkflowCanvas") -> dict:
         return build_workflow_data(
-            self._nodes.values(), self._connections, self._node_counter, self._start_node
+            self._nodes.values(),
+            self._connections,
+            self._node_counter,
+            self._start_node,
+            self._named_sessions,
         )
 
     def load_workflow_data(self: "WorkflowCanvas", data: dict):
         parsed = parse_workflow_data(data)
         self.clear_canvas()
         self._node_counter = parsed["node_counter"]
+        self._named_sessions = parsed["named_sessions"]
 
         sp = parsed["start_pos"]
         if sp is not None:
@@ -170,6 +213,15 @@ class _IOMixin:
             else:
                 node = LLMNode(node_id=b_data.get("id"), label_index=idx)
                 node.from_dict(b_data)
+            if isinstance(node, LLMNode):
+                provider = get_provider_for_model(node.model_id or "")
+                if provider is None or not provider.supports_session_resume(node.model_id):
+                    node.resume_session_enabled = False
+                    node.save_session_enabled = False
+                    node.save_session_name = ""
+                    node.resume_named_session_name = ""
+                    node.saved_session_id = ""
+                    node.saved_session_provider = ""
             self._scene.addItem(node)
             self._nodes[node.node_id] = node
             self._title_committed[node.node_id] = node.title
@@ -182,8 +234,15 @@ class _IOMixin:
             src = self._start_node if src_id == "start" else self._nodes.get(src_id)
             tgt = self._nodes.get(tgt_id)
             if src and tgt:
-                self._undo_add_connection(src, tgt, source_port=source_port, vertices=vertices)
+                self._undo_add_connection(
+                    src,
+                    tgt,
+                    source_port=source_port,
+                    vertices=vertices,
+                    reconcile=False,
+                )
 
+        self.reconcile_named_sessions()
         self.refresh_node_validation_state()
         self._expand_scene_rect_to_fit_items()
         self._undo_stack.clear()

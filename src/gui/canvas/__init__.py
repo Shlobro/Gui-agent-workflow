@@ -25,6 +25,8 @@ from src.gui.undo_commands import (
     AddConnectionCommand, RemoveConnectionCommand,
     EditConnectionVerticesCommand,
     MoveNodeCommand, TitleChangeCommand, ModelChangeCommand,
+    NamedSessionConfigCommand,
+    ResumeSessionToggleCommand,
     FileOpTypeChangeCommand, ConditionTypeChangeCommand, JoinCountChangeCommand,
     LoopCountChangeCommand,
     GitActionTypeChangeCommand,
@@ -32,6 +34,7 @@ from src.gui.undo_commands import (
 from src.gui.workflow_io import get_provider_for_model
 from src.gui.canvas.execution import _ExecutionMixin
 from src.gui.canvas.io import _IOMixin
+from src.gui.canvas.session_state import _SessionStateMixin
 from src.gui.canvas.subprocess_execution import _SubprocessExecutionMixin
 
 GraphNode = WorkflowNode
@@ -49,7 +52,9 @@ class _ExecutionSignals(QObject):
     run_finished = Signal()
 
 
-class WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _IOMixin, QGraphicsView):
+class WorkflowCanvas(
+    _SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _IOMixin, QGraphicsView
+):
     status_update = Signal(str)
     selection_changed = Signal()
     run_state_changed = Signal(bool)
@@ -72,6 +77,7 @@ class WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _IOMixin, QGrap
         self._nodes: Dict[str, WorkflowNode] = {}
         self._connections: List[ConnectionItem] = []
         self._node_counter = 0
+        self._named_sessions: Dict[str, Dict[str, str]] = {}
 
         # Connection-drawing state
         self._drawing_connection = False
@@ -92,6 +98,9 @@ class WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _IOMixin, QGrap
         self._current_run_exec_ids: set = set()
         self._exec_streamed_output: Dict[int, bool] = {}
         self._llm_invocation_counts: Dict[str, int] = {}
+        self._llm_serial_resume_nodes: set[str] = set()
+        self._llm_serial_waiting_exec_ids: set[int] = set()
+        self._llm_serial_wait_queues: Dict[str, List[tuple]] = {}
         self._pending_child_triggers: int = 0
         self._seeding_roots: bool = False
         self._exec_counter: int = 0
@@ -238,6 +247,12 @@ class WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _IOMixin, QGrap
             "name": f"LLM {label_index}",
             "model": default_model_id,
             "prompt": "",
+            "resume_session_enabled": False,
+            "save_session_enabled": False,
+            "save_session_name": "",
+            "resume_named_session_name": "",
+            "saved_session_id": "",
+            "saved_session_provider": "",
         }
         cmd = AddNodeCommand(self, snapshot, label_index)
         self._undo_stack.push(cmd)
@@ -462,15 +477,72 @@ class WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _IOMixin, QGrap
             self._undo_stack.push(TitleChangeCommand(self, node_id, old_title, new_title))
             self._title_committed[node_id] = new_title
 
-    def _on_model_changed(self, node_id: str, old_model_id: str, new_model_id: str):
+    def _on_model_changed(
+        self,
+        node_id: str,
+        old_state: Dict[str, object],
+        new_state: Dict[str, object],
+        old_named_sessions: Dict[str, Dict[str, str]],
+        new_named_sessions: Dict[str, Dict[str, str]],
+    ):
         if self._undo_in_progress:
             return
         node = self._nodes.get(node_id)
         if node is None or getattr(node, "scene", lambda: None)() is None:
             return
-        if old_model_id == new_model_id:
+        if old_state.get("model_id") == new_state.get("model_id"):
             return
-        self._undo_stack.push(ModelChangeCommand(self, node_id, old_model_id, new_model_id))
+        self._undo_stack.push(
+            ModelChangeCommand(
+                self,
+                node_id,
+                old_state,
+                new_state,
+                old_named_sessions,
+                new_named_sessions,
+            )
+        )
+
+    def _on_named_session_config_changed(
+        self,
+        node_id: str,
+        *,
+        old_state: Dict[str, object],
+        new_state: Dict[str, object],
+        old_named_sessions: Dict[str, Dict[str, str]],
+        new_named_sessions: Dict[str, Dict[str, str]],
+        command_text: str,
+    ) -> None:
+        if self._undo_in_progress:
+            return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_state == new_state and old_named_sessions == new_named_sessions:
+            return
+        self._undo_stack.push(
+            NamedSessionConfigCommand(
+                self,
+                node_id,
+                command_text,
+                old_state,
+                new_state,
+                old_named_sessions,
+                new_named_sessions,
+            )
+        )
+
+    def _on_resume_session_changed(self, node_id: str, old_checked: bool, new_checked: bool):
+        if self._undo_in_progress:
+            return
+        node = self._nodes.get(node_id)
+        if node is None or getattr(node, "scene", lambda: None)() is None:
+            return
+        if old_checked == new_checked:
+            return
+        self._undo_stack.push(
+            ResumeSessionToggleCommand(self, node_id, old_checked, new_checked)
+        )
 
     def _on_loop_count_changed(self, node_id: str, old_count: int, new_count: int):
         if self._undo_in_progress:

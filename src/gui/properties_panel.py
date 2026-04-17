@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.llm.prompt_injection import compose_prompt
 from ._panel_forms import (
     _AttentionForm,
     _ConditionalForm,
@@ -29,6 +28,7 @@ from ._panel_forms import (
     _LoopForm,
     _ScriptForm,
 )
+from .llm_sessions.panel_helpers import load_llm_form, refresh_llm_prompt_preview
 
 DEFAULT_PANEL_WIDTH = 420
 MIN_PANEL_WIDTH = 300
@@ -170,6 +170,10 @@ class PropertiesPanel(QWidget):
 
     title_committed = Signal(str, str, str)
     model_changed = Signal(str, str, str)
+    resume_session_changed = Signal(str, bool)
+    save_session_changed = Signal(str, bool)
+    save_session_name_committed = Signal(str, str)
+    resume_named_session_changed = Signal(str, str)
     prompt_committed = Signal(str, str)
     filename_committed = Signal(str, str)
     attention_message_committed = Signal(str, str)
@@ -194,6 +198,7 @@ class PropertiesPanel(QWidget):
         self._current_node: Optional[object] = None
         self._old_title: str = ""
         self._prompt_dirty: bool = False
+        self._save_session_name_dirty: bool = False
         self._filename_dirty: bool = False
         self._cond_filename_dirty: bool = False
         self._attention_message_dirty: bool = False
@@ -207,6 +212,7 @@ class PropertiesPanel(QWidget):
         self._preview_append_templates: list[str] = []
         self._preview_one_off_text: str = ""
         self._preview_one_off_placement: str = "append"
+        self._llm_named_session_options: list[tuple[str, str]] = []
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -256,6 +262,16 @@ class PropertiesPanel(QWidget):
     def _wire_signals(self):
         self._llm_form.title_edit.editingFinished.connect(self._on_llm_title_committed)
         self._llm_form.model_selector.model_changed.connect(self._on_model_changed)
+        self._llm_form.resume_session_checkbox.toggled.connect(self._on_resume_session_toggled)
+        self._llm_form.save_session_checkbox.toggled.connect(self._on_save_session_toggled)
+        self._llm_form.save_session_name_edit.textChanged.connect(self._on_save_session_name_changed)
+        self._llm_form.save_session_name_edit.editingFinished.connect(
+            self._on_save_session_name_committed
+        )
+        self._llm_form.save_session_name_edit.installEventFilter(self)
+        self._llm_form.resume_named_session_combo.activated.connect(
+            self._on_resume_named_session_changed
+        )
         self._llm_form.prompt_edit.textChanged.connect(self._on_prompt_changed)
         self._llm_form.prompt_edit.installEventFilter(self)
 
@@ -313,6 +329,8 @@ class PropertiesPanel(QWidget):
         if event.type() == QEvent.Type.FocusOut:
             if obj is self._llm_form.prompt_edit and self._prompt_dirty:
                 self._flush_prompt()
+            elif obj is self._llm_form.save_session_name_edit and self._save_session_name_dirty:
+                self._flush_save_session_name()
             elif obj is self._file_form.filename_edit and self._filename_dirty:
                 self._flush_filename()
             elif obj is self._cond_form.filename_edit and self._cond_filename_dirty:
@@ -396,6 +414,41 @@ class PropertiesPanel(QWidget):
         if self._current_node is None:
             return
         self.model_changed.emit(self._current_node.node_id, old_id, new_id)
+
+    def _on_resume_session_toggled(self, checked: bool):
+        if self._current_node is None:
+            return
+        self.resume_session_changed.emit(self._current_node.node_id, bool(checked))
+
+    def _on_save_session_toggled(self, checked: bool):
+        if self._current_node is None:
+            return
+        if not checked:
+            self._llm_form.save_session_name_edit.blockSignals(True)
+            self._llm_form.save_session_name_edit.clear()
+            self._llm_form.save_session_name_edit.blockSignals(False)
+            self._save_session_name_dirty = False
+        self.save_session_changed.emit(self._current_node.node_id, bool(checked))
+
+    def _on_save_session_name_changed(self):
+        self._save_session_name_dirty = True
+
+    def _on_save_session_name_committed(self):
+        if self._save_session_name_dirty:
+            self._flush_save_session_name()
+
+    def _flush_save_session_name(self):
+        if self._current_node is None:
+            return
+        text = self._llm_form.save_session_name_edit.text()
+        self.save_session_name_committed.emit(self._current_node.node_id, text)
+        self._save_session_name_dirty = False
+
+    def _on_resume_named_session_changed(self, _index: int):
+        if self._current_node is None:
+            return
+        value = self._llm_form.resume_named_session_combo.currentData() or ""
+        self.resume_named_session_changed.emit(self._current_node.node_id, str(value))
 
     def _on_prompt_changed(self):
         self._prompt_dirty = True
@@ -594,6 +647,8 @@ class PropertiesPanel(QWidget):
             if isinstance(self._current_node, LLMNode):
                 if self._prompt_dirty:
                     self._flush_prompt()
+                if self._save_session_name_dirty:
+                    self._flush_save_session_name()
                 self._on_llm_title_committed()
             elif isinstance(self._current_node, AttentionNode):
                 if self._attention_message_dirty:
@@ -752,29 +807,7 @@ class PropertiesPanel(QWidget):
             self._file_form.show_output(False)
 
     def _load_llm_form(self, node) -> None:
-        form = self._llm_form
-        form.title_edit.blockSignals(True)
-        form.model_selector.blockSignals(True)
-        form.prompt_edit.blockSignals(True)
-
-        form.title_edit.setText(node.title)
-        form.model_selector.set_model_id(node.model_id)
-        form.prompt_edit.setPlainText(node.prompt_text)
-
-        if node.output_text:
-            form.set_output_text(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.clear_output()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        form.model_selector.blockSignals(False)
-        form.prompt_edit.blockSignals(False)
-
-        self._old_title = node.title
-        self._prompt_dirty = False
-        self._refresh_llm_prompt_preview()
+        load_llm_form(self, node)
 
     def _load_file_form(self, node) -> None:
         form = self._file_form
@@ -930,6 +963,9 @@ class PropertiesPanel(QWidget):
         self._old_title = node.title
         self._script_path_dirty = False
 
+    def set_llm_named_session_options(self, options: Sequence[tuple[str, str]]) -> None:
+        self._llm_named_session_options = list(options)
+
     def refresh_if_current(self, node) -> None:
         """Reload form fields if this node is currently shown."""
         if node is not self._current_node:
@@ -964,11 +1000,4 @@ class PropertiesPanel(QWidget):
 
         if not isinstance(self._current_node, LLMNode):
             return
-        preview_text = compose_prompt(
-            self._llm_form.prompt_edit.toPlainText(),
-            self._preview_prepend_templates,
-            self._preview_append_templates,
-            self._preview_one_off_text,
-            self._preview_one_off_placement,
-        )
-        self._llm_form.prompt_preview_edit.setPlainText(preview_text)
+        refresh_llm_prompt_preview(self)

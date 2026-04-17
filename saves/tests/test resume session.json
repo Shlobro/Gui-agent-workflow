@@ -1,0 +1,57 @@
+{
+  "nodes": [
+    {
+      "id": "7c47b5bc-1688-4b00-a185-906265468438",
+      "label_index": 1,
+      "x": -222.0,
+      "y": -22.0,
+      "name": "LLM 1",
+      "model": "claude-haiku-4-5-20251001",
+      "prompt": "cows are blue",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "test",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": ""
+    },
+    {
+      "id": "90f3558e-c69a-4f0f-bc86-cc9154b524ca",
+      "label_index": 2,
+      "x": 146.0,
+      "y": -207.0,
+      "name": "LLM 2",
+      "model": "claude-haiku-4-5-20251001",
+      "prompt": "",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": ""
+    }
+  ],
+  "connections": [
+    {
+      "from": "7c47b5bc-1688-4b00-a185-906265468438",
+      "to": "90f3558e-c69a-4f0f-bc86-cc9154b524ca"
+    },
+    {
+      "from": "start",
+      "to": "7c47b5bc-1688-4b00-a185-906265468438"
+    }
+  ],
+  "node_counter": 2,
+  "start_pos": [
+    -436.0,
+    -73.0
+  ],
+  "named_sessions": [
+    {
+      "name": "test",
+      "owner_node_id": "7c47b5bc-1688-4b00-a185-906265468438",
+      "provider": "claude",
+      "session_id": ""
+    }
+  ]
+}

@@ -157,9 +157,18 @@ class _ExecutionMixin:
         self._no_fanout = False
         self._pending_child_triggers = 0
         self._seeding_roots = False
+        self._llm_serial_resume_nodes.clear()
+        self._llm_serial_wait_queues.clear()
         for worker in list(self._active_workers.values()):
             if worker is not None:
                 worker.cancel()
+        for exec_id in list(self._llm_serial_waiting_exec_ids):
+            self._active_workers.pop(exec_id, None)
+            self._exec_node.pop(exec_id, None)
+            self._exec_lineage.pop(exec_id, None)
+            self._current_run_exec_ids.discard(exec_id)
+            self._exec_streamed_output.pop(exec_id, None)
+        self._llm_serial_waiting_exec_ids.clear()
         for node in self._nodes.values():
             if node.status in {"running", "looping"}:
                 node.set_status("idle")
@@ -291,6 +300,28 @@ class _ExecutionMixin:
             if conn.source_node is node
         ]
 
+    def _llm_resume_serial_key(self: "WorkflowCanvas", node: LLMNode) -> str:
+        if node.resume_named_session_name:
+            record = self._named_sessions.get(node.resume_named_session_name.strip())
+            if record is not None and record.get("session_id", "").strip():
+                return f"named:{node.resume_named_session_name.strip()}"
+            return ""
+        if node.resume_session_enabled:
+            return f"node:{node.node_id}"
+        return ""
+
+    def _llm_resume_session_id(self: "WorkflowCanvas", node: LLMNode, provider_name: str) -> str:
+        if node.resume_named_session_name:
+            record = self._named_sessions.get(node.resume_named_session_name.strip())
+            if record is None:
+                return ""
+            if record.get("provider", "").strip() != provider_name.strip():
+                return ""
+            return record.get("session_id", "").strip()
+        if node.resume_session_enabled:
+            return node.saved_session_id.strip()
+        return ""
+
     # ------------------------------------------------------------------
     # Internal run engine
     # ------------------------------------------------------------------
@@ -301,6 +332,9 @@ class _ExecutionMixin:
         if not resume:
             self._llm_invocation_counts.clear()
             self._exec_streamed_output.clear()
+            self._llm_serial_resume_nodes.clear()
+            self._llm_serial_waiting_exec_ids.clear()
+            self._llm_serial_wait_queues.clear()
             self._join_wait_counts.clear()
             self._pending_join_waits = 0
             self._loop_counters.clear()
@@ -421,11 +455,12 @@ class _ExecutionMixin:
             provider,
             composed_prompt,
             model=model_id,
+            session_id=self._llm_resume_session_id(node, provider.name),
             working_directory=self._working_directory,
         )
+        run_id = self._run_id
         self._active_workers[exec_id] = worker
         self._exec_streamed_output[exec_id] = False
-        run_id = self._run_id
 
         def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
             if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
@@ -436,6 +471,7 @@ class _ExecutionMixin:
 
         def on_finished(
             full: str,
+            session_id: str,
             _n=node,
             _e=exec_id,
             _r=run_id,
@@ -448,6 +484,7 @@ class _ExecutionMixin:
                 _e,
                 full,
                 error=False,
+                captured_session_id=session_id,
                 run_id=_r,
                 lineage_token=_lt,
                 loop_token=_lp,
@@ -456,6 +493,7 @@ class _ExecutionMixin:
 
         def on_error(
             msg: str,
+            session_id: str,
             _n=node,
             _e=exec_id,
             _r=run_id,
@@ -468,6 +506,7 @@ class _ExecutionMixin:
                 _e,
                 msg,
                 error=True,
+                captured_session_id=session_id,
                 run_id=_r,
                 lineage_token=_lt,
                 loop_token=_lp,
@@ -477,7 +516,58 @@ class _ExecutionMixin:
         worker.output_line.connect(on_output)
         worker.finished.connect(on_finished)
         worker.error.connect(on_error)
+        serial_key = ""
+        if provider.supports_session_resume(model_id):
+            serial_key = self._llm_resume_serial_key(node)
+        should_serialize = bool(serial_key)
+        if should_serialize and serial_key in self._llm_serial_resume_nodes:
+            self._llm_serial_waiting_exec_ids.add(exec_id)
+            self._llm_serial_wait_queues.setdefault(serial_key, []).append(
+                (serial_key, exec_id, worker, run_id, lineage_token, loop_token, join_token)
+            )
+            node.append_output("Waiting for previous resumed session call to finish.")
+            if self.on_output_line:
+                self.on_output_line(node, "Waiting for previous resumed session call to finish.")
+            return
+        if should_serialize:
+            self._llm_serial_resume_nodes.add(serial_key)
         worker.start()
+
+    def _release_serial_llm_resume_slot(self: "WorkflowCanvas", serial_key: str) -> None:
+        if not serial_key:
+            return
+        self._llm_serial_resume_nodes.discard(serial_key)
+        queue = self._llm_serial_wait_queues.get(serial_key)
+        if queue is None:
+            return
+        while queue:
+            _queued_key, exec_id, worker, run_id, _lineage_token, _loop_token, _join_token = queue.pop(0)
+            if (
+                _queued_key != serial_key
+                or run_id != self._run_id
+                or not self._running
+                or exec_id not in self._current_run_exec_ids
+            ):
+                self._llm_serial_waiting_exec_ids.discard(exec_id)
+                self._active_workers.pop(exec_id, None)
+                self._exec_node.pop(exec_id, None)
+                self._exec_lineage.pop(exec_id, None)
+                self._exec_streamed_output.pop(exec_id, None)
+                self._current_run_exec_ids.discard(exec_id)
+                continue
+            self._llm_serial_waiting_exec_ids.discard(exec_id)
+            self._llm_serial_resume_nodes.add(serial_key)
+            self._active_workers[exec_id] = worker
+            self._exec_streamed_output[exec_id] = False
+            worker.start()
+            break
+        if queue:
+            return
+        self._llm_serial_wait_queues.pop(serial_key, None)
+        if queue:
+            self._llm_serial_wait_queues[serial_key] = queue
+        else:
+            self._llm_serial_wait_queues.pop(serial_key, None)
 
     def _start_llm_output_block(self: "WorkflowCanvas", node: LLMNode) -> None:
         call_index = self._llm_invocation_counts.get(node.node_id, 0) + 1
@@ -922,7 +1012,8 @@ class _ExecutionMixin:
             self._check_drain()
 
     def _on_invocation_done(self: "WorkflowCanvas", node: GraphNode, exec_id: int,
-                            result: str, error: bool, run_id: int = 0,
+                            result: str, error: bool, captured_session_id: str = "",
+                            run_id: int = 0,
                             lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         if exec_id not in self._active_workers:
             return
@@ -933,6 +1024,28 @@ class _ExecutionMixin:
         self._exec_node.pop(exec_id, None)
         self._exec_lineage.pop(exec_id, None)
         self._current_run_exec_ids.discard(exec_id)
+        self._llm_serial_waiting_exec_ids.discard(exec_id)
+        if isinstance(node, LLMNode):
+            serial_key = self._llm_resume_serial_key(node)
+            session_catalog_changed = False
+            if captured_session_id.strip():
+                node.saved_session_id = captured_session_id.strip()
+                provider = get_provider_for_model(node.model_id or "")
+                node.saved_session_provider = provider.name if provider is not None else ""
+                if node.save_session_enabled and node.save_session_name.strip():
+                    record = self._named_sessions.get(node.save_session_name.strip())
+                    if record is not None and record.get("owner_node_id") == node.node_id:
+                        record["provider"] = node.saved_session_provider
+                        record["session_id"] = captured_session_id.strip()
+                        session_catalog_changed = True
+                if node.resume_named_session_name.strip():
+                    record = self._named_sessions.get(node.resume_named_session_name.strip())
+                    if record is not None:
+                        record["session_id"] = captured_session_id.strip()
+                        session_catalog_changed = True
+            self._release_serial_llm_resume_slot(serial_key)
+            if session_catalog_changed:
+                self.selection_changed.emit()
         if run_id != self._run_id or not self._running:
             self._check_drain()
             return

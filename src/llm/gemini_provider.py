@@ -25,7 +25,9 @@ class GeminiProvider(BaseLLMProvider):
         return self.MODELS
 
     def build_command(self, prompt: str, model: Optional[str] = None,
-                      working_directory: Optional[str] = None) -> List[str]:
+                      working_directory: Optional[str] = None,
+                      session_id: Optional[str] = None) -> List[str]:
+        _ = session_id
         cmd = ["gemini"]
         if model:
             cmd.extend(["--model", model])

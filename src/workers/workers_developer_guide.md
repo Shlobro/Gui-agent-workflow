@@ -4,21 +4,26 @@
 Hosts threaded execution logic so long-running subprocess calls do not block the Qt event loop.
 
 ## Contents
-- `llm_worker.py`: `QThread` wrapper that starts provider subprocesses, streams line output, enforces timeout, and supports cancellation.
-- `git_worker.py`: `QThread` wrapper that runs git commands (`git add`, `git commit`, `git push`) in the background with timeout/cancellation support and merged stdout/stderr capture.
-- `script_worker.py`: `QThread` wrapper that runs `.bat`, `.cmd`, or `.ps1` launch commands in the background with timeout/cancellation support and merged stdout/stderr capture.
-- `__init__.py`: Package marker.
+- `llm_worker.py`: `QThread` wrapper that starts provider subprocesses, streams line output, enforces timeout, supports cancellation, and returns captured session IDs for structured-output providers.
+- `git_worker.py`: `QThread` wrapper that runs git commands in the background with timeout and cancellation support.
+- `script_worker.py`: `QThread` wrapper that runs `.bat`, `.cmd`, or `.ps1` launch commands in the background with timeout and cancellation support.
 
 ## Key Behavior
-- `LLMWorker` behavior: receives a `BaseLLMProvider`, prompt text, model id, optional working directory, and timeout; runs the provider command; writes prompt text to subprocess stdin; merges stdout/stderr and emits lines through `output_line`. On non-zero exit, `error` is emitted with the full accumulated output as the payload (so callers can inspect the text for usage/rate-limit patterns); zero-exit emits `finished`.
-- `GitWorker` behavior: receives a concrete git command (for example `["git", "commit", "-m", "..."]`), optional working directory, and timeout; validates cwd exists before launch; merges stdout/stderr and emits lines through `output_line`.
-- `ScriptWorker` behavior: receives a fully built script command (for example `["cmd.exe", "/c", "..."]` or `["powershell.exe", "-File", "..."]`), optional working directory, timeout, and optional `stdin_text`; validates cwd exists before launch; writes `stdin_text` once after spawn when provided; then merges stdout/stderr and emits lines through `output_line`.
-- Completion emits `finished(full_output)`; failures emit `error(message)`. For `GitWorker` non-zero exits, the error payload is a concise summary (`git command failed (exit X)`) because detailed command output is already streamed line-by-line through `output_line`. If cwd is invalid, `GitWorker` emits `Working directory not found: ...`; missing commands emit `Command not found: ...`.
-- Cancellation: `cancel()` is non-blocking — it sets a flag and spawns a daemon watchdog thread that runs terminate→wait(4s)→kill, guaranteeing the subprocess dies and the pipe closes even if the worker thread is blocked in `readline()`. The worker thread always emits `error("Cancelled")` on every cancelled exit path, guaranteeing a terminal signal. The canvas ignores cancelled callbacks as real failures; three guards filter unwanted mutations: (1) `_active_workers` membership is the double-call gate in `_on_invocation_done`; (2) `run_id`/`_running` skip terminal callbacks from a previous run; (3) `_retired_exec_ids` suppresses both streamed output (`on_output`) and terminal node mutation for exec_ids whose node was deleted mid-run — those callbacks still clean up refs and call `_check_drain()`.
-- `GitWorker` uses the same cancellation contract (`cancel()` terminate→wait→kill) so `WorkflowCanvas.stop_all()` can cancel in-flight git operations (for example, long `git push`) without freezing the UI. Timeout is enforced by an internal watchdog that terminates the subprocess when the deadline expires, so silent/hung commands do not bypass timeout while `readline()` is waiting.
+- `LLMWorker` receives a `BaseLLMProvider`, prompt text, model id, optional session id, optional working directory, and timeout. It runs the provider command, writes prompt text to stdin only when the provider says it uses stdin, merges stdout and stderr, and emits lines through `output_line` for plain-text providers.
+- `GitWorker` receives a concrete git command, optional working directory, and timeout; validates cwd exists before launch; merges stdout and stderr and emits lines through `output_line`.
+- `ScriptWorker` receives a fully built script command, optional working directory, timeout, and optional `stdin_text`; validates cwd exists before launch; writes `stdin_text` once after spawn when provided; then merges stdout and stderr and emits lines through `output_line`.
+- `LLMWorker.finished` and `LLMWorker.error` both emit `(output_text, session_id)`.
+- For Claude and Codex providers, the worker does not stream raw JSON lines to the node output. It parses structured output, extracts the final assistant text, and captures `session_id` for workflow persistence.
+- For non-structured providers such as Gemini, the worker still streams plain text line by line.
+
+## Cancellation Contract
+- `cancel()` is non-blocking. It sets `_cancelled` and spawns a daemon watchdog thread that runs terminate, wait up to 4 seconds, then kill if needed.
+- The worker always emits a terminal cancelled error path on every cancellation window, including before spawn and immediately after spawn.
+- The canvas ignores cancelled callbacks as real failures through three guards: active-worker membership, current-run matching, and retired-exec suppression.
+- `GitWorker` uses the same termination contract so `WorkflowCanvas.stop_all()` can cancel in-flight git operations without freezing the UI.
 
 ## When To Edit
-- Timeout/cancellation semantics: `llm_worker.py`.
-- CLI invocation behavior or cwd handling: `llm_worker.py` plus provider files in `src/llm/`.
+- Timeout or cancellation semantics: `llm_worker.py`.
+- CLI invocation behavior or prompt-transport handling: `llm_worker.py` plus provider files in `src/llm/`.
 - Git subprocess execution and cancellation behavior: `git_worker.py`.
 - Script subprocess execution and cancellation behavior: `script_worker.py`.
