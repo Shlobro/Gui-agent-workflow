@@ -109,6 +109,8 @@ class _IOMixin:
         self._connections.append(conn)
         if reconcile:
             self.reconcile_named_sessions()
+            if any(isinstance(node, LLMNode) for node in self.selected_workflow_nodes()):
+                self.selection_changed.emit()
         return conn
 
     def _undo_remove_connection_item(
@@ -120,6 +122,8 @@ class _IOMixin:
             self._connections.remove(conn)
         if reconcile:
             self.reconcile_named_sessions()
+            if any(isinstance(node, LLMNode) for node in self.selected_workflow_nodes()):
+                self.selection_changed.emit()
 
     def _find_connection(self: "WorkflowCanvas", src_id: str, tgt_id: str,
                          source_port: str = "output") -> Optional[ConnectionItem]:

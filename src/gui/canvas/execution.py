@@ -21,6 +21,16 @@ from src.gui.conditional_node import (
 from src.gui.control_flow.join_node import JoinNode
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.script_runner.script_node import ALLOWED_SCRIPT_SUFFIXES, ScriptNode
+from src.gui.canvas.llm_output import (
+    append_output_line,
+    clear_node_output,
+    start_llm_output_block,
+)
+from src.gui.canvas.llm_resume import (
+    llm_resume_serial_key,
+    llm_resume_session_id,
+    release_serial_llm_resume_slot,
+)
 from src.gui.workflow_io import get_provider_for_model
 
 if TYPE_CHECKING:
@@ -64,10 +74,6 @@ def is_usage_limit_error(text: str) -> bool:
 class _ExecutionMixin:
     """Run/stop execution methods mixed into WorkflowCanvas."""
 
-    # ------------------------------------------------------------------
-    # Pre-run checks
-    # ------------------------------------------------------------------
-
     def _check_project_folder(self: "WorkflowCanvas") -> bool:
         if self._working_directory:
             return True
@@ -77,10 +83,6 @@ class _ExecutionMixin:
             "Use File -> Open Project Folder... to choose one.",
         )
         return False
-
-    # ------------------------------------------------------------------
-    # Public run modes
-    # ------------------------------------------------------------------
 
     def run_all(self: "WorkflowCanvas"):
         if not self._check_project_folder():
@@ -102,10 +104,7 @@ class _ExecutionMixin:
     def run_selected_only(self: "WorkflowCanvas"):
         if not self._check_project_folder():
             return
-        selected = [
-            i for i in self._scene.selectedItems()
-            if isinstance(i, WorkflowNode) and not isinstance(i, StartNode)
-        ]
+        selected = [i for i in self._scene.selectedItems() if isinstance(i, WorkflowNode) and not isinstance(i, StartNode)]
         if not selected:
             QMessageBox.information(self, "No Selection", "Select at least one node first.")
             return
@@ -130,10 +129,7 @@ class _ExecutionMixin:
     def run_from_here(self: "WorkflowCanvas", resume: bool | None = None):
         if not self._check_project_folder():
             return
-        selected = [
-            i for i in self._scene.selectedItems()
-            if isinstance(i, WorkflowNode) and not isinstance(i, StartNode)
-        ]
+        selected = [i for i in self._scene.selectedItems() if isinstance(i, WorkflowNode) and not isinstance(i, StartNode)]
         if len(selected) != 1:
             return
         start = selected[0]
@@ -173,10 +169,6 @@ class _ExecutionMixin:
             if node.status in {"running", "looping"}:
                 node.set_status("idle")
         self.status_update.emit("Stopped.")
-
-    # ------------------------------------------------------------------
-    # Graph traversal / validation helpers
-    # ------------------------------------------------------------------
 
     def _reachable_from(self: "WorkflowCanvas", start) -> list:
         visited = []
@@ -287,44 +279,14 @@ class _ExecutionMixin:
 
     def _validate_nodes(self: "WorkflowCanvas", nodes: Sequence[GraphNode]) -> List[str]:
         errors_by_node = self.refresh_node_validation_state()
-        errors: List[str] = []
-        for node in nodes:
-            title = getattr(node, "title", node.node_id)
-            for reason in errors_by_node.get(node.node_id, []):
-                errors.append(f'\u2022 "{title}" {reason}.')
-        return errors
-
-    def _direct_children(self: "WorkflowCanvas", node) -> list:
         return [
-            conn.target_node for conn in self._connections
-            if conn.source_node is node
+            f'\u2022 "{getattr(node, "title", node.node_id)}" {reason}.'
+            for node in nodes
+            for reason in errors_by_node.get(node.node_id, [])
         ]
 
-    def _llm_resume_serial_key(self: "WorkflowCanvas", node: LLMNode) -> str:
-        if node.resume_named_session_name:
-            record = self._named_sessions.get(node.resume_named_session_name.strip())
-            if record is not None and record.get("session_id", "").strip():
-                return f"named:{node.resume_named_session_name.strip()}"
-            return ""
-        if node.resume_session_enabled:
-            return f"node:{node.node_id}"
-        return ""
-
-    def _llm_resume_session_id(self: "WorkflowCanvas", node: LLMNode, provider_name: str) -> str:
-        if node.resume_named_session_name:
-            record = self._named_sessions.get(node.resume_named_session_name.strip())
-            if record is None:
-                return ""
-            if record.get("provider", "").strip() != provider_name.strip():
-                return ""
-            return record.get("session_id", "").strip()
-        if node.resume_session_enabled:
-            return node.saved_session_id.strip()
-        return ""
-
-    # ------------------------------------------------------------------
-    # Internal run engine
-    # ------------------------------------------------------------------
+    def _direct_children(self: "WorkflowCanvas", node) -> list:
+        return [conn.target_node for conn in self._connections if conn.source_node is node]
 
     def _run_workflow(self: "WorkflowCanvas", nodes: list, roots: list, no_fanout: bool = False, resume: bool = False):
         if self._running:
@@ -346,9 +308,7 @@ class _ExecutionMixin:
 
         for node in nodes:
             node.set_status("idle")
-            node.clear_output()
-            if self.on_output_cleared:
-                self.on_output_cleared(node)
+            clear_node_output(self, node)
         self._running = True
         self.run_state_changed.emit(True)
         self._no_fanout = no_fanout
@@ -421,9 +381,7 @@ class _ExecutionMixin:
             return
         model_id = node.model_id
         if not model_id:
-            node.append_output("[Error] No model selected.")
-            if self.on_output_line:
-                self.on_output_line(node, "[Error] No model selected.")
+            append_output_line(self, node, "[Error] No model selected.")
             node.set_status("error")
             del self._active_workers[exec_id]
             self._exec_node.pop(exec_id, None)
@@ -433,9 +391,7 @@ class _ExecutionMixin:
         provider = get_provider_for_model(model_id)
         if provider is None:
             msg = f"[Error] Unknown model: {model_id}"
-            node.append_output(msg)
-            if self.on_output_line:
-                self.on_output_line(node, msg)
+            append_output_line(self, node, msg)
             node.set_status("error")
             del self._active_workers[exec_id]
             self._exec_node.pop(exec_id, None)
@@ -450,12 +406,12 @@ class _ExecutionMixin:
             self._prompt_injection_one_off,
             self._prompt_injection_one_off_placement,
         )
-        self._start_llm_output_block(node)
+        start_llm_output_block(self, node, composed_prompt)
         worker = LLMWorker(
             provider,
             composed_prompt,
             model=model_id,
-            session_id=self._llm_resume_session_id(node, provider.name),
+            session_id=llm_resume_session_id(self, node, provider.name),
             working_directory=self._working_directory,
         )
         run_id = self._run_id
@@ -465,9 +421,7 @@ class _ExecutionMixin:
         def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
             if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
                 self._exec_streamed_output[_e] = True
-                _n.append_output(line)
-                if self.on_output_line:
-                    self.on_output_line(_n, line)
+                append_output_line(self, _n, line)
 
         def on_finished(
             full: str,
@@ -518,68 +472,18 @@ class _ExecutionMixin:
         worker.error.connect(on_error)
         serial_key = ""
         if provider.supports_session_resume(model_id):
-            serial_key = self._llm_resume_serial_key(node)
+            serial_key = llm_resume_serial_key(self, node)
         should_serialize = bool(serial_key)
         if should_serialize and serial_key in self._llm_serial_resume_nodes:
             self._llm_serial_waiting_exec_ids.add(exec_id)
             self._llm_serial_wait_queues.setdefault(serial_key, []).append(
                 (serial_key, exec_id, worker, run_id, lineage_token, loop_token, join_token)
             )
-            node.append_output("Waiting for previous resumed session call to finish.")
-            if self.on_output_line:
-                self.on_output_line(node, "Waiting for previous resumed session call to finish.")
+            append_output_line(self, node, "Waiting for previous resumed session call to finish.")
             return
         if should_serialize:
             self._llm_serial_resume_nodes.add(serial_key)
         worker.start()
-
-    def _release_serial_llm_resume_slot(self: "WorkflowCanvas", serial_key: str) -> None:
-        if not serial_key:
-            return
-        self._llm_serial_resume_nodes.discard(serial_key)
-        queue = self._llm_serial_wait_queues.get(serial_key)
-        if queue is None:
-            return
-        while queue:
-            _queued_key, exec_id, worker, run_id, _lineage_token, _loop_token, _join_token = queue.pop(0)
-            if (
-                _queued_key != serial_key
-                or run_id != self._run_id
-                or not self._running
-                or exec_id not in self._current_run_exec_ids
-            ):
-                self._llm_serial_waiting_exec_ids.discard(exec_id)
-                self._active_workers.pop(exec_id, None)
-                self._exec_node.pop(exec_id, None)
-                self._exec_lineage.pop(exec_id, None)
-                self._exec_streamed_output.pop(exec_id, None)
-                self._current_run_exec_ids.discard(exec_id)
-                continue
-            self._llm_serial_waiting_exec_ids.discard(exec_id)
-            self._llm_serial_resume_nodes.add(serial_key)
-            self._active_workers[exec_id] = worker
-            self._exec_streamed_output[exec_id] = False
-            worker.start()
-            break
-        if queue:
-            return
-        self._llm_serial_wait_queues.pop(serial_key, None)
-        if queue:
-            self._llm_serial_wait_queues[serial_key] = queue
-        else:
-            self._llm_serial_wait_queues.pop(serial_key, None)
-
-    def _start_llm_output_block(self: "WorkflowCanvas", node: LLMNode) -> None:
-        call_index = self._llm_invocation_counts.get(node.node_id, 0) + 1
-        self._llm_invocation_counts[node.node_id] = call_index
-        if node.output_text.strip():
-            node.append_output("")
-            if self.on_output_line:
-                self.on_output_line(node, "")
-        header = f"=== Call {call_index} ==="
-        node.append_output(header)
-        if self.on_output_line:
-            self.on_output_line(node, header)
 
     def _fire_condition_check(self: "WorkflowCanvas", node: ConditionalNode, exec_id: int,
                               lineage_token: str = "", loop_token: str = "", join_token: str = ""):
@@ -604,9 +508,7 @@ class _ExecutionMixin:
             )
             branch = "true" if result else "false"
             display_name = condition_display_name(node.condition_type)
-            node.append_output(f"Condition '{display_name}': {branch}")
-            if self.on_output_line:
-                self.on_output_line(node, f"Condition '{display_name}': {branch}")
+            append_output_line(self, node, f"Condition '{display_name}': {branch}")
             self._on_condition_done(
                 node,
                 exec_id,
@@ -664,9 +566,7 @@ class _ExecutionMixin:
                 and _e in self._active_workers
                 and _e not in self._retired_exec_ids
             ):
-                _n.append_output(line)
-                if self.on_output_line:
-                    self.on_output_line(_n, line)
+                append_output_line(self, _n, line)
 
         def on_finished(
             full: str, _n=node, _e=exec_id, _r=run_id, _lt=lineage_token, _lp=loop_token, _jt=join_token
@@ -679,9 +579,7 @@ class _ExecutionMixin:
                 and _e in self._active_workers
                 and _e not in self._retired_exec_ids
             ):
-                _n.append_output(f"Condition '{display_name}': {branch}")
-                if self.on_output_line:
-                    self.on_output_line(_n, f"Condition '{display_name}': {branch}")
+                append_output_line(self, _n, f"Condition '{display_name}': {branch}")
             self._on_condition_done(
                 _n,
                 _e,
@@ -743,12 +641,8 @@ class _ExecutionMixin:
             self._exec_lineage.pop(exec_id, None)
             self._current_run_exec_ids.discard(exec_id)
             choice = "Attention acknowledged: workflow stopped by user."
-            node.clear_output()
-            if self.on_output_cleared:
-                self.on_output_cleared(node)
-            node.append_output(choice)
-            if self.on_output_line:
-                self.on_output_line(node, choice)
+            clear_node_output(self, node)
+            append_output_line(self, node, choice)
             self.stop_all()
             node.set_status("done")
             self.status_update.emit(f'Stopped at "{node.title}".')
@@ -798,9 +692,7 @@ class _ExecutionMixin:
         count = self._loop_counters.get(key, 0) + 1
         if count <= node.loop_count:
             line = f"Loop iteration {count}/{node.loop_count}"
-            node.append_output(line)
-            if self.on_output_line:
-                self.on_output_line(node, line)
+            append_output_line(self, node, line)
             self._loop_counters[key] = count
             self._on_loop_iteration(node, exec_id, "loop", lineage_token, loop_token, join_token, run_id)
         else:
@@ -877,9 +769,7 @@ class _ExecutionMixin:
 
         if current_count < node.wait_for_count:
             line = f"Join waiting: {current_count}/{node.wait_for_count}"
-            node.append_output(line)
-            if self.on_output_line:
-                self.on_output_line(node, line)
+            append_output_line(self, node, line)
             self._on_join_waiting(node, exec_id, run_id=run_id)
             return
 
@@ -890,9 +780,7 @@ class _ExecutionMixin:
             self._join_wait_counts.pop(join_key, None)
         self._pending_join_waits = max(0, self._pending_join_waits - node.wait_for_count)
         line = f"Join released: {node.wait_for_count}/{node.wait_for_count}"
-        node.append_output(line)
-        if self.on_output_line:
-            self.on_output_line(node, line)
+        append_output_line(self, node, line)
         released_lineage = str(uuid4())
         self._on_join_release(
             node,
@@ -1026,7 +914,7 @@ class _ExecutionMixin:
         self._current_run_exec_ids.discard(exec_id)
         self._llm_serial_waiting_exec_ids.discard(exec_id)
         if isinstance(node, LLMNode):
-            serial_key = self._llm_resume_serial_key(node)
+            serial_key = llm_resume_serial_key(self, node)
             session_catalog_changed = False
             if captured_session_id.strip():
                 node.saved_session_id = captured_session_id.strip()
@@ -1043,7 +931,7 @@ class _ExecutionMixin:
                     if record is not None:
                         record["session_id"] = captured_session_id.strip()
                         session_catalog_changed = True
-            self._release_serial_llm_resume_slot(serial_key)
+            release_serial_llm_resume_slot(self, serial_key)
             if session_catalog_changed:
                 self.selection_changed.emit()
         if run_id != self._run_id or not self._running:
@@ -1055,9 +943,7 @@ class _ExecutionMixin:
 
         if error:
             msg = f"[Error] {result}"
-            node.append_output(msg)
-            if self.on_output_line:
-                self.on_output_line(node, msg)
+            append_output_line(self, node, msg)
             node.set_status("error")
             if is_usage_limit_error(result):
                 self.stop_all()
@@ -1069,35 +955,21 @@ class _ExecutionMixin:
         else:
             from src.gui.git_action_node import GitActionNode
             if isinstance(node, AttentionNode):
-                node.clear_output()
-                if self.on_output_cleared:
-                    self.on_output_cleared(node)
-                node.append_output(result)
-                if self.on_output_line:
-                    self.on_output_line(node, result)
+                clear_node_output(self, node)
+                append_output_line(self, node, result)
             elif isinstance(node, ScriptNode):
                 if result and not streamed_output:
-                    node.append_output(result)
-                    if self.on_output_line:
-                        self.on_output_line(node, result)
+                    append_output_line(self, node, result)
             elif isinstance(node, FileOpNode):
-                node.clear_output()
-                if self.on_output_cleared:
-                    self.on_output_cleared(node)
-                node.append_output(result)
-                if self.on_output_line:
-                    self.on_output_line(node, result)
+                clear_node_output(self, node)
+                append_output_line(self, node, result)
             elif isinstance(node, GitActionNode):
                 if result:
-                    node.append_output(result)
-                    if self.on_output_line:
-                        self.on_output_line(node, result)
+                    append_output_line(self, node, result)
             elif isinstance(node, LLMNode):
                 if not streamed_output and result.strip():
                     for line in result.splitlines():
-                        node.append_output(line)
-                        if self.on_output_line:
-                            self.on_output_line(node, line)
+                        append_output_line(self, node, line)
             else:
                 node.output_text = result
             node.set_status("done")

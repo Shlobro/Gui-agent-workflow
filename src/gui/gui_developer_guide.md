@@ -39,6 +39,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `Resume previous session` remains node-local and undoable.
 - `Save session ID` reserves a workflow-level name for the current node. The name is typed by the user and can only be owned by one node at a time.
 - `Resume session ID` only lists names that already have a captured session ID, match the selected node's provider, and come from a save-owner node that can reach the current node through the graph.
+- Connection edits while an LLM node is selected must refresh that dropdown immediately; the user should not need to reselect the node after wiring a newly valid upstream path.
 - Selecting `Resume session ID` disables named-session saving on that node because the resumed named conversation becomes the active session source.
 - Changing a node's model while it owns saved session data prompts first; on confirmation, incompatible saved session IDs are cleared and named-session references are reconciled.
 - Loading a workflow with saved node or named sessions does not prompt immediately. The prompt appears only when the user starts a run.
@@ -52,6 +53,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Selected connections expose bend handles. Double-click a segment to add a vertex, drag a handle to move it, and Shift+click a handle to remove it.
 - Manual connection vertices are persisted in workflow JSON as `connections[].vertices` and participate in undo/redo, paste, and load flows.
 - LLM output logs include per-invocation separators (`=== Call N ===`), and the LLM output pane renders those separators as separate nested `Call N` tabs.
+- Workflow-named LLM sessions share one in-memory output history across the save-owner and every resume node using that same session name; each call block includes the producing node title, the session label, the full composed prompt, and then the response content.
 - Ctrl+mouse-wheel inside properties panel changes panel text size.
 - Properties panel output areas stream execution output for the currently selected node.
 - Copy/paste generates a new node identity and never carries over a saved Claude/Codex session ID or named-session binding to the pasted node.

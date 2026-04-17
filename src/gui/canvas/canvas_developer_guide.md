@@ -6,6 +6,8 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. 
 ## Files
 - `__init__.py`: `WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _IOMixin, QGraphicsView)` owns initialization, background grid, start-node creation, node and connection CRUD, panel commit handlers, mouse and keyboard event handling, connection drawing, connection-vertex editing interactions, prompt-injection state, and the undo stack.
 - `execution.py`: `_ExecutionMixin` contains run/stop logic, graph traversal, validation, and the core invocation engine (`_fire_invocation`, `_fire_condition_check`, `_fire_attention`, `_fire_loop`, `_fire_join`). It also owns usage-limit detection, LLM call headers, session capture persistence, and serialization for any resumed LLM conversation key (node-local or workflow-named).
+- `llm_output.py`: Shared helpers for mirroring named-session output across related LLM nodes and for building the per-call node/session/prompt metadata block that appears before each response.
+- `llm_resume.py`: Helpers for resolving the effective resume session ID / serialization key for LLM calls and for draining queued named-session resumptions one at a time.
 - `session_state.py`: `_SessionStateMixin` owns workflow-level named-session storage, node-session snapshot helpers, save/resume option filtering, and named-session reconciliation.
 - `subprocess_execution.py`: `_SubprocessExecutionMixin` owns project-relative path confinement plus file-op, git-action, and script-runner execution.
 - `io.py`: `_IOMixin` contains graph mutation primitives, clipboard, `clear_canvas`, and `get_workflow_data` / `load_workflow_data`.
@@ -27,9 +29,11 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. 
 - `WorkflowCanvas.has_saved_llm_sessions()` and `clear_all_llm_sessions()` cover both node-local saved sessions and workflow-level named sessions for the main-window run prompt.
 - `execution.py` serializes concurrent invocations that reuse the same conversation key. Node-local resume uses `node:<node_id>` and named-session resume uses `named:<session_name>`.
 - Named-session resume is only valid when the saved session already has a captured ID, matches the current provider, and the graph still has a path from the owner node to the current node.
+- When a connection add/remove/undo/redo changes graph reachability, selected LLM nodes must refresh their session dropdown immediately so newly valid named sessions appear without reselection.
 - Queued resumable LLM workers are fully signal-wired before they enter the wait queue, so releasing a queue slot only starts the already-connected worker.
 - `stop_all()` and node removal clear queued resumable LLM work so shutdown and deletion do not leave orphaned waiting executions behind.
 - Copy/paste never preserves provider session IDs or named-session bindings. Pasted LLM nodes keep `resume_session_enabled`, but start with cleared `saved_session_id`, `saved_session_provider`, `save_session_enabled`, `save_session_name`, and `resume_named_session_name`.
+- Named-session output is mirrored across all LLM nodes whose effective workflow session name matches, so save-owner and resume nodes display the same merged history. Per-call output blocks include node/session/prompt metadata before response lines.
 
 ## Save/Load Notes
 - Saved LLM session metadata lives inside the workflow JSON. There is no separate session sidecar file.
