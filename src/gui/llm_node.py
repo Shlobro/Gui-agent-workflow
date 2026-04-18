@@ -1,6 +1,7 @@
 """LLMNode and WorkflowNode base — draggable nodes on the workflow canvas."""
 
 import math
+import uuid
 import weakref
 from typing import List, Optional, TYPE_CHECKING
 
@@ -16,7 +17,12 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QGraphicsItem
 
-from .llm_widget import NODE_WIDTH
+from .llm_widget import (
+    NODE_WIDTH,
+    ICON_SIZE,
+    provider_for_model,
+    provider_icon,
+)
 
 if TYPE_CHECKING:
     from .connection_item import ConnectionItem
@@ -283,6 +289,7 @@ class LLMNode(WorkflowNode):
 
         self._title: str = f"LLM {label_index}"
         self._model_id: Optional[str] = None
+        self._provider_name: Optional[str] = None
         self._prompt_text: str = ""
         self.resume_session_enabled: bool = False
         self.save_session_enabled: bool = False
@@ -316,6 +323,7 @@ class LLMNode(WorkflowNode):
     @model_id.setter
     def model_id(self, value: str):
         self._model_id = value
+        self._provider_name = provider_for_model(value)
         self.update()
 
     @property
@@ -411,6 +419,15 @@ class LLMNode(WorkflowNode):
             "LLM CALL",
         )
 
+        # Provider icon in header
+        if self._provider_name:
+            icon = provider_icon(self._provider_name)
+            pixmap = icon.pixmap(ICON_SIZE, ICON_SIZE)
+            if not pixmap.isNull():
+                icon_x = NODE_WIDTH - ICON_SIZE - 8
+                icon_y = (_HEADER_HEIGHT - ICON_SIZE) / 2
+                painter.drawPixmap(int(icon_x), int(icon_y), pixmap)
+
         # Title in body below header
         title_font = QFont("Segoe UI", 10)
         painter.setFont(title_font)
@@ -497,6 +514,7 @@ class LLMNode(WorkflowNode):
         self._title = data.get("name", f"LLM {self.label_index}")
         if data.get("model"):
             self._model_id = data["model"]
+            self._provider_name = provider_for_model(self._model_id)
         self._prompt_text = data.get("prompt", "")
         self.resume_session_enabled = bool(data.get("resume_session_enabled", False))
         self.save_session_enabled = bool(data.get("save_session_enabled", False))

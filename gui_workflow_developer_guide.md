@@ -43,7 +43,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 - Subprocess-backed file, git, and script execution helpers: `src/gui/canvas/subprocess_execution.py`.
 - Graph mutation helpers, clipboard, save/load: `src/gui/canvas/io.py`.
 - Workflow save/load serialization, payload validation, and provider registry lookup: `src/gui/workflow_io.py`.
-- Node rendering and graph item behavior: `src/gui/llm_node.py`.
+- Node rendering and graph item behavior: `src/gui/llm_node.py`. LLM nodes display the chosen model's provider logo in the header.
 - File operation and attention nodes: `src/gui/file_op_node.py`.
 - Script execution node: `src/gui/script_runner/script_node.py`.
 - Conditional routing node and condition registry: `src/gui/conditional_node.py`.

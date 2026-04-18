@@ -9,7 +9,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `dialogs/`: Modal dialog classes for runtime user notifications and prompt-injection setup.
 - `canvas/` subpackage: Houses `WorkflowCanvas` plus execution, IO, subprocess, and named-session state mixins.
 - `control_flow/`: Coordination-oriented nodes such as `JoinNode`.
-- `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running or looping.
+- `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running or looping. `LLMNode` displays the chosen model's provider logo in its header.
 - `checked_dropdown.py`: Reusable checked popup dropdown used by per-node prompt-template selection controls.
 - `llm_widget.py`: `ModelSelector`, model list widget, provider icon helpers, and `populate_model_selector`.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.

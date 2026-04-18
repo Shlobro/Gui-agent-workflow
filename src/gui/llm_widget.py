@@ -390,6 +390,18 @@ def provider_icon(provider_name: str) -> QIcon:
     return icon
 
 
+def provider_for_model(model_id: str) -> Optional[str]:
+    """Find the provider name that owns the given model_id."""
+    if not model_id:
+        return None
+    providers = get_registered_providers()
+    for prov in providers:
+        for mid, _ in prov.get_models():
+            if mid == model_id:
+                return prov.name
+    return None
+
+
 def _normalized_logo_pixmap(source: QPixmap) -> QPixmap:
     pixmap = QPixmap(ICON_SIZE, ICON_SIZE)
     pixmap.fill(Qt.GlobalColor.transparent)
