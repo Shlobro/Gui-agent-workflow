@@ -40,6 +40,7 @@ from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 from .properties_panel import DEFAULT_PANEL_WIDTH, DEFAULT_TEXT_ZOOM, PropertiesPanel
 from .script_runner.script_node import SCRIPT_FILE_FILTER, ScriptNode
+from .variables import VariableNode
 from .workflow_io import get_provider_for_model
 from src.llm.prompt_injection import (
     PromptInjectionRunOptions,
@@ -88,6 +89,12 @@ class MainWindow(QMainWindow):
         self._panel = PropertiesPanel()
         self._panel.set_preferred_width(self._panel_width)
         self._panel.set_text_zoom(self._panel_zoom)
+        self._panel.set_llm_prompt_preview_provider(self.canvas.render_llm_prompt_text)
+        self._panel.set_variable_warning_provider(
+            lambda node, preview_name=None: self.canvas.variable_node_warning_text_for_preview(
+                node, preview_name
+            )
+        )
         self._sync_prompt_preview_context()
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -131,6 +138,9 @@ class MainWindow(QMainWindow):
         self._panel.script_path_committed.connect(self._on_panel_script_path_committed)
         self._panel.script_browse_requested.connect(self._on_panel_script_browse_requested)
         self._panel.script_auto_send_enter_changed.connect(self._on_panel_script_auto_send_enter_changed)
+        self._panel.variable_name_committed.connect(self._on_panel_variable_name_committed)
+        self._panel.variable_value_committed.connect(self._on_panel_variable_value_committed)
+        self._panel.variable_type_changed.connect(self._on_panel_variable_type_changed)
         self._panel.text_zoom_changed.connect(self._on_panel_text_zoom_changed)
         self._splitter.splitterMoved.connect(self._on_splitter_moved)
 
@@ -323,6 +333,7 @@ class MainWindow(QMainWindow):
         act("Add Join", self.canvas.add_join_node, tip="Add a barrier node that waits for N arrivals before continuing")
         act("Add Git", self.canvas.add_git_action_node, tip="Add a git action node (add / commit / push)")
         act("Add Script", self.canvas.add_script_node, tip="Add a node that runs a .bat, .cmd, or .ps1 script")
+        act("Add Variable", self.canvas.add_variable_node, tip="Add a downstream variable node for LLM prompt substitution")
         tb.addSeparator()
         act("Run All", self._run_all, shortcut="F5", tip="Run all nodes reachable from Start")
         act("Run Selected", self._run_selected_only, tip="Run only the selected node(s) without fan-out")
@@ -686,6 +697,29 @@ class MainWindow(QMainWindow):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, ScriptNode):
             node.auto_send_enter = bool(checked)
+            self._refresh_panel_overview()
+
+    def _on_panel_variable_name_committed(self, node_id: str, text: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, VariableNode):
+            node.variable_name = text
+            self.canvas.refresh_node_validation_state()
+            self._panel.refresh_if_current(node)
+            self._refresh_panel_overview()
+
+    def _on_panel_variable_value_committed(self, node_id: str, text: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, VariableNode):
+            node.variable_value = text
+            self.canvas.refresh_node_validation_state()
+            self._refresh_panel_overview()
+
+    def _on_panel_variable_type_changed(self, node_id: str, _old_type: str, new_type: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is not None and isinstance(node, VariableNode):
+            node.variable_type = new_type
+            self.canvas.refresh_node_validation_state()
+            self._panel.refresh_if_current(node)
             self._refresh_panel_overview()
 
     def _run_all(self):

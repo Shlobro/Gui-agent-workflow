@@ -1,19 +1,20 @@
 # canvas Developer Guide
 
 ## Purpose
-The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. Splitting it into four files keeps each under the file-size cap while preserving `WorkflowCanvas` as the single public class.
+The `canvas/` subpackage houses `WorkflowCanvas` and its four behavior mixins. Splitting the behavior across focused modules keeps each file under the file-size cap while preserving `WorkflowCanvas` as the single public class.
 
 ## Files
-- `__init__.py`: `WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _IOMixin, QGraphicsView)` owns initialization, background grid, start-node creation, node and connection CRUD, panel commit handlers, mouse and keyboard event handling, connection drawing, connection-vertex editing interactions, prompt-injection state, node-specific prompt composition, and the undo stack.
+- `__init__.py`: `WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _VariableMixin, _IOMixin, QGraphicsView)` owns initialization, background grid, start-node creation, node and connection CRUD, panel commit handlers, mouse and keyboard event handling, connection drawing, connection-vertex editing interactions, prompt-injection state, node-specific prompt composition, and the undo stack.
 - `execution.py`: `_ExecutionMixin` contains run/stop logic, graph traversal, validation, and the core invocation engine (`_fire_invocation`, `_fire_condition_check`, `_fire_attention`, `_fire_loop`, `_fire_join`). It also owns usage-limit detection, LLM call headers, session capture persistence, and serialization for any resumed LLM conversation key (node-local or workflow-named).
 - `llm_output.py`: Shared helpers for mirroring named-session output across related LLM nodes and for building the per-call node/session/prompt metadata block that appears before each response.
 - `llm_resume.py`: Helpers for resolving the effective resume session ID / serialization key for LLM calls and for draining queued named-session resumptions one at a time.
 - `session_state.py`: `_SessionStateMixin` owns workflow-level named-session storage, node-session snapshot helpers, save/resume option filtering, and named-session reconciliation.
 - `subprocess_execution.py`: `_SubprocessExecutionMixin` owns project-relative path confinement plus file-op, git-action, and script-runner execution.
 - `io.py`: `_IOMixin` contains graph mutation primitives, clipboard, `clear_canvas`, and `get_workflow_data` / `load_workflow_data`.
+- `variables.py`: `_VariableMixin` owns variable-name extraction, prompt-preview/validation graph analysis, per-lineage variable runtime state, and join-merge helpers.
 
 ## Mixin Pattern
-- `_SubprocessExecutionMixin`, `_ExecutionMixin`, `_SessionStateMixin`, and `_IOMixin` are not standalone. They rely directly on `WorkflowCanvas` instance state and use `TYPE_CHECKING` imports only for annotations.
+- `_SubprocessExecutionMixin`, `_ExecutionMixin`, `_SessionStateMixin`, `_VariableMixin`, and `_IOMixin` are not standalone. They rely directly on `WorkflowCanvas` instance state and use `TYPE_CHECKING` imports only for annotations.
 
 ## Key Invariants
 - All undo-pushable mutations go through `WorkflowCanvas._undo_stack`.
@@ -21,6 +22,7 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. 
 - `notify_node_changed(node_id)` re-emits `selection_changed` after undo/redo attribute changes so the properties panel refreshes automatically.
 - `refresh_node_validation_state()` applies run-validation rules to all non-start nodes and toggles each node's invalid flag; invalid nodes render with a red border until required fields are fixed.
 - `_pending_join_waits` must stay in sync with `_join_wait_counts`; otherwise `_check_drain()` can incorrectly mark a workflow complete while join barriers are still waiting.
+- `_lineage_variables` carries the active variable map for each execution lineage. Fan-out must copy parent state into child lineages, and join release must merge waiting lineage maps before downstream nodes run.
 
 ## LLM Session Resume Rules
 - LLM node JSON can persist `resume_session_enabled`, `save_session_enabled`, `save_session_name`, `resume_named_session_name`, `saved_session_id`, and `saved_session_provider`.
@@ -38,11 +40,14 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. 
 ## Save/Load Notes
 - Saved LLM session metadata lives inside the workflow JSON. There is no separate session sidecar file.
 - Saved per-node prompt-template overrides also live inside workflow JSON. Missing template IDs are silently dropped on load via the shared prompt-injection normalization helpers.
+- Variable nodes persist `variable_name`, `variable_type`, and `variable_value` directly in the main workflow JSON node record.
 - Malformed node records abort load; malformed connections are dropped so a partial graph can still load.
 - Connection helpers accept `source_port` so multi-port node edges are preserved, and optional `vertices` so manual bend points survive save/load, undo/redo, and paste.
 
 ## Attention, Git, And Script Execution
 - `WorkflowCanvas.add_attention_node()` creates `AttentionNode` snapshots with a user-facing `message` field so save/load, undo, and paste treat the node like any other built-in node type.
+- `WorkflowCanvas.add_variable_node()` creates `VariableNode` snapshots with a Python-style variable name, a `text` or `number` type, and the raw value string.
 - `_ExecutionMixin._fire_attention()` opens a modal `QMessageBox` and fans out only when the user clicks Continue. It is a single-branch gate, not a global pause.
+- `_VariableMixin._fire_variable_node()` runs synchronously on the UI thread, updates the current lineage's variable map, writes a short node output line, and then continues normal fan-out.
 - `_ExecutionMixin._fire_condition_check()` resolves a file path only when `condition_requires_filename(condition_type)` is true, then dispatches based on `condition_execution_mode(condition_type)`: `"git_worker"` conditions are routed to `_fire_git_changes_condition()`, which runs `git status --porcelain --untracked-files=all` with a 15-second timeout; `"sync"` conditions call `node.evaluate()` on the UI thread.
 - `_SubprocessExecutionMixin._resolve_project_relative_path()` is the shared confinement rule for file ops, git commit-message files, and script paths. Script paths must stay inside the selected project folder and end in `.bat`, `.cmd`, or `.ps1`.

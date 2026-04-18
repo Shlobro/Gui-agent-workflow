@@ -11,32 +11,20 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from src.workers.llm_worker import LLMWorker
 from src.gui.file_op_node import AttentionNode, FileOpNode
 from src.gui.conditional_node import (
-    CONDITION_REGISTRY,
-    ConditionalNode,
-    condition_display_name,
-    condition_execution_mode,
+    CONDITION_REGISTRY, ConditionalNode, condition_display_name, condition_execution_mode,
     condition_requires_filename,
 )
 from src.gui.control_flow.join_node import JoinNode
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.script_runner.script_node import ALLOWED_SCRIPT_SUFFIXES, ScriptNode
-from src.gui.canvas.llm_output import (
-    append_output_line,
-    clear_node_output,
-    start_llm_output_block,
-)
-from src.gui.canvas.llm_resume import (
-    llm_resume_serial_key,
-    llm_resume_session_id,
-    release_serial_llm_resume_slot,
-)
+from src.gui.variables import VariableNode
+from src.gui.canvas.llm_output import append_output_line, clear_node_output, start_llm_output_block
+from src.gui.canvas.llm_resume import llm_resume_serial_key, llm_resume_session_id, release_serial_llm_resume_slot
 from src.gui.workflow_io import get_provider_for_model
 
 if TYPE_CHECKING:
     from src.gui.canvas import WorkflowCanvas
-
 GraphNode = WorkflowNode
-
 _USAGE_LIMIT_RE = re.compile(
     r"you'?ve hit your usage limit"
     r"|you'?ve hit your limit"
@@ -65,10 +53,8 @@ _USAGE_LIMIT_RE = re.compile(
 _GIT_STATUS_TIMEOUT_SECONDS = 15
 _GIT_STATUS_COMMAND = ["git", "status", "--porcelain", "--untracked-files=all"]
 
-
 def is_usage_limit_error(text: str) -> bool:
     return bool(_USAGE_LIMIT_RE.search(text))
-
 
 class _ExecutionMixin:
     """Run/stop execution methods mixed into WorkflowCanvas."""
@@ -164,6 +150,7 @@ class _ExecutionMixin:
             self._current_run_exec_ids.discard(exec_id)
             self._exec_streamed_output.pop(exec_id, None)
         self._llm_serial_waiting_exec_ids.clear()
+        self._clear_variable_runtime_state()
         for node in self._nodes.values():
             if node.status in {"running", "looping"}:
                 node.set_status("idle")
@@ -195,7 +182,11 @@ class _ExecutionMixin:
             for conn in self._connections
         )
 
-    def _node_validation_errors(self: "WorkflowCanvas", node: GraphNode) -> List[str]:
+    def _node_validation_errors(
+        self: "WorkflowCanvas",
+        node: GraphNode,
+        allowed_node_ids: set[str] | None = None,
+    ) -> List[str]:
         from src.gui.loop_node import LoopNode
         from src.gui.git_action_node import GitActionNode
 
@@ -230,10 +221,11 @@ class _ExecutionMixin:
                     reasons.append("must use a .bat, .cmd, or .ps1 script")
             return reasons
 
-        if isinstance(node, LoopNode):
-            # loop_count is always clamped by constructor/load path
-            return reasons
+        if isinstance(node, VariableNode):
+            return self.variable_validation_errors(node)
 
+        if isinstance(node, LoopNode):
+            return reasons
         if isinstance(node, JoinNode):
             return reasons
 
@@ -253,6 +245,9 @@ class _ExecutionMixin:
 
         if not node.prompt_text.strip():
             reasons.append("has no prompt")
+        reasons.extend(
+            self.llm_variable_validation_errors(node, allowed_node_ids=allowed_node_ids)
+        )
         if not node.model_id:
             reasons.append("has no model selected")
         elif get_provider_for_model(node.model_id) is None:
@@ -260,11 +255,13 @@ class _ExecutionMixin:
         return reasons
 
     def _validation_errors_by_node(
-        self: "WorkflowCanvas", nodes: Sequence[GraphNode]
+        self: "WorkflowCanvas",
+        nodes: Sequence[GraphNode],
+        allowed_node_ids: set[str] | None = None,
     ) -> Dict[str, List[str]]:
         errors: Dict[str, List[str]] = {}
         for node in nodes:
-            reasons = self._node_validation_errors(node)
+            reasons = self._node_validation_errors(node, allowed_node_ids=allowed_node_ids)
             if reasons:
                 errors[node.node_id] = reasons
         return errors
@@ -277,7 +274,8 @@ class _ExecutionMixin:
         return errors_by_node
 
     def _validate_nodes(self: "WorkflowCanvas", nodes: Sequence[GraphNode]) -> List[str]:
-        errors_by_node = self.refresh_node_validation_state()
+        node_ids = {node.node_id for node in nodes}
+        errors_by_node = self._validation_errors_by_node(nodes, allowed_node_ids=node_ids)
         return [
             f'\u2022 "{getattr(node, "title", node.node_id)}" {reason}.'
             for node in nodes
@@ -298,6 +296,7 @@ class _ExecutionMixin:
             self._llm_serial_wait_queues.clear()
             self._join_wait_counts.clear()
             self._pending_join_waits = 0
+            self._clear_variable_runtime_state()
             self._loop_counters.clear()
             self._exec_lineage.clear()
             for n in self._nodes.values():
@@ -374,6 +373,9 @@ class _ExecutionMixin:
         if isinstance(node, FileOpNode):
             self._fire_file_op(node, exec_id, lineage_token, loop_token, join_token)
             return
+        if isinstance(node, VariableNode):
+            self._fire_variable_node(node, exec_id, lineage_token, loop_token, join_token)
+            return
         from src.gui.git_action_node import GitActionNode
         if isinstance(node, GitActionNode):
             self._fire_git_action(node, exec_id, lineage_token, loop_token, join_token)
@@ -398,7 +400,10 @@ class _ExecutionMixin:
             self._current_run_exec_ids.discard(exec_id)
             return
 
-        composed_prompt = self.compose_llm_prompt(node)
+        prompt_text, runtime_warnings = self.render_llm_prompt_text(node, lineage_token=lineage_token)
+        composed_prompt = self.compose_llm_prompt(node, prompt_text=prompt_text)
+        for warning in runtime_warnings:
+            append_output_line(self, node, f"[Warning] {warning}")
         start_llm_output_block(self, node, composed_prompt)
         worker = LLMWorker(
             provider,
@@ -736,6 +741,7 @@ class _ExecutionMixin:
         return join_token or lineage_token or f"run-{self._run_id}"
 
     def _clear_join_state_for_node(self, node_id: str) -> None:
+        self._clear_join_variable_state_for_node(node_id)
         for key, count in list(self._join_wait_counts.items()):
             if key[0] != node_id:
                 continue
@@ -756,6 +762,7 @@ class _ExecutionMixin:
         run_id = self._run_id
         group_key = self._join_group_key(lineage_token, join_token)
         join_key = (node.node_id, group_key)
+        self._record_join_variable_state(node.node_id, group_key, lineage_token)
         current_count = self._join_wait_counts.get(join_key, 0) + 1
         self._join_wait_counts[join_key] = current_count
         self._pending_join_waits += 1
@@ -775,6 +782,7 @@ class _ExecutionMixin:
         line = f"Join released: {node.wait_for_count}/{node.wait_for_count}"
         append_output_line(self, node, line)
         released_lineage = str(uuid4())
+        self._release_join_variable_state(node.node_id, group_key, node.wait_for_count, released_lineage)
         self._on_join_release(
             node,
             exec_id,
@@ -850,7 +858,6 @@ class _ExecutionMixin:
                 if conn.source_node is node
             ]
         self._pending_child_triggers += len(edge_pairs)
-        # Fan-out: each child gets a new unique lineage token; single child inherits same token.
         if len(edge_pairs) == 1:
             lineage_tokens = [lineage_token]
             join_tokens = [join_token]
@@ -858,6 +865,8 @@ class _ExecutionMixin:
             lineage_tokens = [str(uuid4()) for _ in edge_pairs]
             shared_join_token = lineage_token or join_token
             join_tokens = [shared_join_token for _ in edge_pairs]
+        for child_lt in lineage_tokens:
+            self._copy_lineage_variables(lineage_token, child_lt)
         for (source_id, target_id, source_port), child_lt, child_jt in zip(
             edge_pairs, lineage_tokens, join_tokens
         ):

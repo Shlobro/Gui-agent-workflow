@@ -78,7 +78,8 @@ def parse_workflow_data(data: dict) -> dict:
                           "git_action", "msg_source", "commit_msg", "commit_msg_file",
                           "message", "script_path", "save_session_name",
                           "resume_named_session_name",
-                          "saved_session_id", "saved_session_provider"):
+                          "saved_session_id", "saved_session_provider",
+                          "variable_name", "variable_type", "variable_value"):
             if str_field in b_data and not isinstance(b_data[str_field], str):
                 raise ValueError(
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
@@ -166,6 +167,13 @@ def parse_workflow_data(data: dict) -> dict:
                 raise ValueError(
                     f"Node record at index {idx_in_list} has invalid script_path "
                     f"'{script_path}'. Script nodes support .bat, .cmd, and .ps1 files."
+                )
+        if node_type == "variable":
+            variable_type = b_data.get("variable_type", "text")
+            if variable_type not in {"text", "number"}:
+                raise ValueError(
+                    f"Node record at index {idx_in_list} has invalid variable_type "
+                    f"'{variable_type}'."
                 )
 
         node_cls = NODE_TYPE_MAP.get(node_type, LLMNode)

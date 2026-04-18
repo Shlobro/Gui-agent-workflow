@@ -12,10 +12,12 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running or looping. `LLMNode` displays the chosen model's provider logo in its header.
 - `checked_dropdown.py`: Reusable checked popup dropdown used by per-node prompt-template selection controls.
 - `llm_widget.py`: `ModelSelector`, model list widget, provider icon helpers, and `populate_model_selector`.
+- `variables/`: Variable-node package with the graphics item, validation helpers, and variable form widget.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.
 - `git_action_node.py`: Compact node for git operations with action/message settings.
 - `_panel_forms.py`: Form widget classes used by `PropertiesPanel`.
-- `properties_panel.py`: Resizable side panel with `_OverviewForm`, per-node forms, and the LLM Prompt/Output tabs. The stacked panel switches among overview, LLM, file-op, conditional, loop, join, git-action, attention, and script forms. The LLM form owns the model selector, the session controls, prompt preview, and per-call output tabs.
+- `properties_panel.py`: Resizable side panel with `_OverviewForm`, per-node forms, and the LLM Prompt/Output tabs. The stacked panel switches among overview, LLM, file-op, conditional, loop, join, git-action, attention, script, and variable forms. The LLM form owns the model selector, the session controls, prompt preview, variable-warning note, and per-call output tabs.
+- `properties_panel_node_helpers.py`: Non-LLM node form loaders plus output-routing helpers for the side panel.
 - `workflow_io.py`: Pure serialization and validation helpers.
 - `conditional_node.py`: `ConditionalNode` and condition registry metadata.
 - `loop_node.py`: `LoopNode` with loop/done output ports.
@@ -29,9 +31,9 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 ## Key Interactions
 - The panel remains visible at all times. With exactly one selected workflow node it shows that node form; with exactly one selected connection it shows an arrow-focused overview; otherwise it shows the workflow overview page.
 - Overview data is maintained by `MainWindow` and includes working directory, connection count, selected counts, node counts by type, invalid node titles, prompt injection payload, resumable LLM count, and saved-session count.
-- Before any run, reachable nodes are validated with node-type rules (`LLMNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, `LoopNode`, `JoinNode`, `GitActionNode`, `ScriptNode`).
+- Before any run, reachable nodes are validated with node-type rules (`LLMNode`, `VariableNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, `LoopNode`, `JoinNode`, `GitActionNode`, `ScriptNode`).
 - The same validation rules drive live node highlighting: invalid nodes get a red border until required fields are valid.
-- Prompt injection preview in selected LLM forms stays aligned with the current preview or active run context plus the selected node's saved prepend/append template overrides.
+- Prompt injection preview in selected LLM forms stays aligned with the current preview or active run context plus the selected node's saved prepend/append template overrides, and applies any uniquely-resolved reachable upstream `$name` substitutions inside the node prompt text.
 - `JoinNode` is a barrier: it waits for `wait_for_count` arrivals from the same parallel split group before it releases one downstream continuation.
 
 ## LLM Session UI Rules
@@ -56,6 +58,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - LLM output logs include per-invocation separators (`=== Call N ===`), and the LLM output pane renders those separators as separate nested `Call N` tabs.
 - Workflow-named LLM sessions share one in-memory output history across the save-owner and every resume node using that same session name; each call block includes the producing node title, the session label, the full composed prompt, and then the response content.
 - Each `LLMNode` has checked `Prepend` and `Append` dropdowns listing every saved prompt template. Saved global default templates appear selected in both dropdowns by default; the node stores only local additions and per-side opt-outs from that default set, while prompt preview can still reflect transient next-run injection state.
+- `VariableNode` stores `variable_name`, `variable_type`, and `variable_value`. Later variable nodes with the same name overwrite the earlier value on downstream branches, and the variable form shows a yellow non-blocking warning when the selected node overwrites an upstream definition.
 - Ctrl+mouse-wheel inside properties panel changes panel text size.
 - Properties panel output areas stream execution output for the currently selected node.
 - Copy/paste generates a new node identity and never carries over a saved Claude/Codex session ID or named-session binding to the pasted node.

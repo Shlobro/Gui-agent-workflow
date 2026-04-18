@@ -332,6 +332,11 @@ def _script_node_factory(node_id=None, label_index=1):
     return ScriptNode(node_id=node_id, label_index=label_index)
 
 
+def _variable_node_factory(node_id=None, label_index=1):
+    from .variables import VariableNode
+    return VariableNode(node_id=node_id, label_index=label_index)
+
+
 NODE_TYPE_MAP = {
     "create_file":   CreateFileNode,
     "truncate_file": TruncateFileNode,
@@ -342,4 +347,5 @@ NODE_TYPE_MAP = {
     "git_action":    _git_action_factory,
     "attention":     _attention_factory,
     "script_runner": _script_node_factory,
+    "variable":      _variable_node_factory,
 }

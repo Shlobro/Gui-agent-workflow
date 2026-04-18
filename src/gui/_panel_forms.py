@@ -124,6 +124,14 @@ class _LLMForm(QWidget):
 
         layout.addSpacing(4)
 
+        self.prompt_warning_label = QLabel("")
+        self.prompt_warning_label.setObjectName("warning_label")
+        self.prompt_warning_label.setWordWrap(True)
+        self.prompt_warning_label.setVisible(False)
+        layout.addWidget(self.prompt_warning_label)
+
+        layout.addSpacing(2)
+
         self._tabs = QTabWidget()
         self._tabs.setTabPosition(QTabWidget.TabPosition.North)
         self._tabs.setDocumentMode(True)

@@ -10,6 +10,7 @@ from src.gui.git_action_node import GitActionNode
 from src.gui.llm_node import LLMNode
 from src.gui.loop_node import LoopNode
 from src.gui.script_runner.script_node import ScriptNode
+from src.gui.variables import VariableNode
 
 
 def selected_nodes(main_window) -> list:
@@ -76,6 +77,7 @@ def refresh_panel_overview(main_window) -> None:
     attention_count = 0
     git_action_count = 0
     script_count = 0
+    variable_count = 0
     resumable_llm_count = 0
     saved_llm_session_count = 0
     saved_named_session_count = 0
@@ -96,6 +98,8 @@ def refresh_panel_overview(main_window) -> None:
             git_action_count += 1
         elif isinstance(node, ScriptNode):
             script_count += 1
+        elif isinstance(node, VariableNode):
+            variable_count += 1
         elif isinstance(node, FileOpNode):
             file_op_count += 1
         elif isinstance(node, LLMNode):
@@ -129,6 +133,7 @@ def refresh_panel_overview(main_window) -> None:
         f"- Join: {join_count}",
         f"- Git Action: {git_action_count}",
         f"- Script: {script_count}",
+        f"- Variable: {variable_count}",
         f"- LLM Resume Enabled: {resumable_llm_count}",
         f"- Saved LLM Sessions: {saved_llm_session_count}",
         f"- Saved Named Sessions: {saved_named_session_count}",

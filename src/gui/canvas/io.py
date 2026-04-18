@@ -7,6 +7,7 @@ from src.gui.file_op_node import NODE_TYPE_MAP
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.undo_commands import PasteCommand
 from src.gui.workflow_io import parse_workflow_data, build_workflow_data, get_provider_for_model
+from src.gui.variables import VariableNode
 
 if TYPE_CHECKING:
     from src.gui.canvas import WorkflowCanvas
@@ -184,6 +185,7 @@ class _IOMixin:
         self._llm_serial_waiting_exec_ids.clear()
         self._llm_serial_wait_queues.clear()
         self._named_sessions.clear()
+        self._clear_variable_runtime_state()
 
     # ------------------------------------------------------------------
     # Workflow save / load

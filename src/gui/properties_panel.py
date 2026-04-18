@@ -1,7 +1,7 @@
 """PropertiesPanel - resizable side panel for editing node properties."""
 from typing import Optional, Sequence
 
-from PySide6.QtCore import QEvent, Signal, Qt
+from PySide6.QtCore import QEvent, QTimer, Signal, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -27,6 +27,19 @@ from ._panel_forms import (
     _LoopForm,
     _ScriptForm,
 )
+from .properties_panel_node_helpers import (
+    append_node_output,
+    clear_node_output,
+    load_attention_form,
+    load_cond_form,
+    load_file_form,
+    load_git_form,
+    load_join_form,
+    load_loop_form,
+    load_script_form,
+    load_variable_form,
+)
+from .variables import _VariableForm, VariableNode
 from src.llm.prompt_injection import PromptInjectionConfig, POSITION_APPEND
 from .llm_sessions.panel_helpers import load_llm_form, refresh_llm_prompt_preview, refresh_llm_template_controls
 DEFAULT_PANEL_WIDTH = 420
@@ -46,6 +59,7 @@ _PANEL_STYLE = """
         font-weight: bold;
         letter-spacing: 1px;
     }
+    QLabel#warning_label { color: #e2c26b; }
     QLabel { color: #aaaaaa; }
     QLineEdit {
         background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
@@ -183,6 +197,9 @@ class PropertiesPanel(QWidget):
     script_path_committed = Signal(str, str)
     script_browse_requested = Signal(str)
     script_auto_send_enter_changed = Signal(str, bool)
+    variable_name_committed = Signal(str, str)
+    variable_value_committed = Signal(str, str)
+    variable_type_changed = Signal(str, str, str)
     text_zoom_changed = Signal(int)
 
     def __init__(self, parent=None):
@@ -202,6 +219,8 @@ class PropertiesPanel(QWidget):
         self._git_commit_msg_dirty: bool = False
         self._git_commit_msg_file_dirty: bool = False
         self._script_path_dirty: bool = False
+        self._variable_name_dirty: bool = False
+        self._variable_value_dirty: bool = False
         self._is_committing: bool = False
         self._preferred_width: int = DEFAULT_PANEL_WIDTH
         self._text_zoom: int = DEFAULT_TEXT_ZOOM
@@ -211,6 +230,13 @@ class PropertiesPanel(QWidget):
         self._preview_one_off_text: str = ""
         self._preview_one_off_placement: str = POSITION_APPEND
         self._llm_named_session_options: list[tuple[str, str]] = []
+        self._llm_prompt_preview_provider = None
+        self._variable_warning_provider = None
+        self._pending_variable_warning_name: str = ""
+        self._variable_warning_timer = QTimer(self)
+        self._variable_warning_timer.setSingleShot(True)
+        self._variable_warning_timer.setInterval(120)
+        self._variable_warning_timer.timeout.connect(self._refresh_variable_warning_preview)
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -245,6 +271,8 @@ class PropertiesPanel(QWidget):
 
         self._script_form = _ScriptForm()
         self._stack.addWidget(self._wrap_form(self._script_form))
+        self._variable_form = _VariableForm()
+        self._stack.addWidget(self._wrap_form(self._variable_form))
 
         self._wire_signals()
         self._install_zoom_filters()
@@ -316,6 +344,14 @@ class PropertiesPanel(QWidget):
         self._script_form.script_path_edit.installEventFilter(self)
         self._script_form.browse_requested.connect(self._on_script_browse_requested)
         self._script_form.auto_send_enter_changed.connect(self._on_script_auto_send_enter_changed)
+        self._variable_form.title_edit.editingFinished.connect(self._on_variable_title_committed)
+        self._variable_form.variable_name_edit.textChanged.connect(self._on_variable_name_changed)
+        self._variable_form.variable_name_edit.editingFinished.connect(self._on_variable_name_committed)
+        self._variable_form.variable_name_edit.installEventFilter(self)
+        self._variable_form.value_edit.textChanged.connect(self._on_variable_value_changed)
+        self._variable_form.value_edit.installEventFilter(self)
+        self._variable_form.variable_type_changed.connect(self._on_variable_type_changed)
+
     def _install_zoom_filters(self) -> None:
         for widget in self.findChildren(QWidget):
             widget.installEventFilter(self)
@@ -345,6 +381,10 @@ class PropertiesPanel(QWidget):
                 self._flush_git_commit_msg_file()
             elif obj is self._script_form.script_path_edit and self._script_path_dirty:
                 self._flush_script_path()
+            elif obj is self._variable_form.variable_name_edit and self._variable_name_dirty:
+                self._flush_variable_name()
+            elif obj is self._variable_form.value_edit and self._variable_value_dirty:
+                self._flush_variable_value()
         return super().eventFilter(obj, event)
 
     def preferred_width(self) -> int:
@@ -628,6 +668,58 @@ class PropertiesPanel(QWidget):
             return
         self.script_auto_send_enter_changed.emit(self._current_node.node_id, checked)
 
+    def _on_variable_title_committed(self):
+        if self._current_node is None:
+            return
+        new_title = self._variable_form.title_edit.text()
+        if new_title != self._old_title:
+            self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
+            self._old_title = new_title
+
+    def _on_variable_name_changed(self):
+        self._variable_name_dirty = True
+        self._pending_variable_warning_name = self._variable_form.variable_name_edit.text()
+        if isinstance(self._current_node, VariableNode) and self._variable_warning_provider is not None:
+            self._variable_warning_timer.start()
+
+    def _on_variable_name_committed(self):
+        if self._variable_name_dirty:
+            self._flush_variable_name()
+
+    def _flush_variable_name(self):
+        if self._current_node is None:
+            return
+        self.variable_name_committed.emit(
+            self._current_node.node_id, self._variable_form.variable_name_edit.text()
+        )
+        self._variable_name_dirty = False
+        self._pending_variable_warning_name = self._variable_form.variable_name_edit.text()
+        self._refresh_variable_warning_preview()
+
+    def _on_variable_value_changed(self):
+        self._variable_value_dirty = True
+
+    def _flush_variable_value(self):
+        if self._current_node is None:
+            return
+        self.variable_value_committed.emit(
+            self._current_node.node_id, self._variable_form.value_edit.toPlainText()
+        )
+        self._variable_value_dirty = False
+
+    def _on_variable_type_changed(self, old_type: str, new_type: str):
+        if self._current_node is None:
+            return
+        self.variable_type_changed.emit(self._current_node.node_id, old_type, new_type)
+
+    def _refresh_variable_warning_preview(self) -> None:
+        if not isinstance(self._current_node, VariableNode) or self._variable_warning_provider is None:
+            self._variable_form.set_warning_text("")
+            return
+        self._variable_form.set_warning_text(
+            self._variable_warning_provider(self._current_node, self._pending_variable_warning_name)
+        )
+
     def commit_pending_edits(self) -> None:
         """Commit visible-form edits in a stable order."""
         if self._is_committing:
@@ -640,6 +732,7 @@ class PropertiesPanel(QWidget):
         from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
         from .script_runner import ScriptNode
+        from .variables import VariableNode
 
         self._is_committing = True
         try:
@@ -675,6 +768,12 @@ class PropertiesPanel(QWidget):
                 if self._git_commit_msg_file_dirty:
                     self._flush_git_commit_msg_file()
                 self._on_git_title_committed()
+            elif isinstance(self._current_node, VariableNode):
+                if self._variable_name_dirty:
+                    self._flush_variable_name()
+                if self._variable_value_dirty:
+                    self._flush_variable_value()
+                self._on_variable_title_committed()
         finally:
             self._is_committing = False
 
@@ -687,6 +786,7 @@ class PropertiesPanel(QWidget):
         from .control_flow.join_node import JoinNode
         from .loop_node import LoopNode
         from .script_runner import ScriptNode
+        from .variables import VariableNode
 
         if self._current_node is not None and self._current_node is not node:
             self.commit_pending_edits()
@@ -697,25 +797,28 @@ class PropertiesPanel(QWidget):
             self._load_llm_form(node)
             self._stack.setCurrentIndex(1)
         elif isinstance(node, ConditionalNode):
-            self._load_cond_form(node)
+            load_cond_form(self, node)
             self._stack.setCurrentIndex(3)
         elif isinstance(node, AttentionNode):
-            self._load_attention_form(node)
+            load_attention_form(self, node)
             self._stack.setCurrentIndex(7)
         elif isinstance(node, ScriptNode):
-            self._load_script_form(node)
+            load_script_form(self, node)
             self._stack.setCurrentIndex(8)
         elif isinstance(node, LoopNode):
-            self._load_loop_form(node)
+            load_loop_form(self, node)
             self._stack.setCurrentIndex(4)
         elif isinstance(node, JoinNode):
-            self._load_join_form(node)
+            load_join_form(self, node)
             self._stack.setCurrentIndex(5)
         elif isinstance(node, GitActionNode):
-            self._load_git_form(node)
+            load_git_form(self, node)
             self._stack.setCurrentIndex(6)
+        elif isinstance(node, VariableNode):
+            load_variable_form(self, node)
+            self._stack.setCurrentIndex(9)
         elif isinstance(node, FileOpNode):
-            self._load_file_form(node)
+            load_file_form(self, node)
             self._stack.setCurrentIndex(2)
         else:
             self._stack.setCurrentIndex(0)
@@ -736,231 +839,15 @@ class PropertiesPanel(QWidget):
     def maybe_append_output(self, node, line: str) -> None:
         if node is not self._current_node:
             return
-        from .conditional_node import ConditionalNode
-        from .file_op_node import AttentionNode, FileOpNode
-        from .git_action_node import GitActionNode
-        from .llm_node import LLMNode
-        from .control_flow.join_node import JoinNode
-        from .loop_node import LoopNode
-        from .script_runner import ScriptNode
-
-        if isinstance(node, LLMNode):
-            self._llm_form.show_output(True)
-            self._llm_form.append_output_line(line)
-        elif isinstance(node, ConditionalNode):
-            self._cond_form.show_output(True)
-            self._cond_form.output_edit.appendPlainText(line)
-        elif isinstance(node, AttentionNode):
-            self._attention_form.show_output(True)
-            self._attention_form.output_edit.appendPlainText(line)
-        elif isinstance(node, ScriptNode):
-            self._script_form.show_output(True)
-            self._script_form.output_edit.appendPlainText(line)
-        elif isinstance(node, LoopNode):
-            self._loop_form.show_output(True)
-            self._loop_form.output_edit.appendPlainText(line)
-        elif isinstance(node, JoinNode):
-            self._join_form.show_output(True)
-            self._join_form.output_edit.appendPlainText(line)
-        elif isinstance(node, GitActionNode):
-            self._git_form.show_output(True)
-            self._git_form.output_edit.appendPlainText(line)
-        elif isinstance(node, FileOpNode):
-            self._file_form.show_output(True)
-            self._file_form.output_edit.appendPlainText(line)
+        append_node_output(self, node, line)
 
     def maybe_clear_output(self, node) -> None:
         if node is not self._current_node:
             return
-        from .conditional_node import ConditionalNode
-        from .file_op_node import AttentionNode, FileOpNode
-        from .git_action_node import GitActionNode
-        from .llm_node import LLMNode
-        from .control_flow.join_node import JoinNode
-        from .loop_node import LoopNode
-        from .script_runner import ScriptNode
-
-        if isinstance(node, LLMNode):
-            self._llm_form.clear_output()
-            self._llm_form.show_output(False)
-        elif isinstance(node, ConditionalNode):
-            self._cond_form.output_edit.clear()
-            self._cond_form.show_output(False)
-        elif isinstance(node, AttentionNode):
-            self._attention_form.output_edit.clear()
-            self._attention_form.show_output(False)
-        elif isinstance(node, ScriptNode):
-            self._script_form.output_edit.clear()
-            self._script_form.show_output(False)
-        elif isinstance(node, LoopNode):
-            self._loop_form.output_edit.clear()
-            self._loop_form.show_output(False)
-        elif isinstance(node, JoinNode):
-            self._join_form.output_edit.clear()
-            self._join_form.show_output(False)
-        elif isinstance(node, GitActionNode):
-            self._git_form.output_edit.clear()
-            self._git_form.show_output(False)
-        elif isinstance(node, FileOpNode):
-            self._file_form.output_edit.clear()
-            self._file_form.show_output(False)
+        clear_node_output(self, node)
 
     def _load_llm_form(self, node) -> None:
         load_llm_form(self, node)
-
-    def _load_file_form(self, node) -> None:
-        form = self._file_form
-        form.title_edit.blockSignals(True)
-        form.filename_edit.blockSignals(True)
-
-        form.set_op_type(node.node_type)
-        form.title_edit.setText(node.title)
-        form.filename_edit.setText(node.filename)
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        form.filename_edit.blockSignals(False)
-
-        self._old_title = node.title
-        self._filename_dirty = False
-
-    def _load_loop_form(self, node) -> None:
-        form = self._loop_form
-        form.title_edit.blockSignals(True)
-
-        form.title_edit.setText(node.title)
-        form.set_loop_count(node.loop_count)
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        self._old_title = node.title
-
-    def _load_join_form(self, node) -> None:
-        form = self._join_form
-        form.title_edit.blockSignals(True)
-
-        form.title_edit.setText(node.title)
-        form.set_wait_for_count(node.wait_for_count)
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        self._old_title = node.title
-
-    def _load_cond_form(self, node) -> None:
-        form = self._cond_form
-        form.title_edit.blockSignals(True)
-        form.filename_edit.blockSignals(True)
-
-        form.set_condition_type(node.condition_type)
-        form.title_edit.setText(node.title)
-        form.filename_edit.setText(node.filename)
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        form.filename_edit.blockSignals(False)
-
-        self._old_title = node.title
-        self._cond_filename_dirty = False
-
-    def _load_git_form(self, node) -> None:
-        form = self._git_form
-        form.title_edit.blockSignals(True)
-        form.action_combo.blockSignals(True)
-        form.msg_source_combo.blockSignals(True)
-        form.commit_msg_edit.blockSignals(True)
-        form.commit_msg_file_edit.blockSignals(True)
-
-        form.set_git_action(node.git_action)
-        form.title_edit.setText(node.title)
-        form.set_msg_source(node.msg_source)
-        form.commit_msg_edit.setText(node.commit_msg)
-        form.commit_msg_file_edit.setText(node.commit_msg_file)
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        form.action_combo.blockSignals(False)
-        form.msg_source_combo.blockSignals(False)
-        form.commit_msg_edit.blockSignals(False)
-        form.commit_msg_file_edit.blockSignals(False)
-
-        self._old_title = node.title
-        self._git_commit_msg_dirty = False
-        self._git_commit_msg_file_dirty = False
-
-    def _load_attention_form(self, node) -> None:
-        form = self._attention_form
-        form.title_edit.blockSignals(True)
-        form.message_edit.blockSignals(True)
-
-        form.title_edit.setText(node.title)
-        form.message_edit.setPlainText(node.message_text)
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        form.message_edit.blockSignals(False)
-
-        self._old_title = node.title
-        self._attention_message_dirty = False
-
-    def _load_script_form(self, node) -> None:
-        form = self._script_form
-        form.title_edit.blockSignals(True)
-        form.script_path_edit.blockSignals(True)
-        form.auto_send_enter_checkbox.blockSignals(True)
-
-        form.title_edit.setText(node.title)
-        form.script_path_edit.setText(node.script_path)
-        form.auto_send_enter_checkbox.setChecked(bool(node.auto_send_enter))
-
-        if node.output_text:
-            form.output_edit.setPlainText(node.output_text.rstrip("\n"))
-            form.show_output(True)
-        else:
-            form.output_edit.clear()
-            form.show_output(False)
-
-        form.title_edit.blockSignals(False)
-        form.script_path_edit.blockSignals(False)
-        form.auto_send_enter_checkbox.blockSignals(False)
-
-        self._old_title = node.title
-        self._script_path_dirty = False
 
     def set_llm_named_session_options(self, options: Sequence[tuple[str, str]]) -> None:
         self._llm_named_session_options = list(options)
@@ -989,6 +876,14 @@ class PropertiesPanel(QWidget):
         if isinstance(self._current_node, LLMNode):
             refresh_llm_template_controls(self, self._current_node)
         self._refresh_llm_prompt_preview()
+
+    def set_llm_prompt_preview_provider(self, provider) -> None:
+        self._llm_prompt_preview_provider = provider
+        self._refresh_llm_prompt_preview()
+
+    def set_variable_warning_provider(self, provider) -> None:
+        self._variable_warning_provider = provider
+        self._refresh_variable_warning_preview()
 
     def _refresh_llm_prompt_preview(self) -> None:
         from .llm_node import LLMNode

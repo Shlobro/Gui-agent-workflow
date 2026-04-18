@@ -68,6 +68,13 @@ def refresh_llm_prompt_preview(panel) -> None:
     node = panel._current_node
     if node is None:
         return
+    prompt_text = panel._llm_form.prompt_edit.toPlainText()
+    warning_note = ""
+    if panel._llm_prompt_preview_provider is not None:
+        prompt_text, warnings = panel._llm_prompt_preview_provider(node, prompt_text)
+        warning_note = "\n".join(warnings)
+    panel._llm_form.prompt_warning_label.setText(warning_note)
+    panel._llm_form.prompt_warning_label.setVisible(bool(warning_note))
     prepend_template_contents = resolve_template_contents_for_ids(
         panel._prompt_injection_config,
         effective_node_template_ids(
@@ -87,7 +94,7 @@ def refresh_llm_prompt_preview(panel) -> None:
         ),
     )
     preview_text = compose_prompt(
-        panel._llm_form.prompt_edit.toPlainText(),
+        prompt_text,
         prepend_template_contents,
         append_template_contents,
         panel._preview_one_off_text,

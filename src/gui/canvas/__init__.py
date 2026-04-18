@@ -42,6 +42,8 @@ from src.gui.canvas.execution import _ExecutionMixin
 from src.gui.canvas.io import _IOMixin
 from src.gui.canvas.session_state import _SessionStateMixin
 from src.gui.canvas.subprocess_execution import _SubprocessExecutionMixin
+from src.gui.canvas.variables import _VariableMixin
+from src.gui.variables import VariableNode
 
 GraphNode = WorkflowNode
 SourceNode = Union[StartNode, WorkflowNode]
@@ -59,7 +61,7 @@ class _ExecutionSignals(QObject):
 
 
 class WorkflowCanvas(
-    _SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _IOMixin, QGraphicsView
+    _SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _VariableMixin, _IOMixin, QGraphicsView
 ):
     status_update = Signal(str)
     selection_changed = Signal()
@@ -84,6 +86,8 @@ class WorkflowCanvas(
         self._connections: List[ConnectionItem] = []
         self._node_counter = 0
         self._named_sessions: Dict[str, Dict[str, str]] = {}
+        self._lineage_variables: Dict[str, Dict[str, object]] = {}
+        self._join_wait_variable_states: Dict[tuple[str, str], List[Dict[str, object]]] = {}
 
         # Connection-drawing state
         self._drawing_connection = False
@@ -221,7 +225,8 @@ class WorkflowCanvas(
         self._prompt_injection_one_off = one_off_text or ""
         self._prompt_injection_one_off_placement = normalize_placement(one_off_placement)
 
-    def compose_llm_prompt(self, node: LLMNode) -> str:
+    def compose_llm_prompt(self, node: LLMNode, prompt_text: str | None = None) -> str:
+        rendered_prompt = node.prompt_text if prompt_text is None else prompt_text
         prepend_template_contents = resolve_template_contents_for_ids(
             self._prompt_injection_config,
             effective_node_template_ids(
@@ -243,7 +248,7 @@ class WorkflowCanvas(
         from src.llm.prompt_injection import compose_prompt
 
         return compose_prompt(
-            node.prompt_text,
+            rendered_prompt,
             prepend_template_contents,
             append_template_contents,
             self._prompt_injection_one_off,
@@ -437,6 +442,27 @@ class WorkflowCanvas(
         node = self._nodes[snapshot["id"]]
         if not isinstance(node, ConditionalNode):
             raise RuntimeError("Expected a ConditionalNode after add command.")
+        return node
+
+    def add_variable_node(self) -> VariableNode:
+        self._node_counter += 1
+        label_index = self._node_counter
+        center = self.mapToScene(self.viewport().rect().center())
+        snapshot = {
+            "node_type": "variable",
+            "id": str(uuid4()),
+            "label_index": label_index,
+            "x": center.x() - 210,
+            "y": center.y() - 32,
+            "name": f"Variable {label_index}",
+            "variable_name": "",
+            "variable_type": "text",
+            "variable_value": "",
+        }
+        self._undo_stack.push(AddNodeCommand(self, snapshot, label_index))
+        node = self._nodes[snapshot["id"]]
+        if not isinstance(node, VariableNode):
+            raise RuntimeError("Expected a VariableNode after add command.")
         return node
 
     def remove_node(self, node: GraphNode):
