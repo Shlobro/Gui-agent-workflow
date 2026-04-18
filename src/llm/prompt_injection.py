@@ -166,6 +166,59 @@ def resolve_template_contents(
     return prepend_sections, append_sections
 
 
+def resolve_template_contents_for_ids(
+    config: PromptInjectionConfig, template_ids: Sequence[str]
+) -> list[str]:
+    enabled = set(unique_existing_template_ids(config, template_ids))
+    resolved: list[str] = []
+    for template in config.templates:
+        if template.template_id not in enabled:
+            continue
+        content = template.content.strip()
+        if content:
+            resolved.append(content)
+    return resolved
+
+
+def effective_node_template_ids(
+    config: PromptInjectionConfig,
+    global_enabled_template_ids: Sequence[str],
+    local_enabled_template_ids: Sequence[str],
+    locally_disabled_global_template_ids: Sequence[str],
+) -> tuple[str, ...]:
+    global_enabled = set(unique_existing_template_ids(config, global_enabled_template_ids))
+    local_enabled = set(unique_existing_template_ids(config, local_enabled_template_ids))
+    locally_disabled = set(
+        unique_existing_template_ids(config, locally_disabled_global_template_ids)
+    )
+    ordered: list[str] = []
+    for template in config.templates:
+        template_id = template.template_id
+        if template_id in local_enabled or (
+            template_id in global_enabled and template_id not in locally_disabled
+        ):
+            ordered.append(template_id)
+    return tuple(ordered)
+
+
+def derive_node_template_overrides(
+    config: PromptInjectionConfig,
+    global_enabled_template_ids: Sequence[str],
+    effective_template_ids: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    global_enabled = set(unique_existing_template_ids(config, global_enabled_template_ids))
+    effective = set(unique_existing_template_ids(config, effective_template_ids))
+    local_enabled: list[str] = []
+    locally_disabled: list[str] = []
+    for template in config.templates:
+        template_id = template.template_id
+        if template_id in effective and template_id not in global_enabled:
+            local_enabled.append(template_id)
+        elif template_id in global_enabled and template_id not in effective:
+            locally_disabled.append(template_id)
+    return tuple(local_enabled), tuple(locally_disabled)
+
+
 def compose_prompt(
     base_prompt: str,
     prepend_template_contents: Sequence[str],

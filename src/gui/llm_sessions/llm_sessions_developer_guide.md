@@ -5,7 +5,7 @@
 
 ## Files
 - `session_state.py`: Normalizes workflow JSON named-session records, clones/clears the in-memory store, and answers provider/path-based availability checks for the resume dropdown.
-- `panel_helpers.py`: Loads the LLM form state for `PropertiesPanel` and keeps prompt-preview plus session-control widgets in sync with the selected node.
+- `panel_helpers.py`: Loads the LLM form state for `PropertiesPanel` and keeps prompt-preview, per-node prompt-template dropdowns, and session-control widgets in sync with the selected node.
 - `main_window_handlers.py`: Holds the `MainWindow` handlers for model changes plus named-session save/resume edits so the window class stays under the file-size cap.
 - `overview.py`: Builds the workflow-overview and connection-overview text shown in the always-visible properties panel.
 

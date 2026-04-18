@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from .conditional_node import CONDITION_REGISTRY, condition_note, condition_requires_filename
+from .checked_dropdown import CheckedDropdown
 from .llm_widget import ModelSelector, populate_model_selector
 
 
@@ -106,6 +107,20 @@ class _LLMForm(QWidget):
         named_layout.addWidget(self.named_session_note)
 
         layout.addWidget(self.named_session_controls)
+
+        layout.addSpacing(4)
+
+        prepend_label = QLabel("Prepend")
+        layout.addWidget(prepend_label)
+        self.prepend_template_dropdown = CheckedDropdown(popup_parent=self)
+        self.prepend_template_dropdown.set_placeholder_text("")
+        layout.addWidget(self.prepend_template_dropdown)
+
+        append_label = QLabel("Append")
+        layout.addWidget(append_label)
+        self.append_template_dropdown = CheckedDropdown(popup_parent=self)
+        self.append_template_dropdown.set_placeholder_text("")
+        layout.addWidget(self.append_template_dropdown)
 
         layout.addSpacing(4)
 
@@ -238,6 +253,18 @@ class _LLMForm(QWidget):
         normalized_note = note.strip()
         self.named_session_note.setText(normalized_note)
         self.named_session_note.setVisible(bool(normalized_note))
+
+    def set_prompt_template_options(
+        self,
+        options: list[tuple[str, str]],
+        *,
+        checked_prepend_ids: list[str],
+        checked_append_ids: list[str],
+    ) -> None:
+        self.prepend_template_dropdown.set_items(options)
+        self.append_template_dropdown.set_items(options)
+        self.prepend_template_dropdown.set_checked_ids(checked_prepend_ids)
+        self.append_template_dropdown.set_checked_ids(checked_append_ids)
 
     def show_output(self, visible: bool):
         _ = visible

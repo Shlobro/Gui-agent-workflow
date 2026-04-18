@@ -8,7 +8,6 @@ from uuid import uuid4
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from src.llm.prompt_injection import compose_prompt
 from src.workers.llm_worker import LLMWorker
 from src.gui.file_op_node import AttentionNode, FileOpNode
 from src.gui.conditional_node import (
@@ -399,13 +398,7 @@ class _ExecutionMixin:
             self._current_run_exec_ids.discard(exec_id)
             return
 
-        composed_prompt = compose_prompt(
-            node.prompt_text,
-            self._prompt_injection_prepend_templates,
-            self._prompt_injection_append_templates,
-            self._prompt_injection_one_off,
-            self._prompt_injection_one_off_placement,
-        )
+        composed_prompt = self.compose_llm_prompt(node)
         start_llm_output_block(self, node, composed_prompt)
         worker = LLMWorker(
             provider,

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from src.llm.prompt_injection import compose_prompt
+from src.llm.prompt_injection import (
+    compose_prompt,
+    effective_node_template_ids,
+    resolve_template_contents_for_ids,
+)
 from src.gui.workflow_io import get_provider_for_model
 
 
@@ -16,6 +20,7 @@ def load_llm_form(panel, node) -> None:
     form.model_selector.set_model_id(node.model_id)
     refresh_llm_session_state(panel, node)
     form.prompt_edit.setPlainText(node.prompt_text)
+    refresh_llm_template_controls(panel, node)
 
     if node.output_text:
         form.set_output_text(node.output_text.rstrip("\n"))
@@ -34,11 +39,57 @@ def load_llm_form(panel, node) -> None:
     refresh_llm_prompt_preview(panel)
 
 
+def refresh_llm_template_controls(panel, node) -> None:
+    panel._llm_form.set_prompt_template_options(
+        [
+            (template.template_id, template.name)
+            for template in panel._prompt_injection_config.templates
+        ],
+        checked_prepend_ids=list(
+            effective_node_template_ids(
+                panel._prompt_injection_config,
+                panel._persistent_global_template_ids,
+                node.prepend_template_ids,
+                node.prepend_disabled_global_template_ids,
+            )
+        ),
+        checked_append_ids=list(
+            effective_node_template_ids(
+                panel._prompt_injection_config,
+                panel._persistent_global_template_ids,
+                node.append_template_ids,
+                node.append_disabled_global_template_ids,
+            )
+        ),
+    )
+
+
 def refresh_llm_prompt_preview(panel) -> None:
+    node = panel._current_node
+    if node is None:
+        return
+    prepend_template_contents = resolve_template_contents_for_ids(
+        panel._prompt_injection_config,
+        effective_node_template_ids(
+            panel._prompt_injection_config,
+            panel._preview_global_template_ids,
+            node.prepend_template_ids,
+            node.prepend_disabled_global_template_ids,
+        ),
+    )
+    append_template_contents = resolve_template_contents_for_ids(
+        panel._prompt_injection_config,
+        effective_node_template_ids(
+            panel._prompt_injection_config,
+            panel._preview_global_template_ids,
+            node.append_template_ids,
+            node.append_disabled_global_template_ids,
+        ),
+    )
     preview_text = compose_prompt(
         panel._llm_form.prompt_edit.toPlainText(),
-        panel._preview_prepend_templates,
-        panel._preview_append_templates,
+        prepend_template_contents,
+        append_template_contents,
         panel._preview_one_off_text,
         panel._preview_one_off_placement,
     )

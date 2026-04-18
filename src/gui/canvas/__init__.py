@@ -12,7 +12,13 @@ from PySide6.QtWidgets import (
 )
 
 from src.llm.base_provider import LLMProviderRegistry
-from src.llm.prompt_injection import normalize_placement
+from src.llm.prompt_injection import (
+    POSITION_APPEND,
+    PromptInjectionConfig,
+    effective_node_template_ids,
+    normalize_placement,
+    resolve_template_contents_for_ids,
+)
 from src.gui.llm_node import LLMNode, StartNode, WorkflowNode
 from src.gui.connection_item import ConnectionItem
 from src.gui.file_op_node import AttentionNode, FileOpNode
@@ -118,10 +124,10 @@ class WorkflowCanvas(
 
         # Project working directory
         self._working_directory: Optional[str] = None
-        self._prompt_injection_prepend_templates: List[str] = []
-        self._prompt_injection_append_templates: List[str] = []
+        self._prompt_injection_config = PromptInjectionConfig(templates=(), default_enabled_template_ids=())
+        self._prompt_injection_global_template_ids: tuple[str, ...] = ()
         self._prompt_injection_one_off: str = ""
-        self._prompt_injection_one_off_placement: str = "append"
+        self._prompt_injection_one_off_placement: str = POSITION_APPEND
 
         # Pan state
         self._panning = False
@@ -205,25 +211,44 @@ class WorkflowCanvas(
 
     def set_prompt_injections(
         self,
-        prepend_template_contents: Sequence[str],
-        append_template_contents: Sequence[str],
+        config: PromptInjectionConfig,
+        global_template_ids: Sequence[str],
         one_off_text: str = "",
         one_off_placement: str = "append",
     ) -> None:
-        prepend_sections: List[str] = []
-        append_sections: List[str] = []
-        for section in prepend_template_contents:
-            normalized = str(section).strip()
-            if normalized:
-                prepend_sections.append(normalized)
-        for section in append_template_contents:
-            normalized = str(section).strip()
-            if normalized:
-                append_sections.append(normalized)
-        self._prompt_injection_prepend_templates = prepend_sections
-        self._prompt_injection_append_templates = append_sections
+        self._prompt_injection_config = config
+        self._prompt_injection_global_template_ids = tuple(global_template_ids)
         self._prompt_injection_one_off = one_off_text or ""
         self._prompt_injection_one_off_placement = normalize_placement(one_off_placement)
+
+    def compose_llm_prompt(self, node: LLMNode) -> str:
+        prepend_template_contents = resolve_template_contents_for_ids(
+            self._prompt_injection_config,
+            effective_node_template_ids(
+                self._prompt_injection_config,
+                self._prompt_injection_global_template_ids,
+                node.prepend_template_ids,
+                node.prepend_disabled_global_template_ids,
+            ),
+        )
+        append_template_contents = resolve_template_contents_for_ids(
+            self._prompt_injection_config,
+            effective_node_template_ids(
+                self._prompt_injection_config,
+                self._prompt_injection_global_template_ids,
+                node.append_template_ids,
+                node.append_disabled_global_template_ids,
+            ),
+        )
+        from src.llm.prompt_injection import compose_prompt
+
+        return compose_prompt(
+            node.prompt_text,
+            prepend_template_contents,
+            append_template_contents,
+            self._prompt_injection_one_off,
+            self._prompt_injection_one_off_placement,
+        )
 
     def _resolve_default_llm_model_id(self) -> str:
         if get_provider_for_model(PREFERRED_DEFAULT_LLM_MODEL_ID) is not None:

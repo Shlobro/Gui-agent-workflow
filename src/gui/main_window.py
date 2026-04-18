@@ -44,6 +44,7 @@ from .workflow_io import get_provider_for_model
 from src.llm.prompt_injection import (
     PromptInjectionRunOptions,
     PromptInjectionStore,
+    derive_node_template_overrides,
     normalize_run_options,
     resolve_template_contents,
 )
@@ -75,15 +76,12 @@ class MainWindow(QMainWindow):
 
         self.canvas = WorkflowCanvas()
         initial_options = self._effective_prompt_injection_options()
-        (
-            prepend_template_contents,
-            append_template_contents,
-            one_off_text,
-            one_off_placement,
-        ) = self._resolve_prompt_injection_payload(initial_options)
+        _, _, one_off_text, one_off_placement = self._resolve_prompt_injection_payload(
+            initial_options
+        )
         self.canvas.set_prompt_injections(
-            prepend_template_contents,
-            append_template_contents,
+            self._prompt_injection_config,
+            initial_options.enabled_template_ids,
             one_off_text,
             one_off_placement,
         )
@@ -118,6 +116,8 @@ class MainWindow(QMainWindow):
             self._on_panel_resume_named_session_changed
         )
         self._panel.prompt_committed.connect(self._on_panel_prompt_committed)
+        self._panel.prepend_template_ids_changed.connect(self._on_panel_prepend_template_ids_changed)
+        self._panel.append_template_ids_changed.connect(self._on_panel_append_template_ids_changed)
         self._panel.filename_committed.connect(self._on_panel_filename_committed)
         self._panel.attention_message_committed.connect(self._on_panel_attention_message_committed)
         self._panel.op_type_changed.connect(self._on_panel_op_type_changed)
@@ -573,6 +573,32 @@ class MainWindow(QMainWindow):
             self.canvas.refresh_node_validation_state()
             self._refresh_panel_overview()
 
+    def _on_panel_prepend_template_ids_changed(self, node_id: str, checked_ids: tuple[str, ...]):
+        node = self.canvas._nodes.get(node_id)
+        if node is None or not isinstance(node, LLMNode):
+            return
+        local_enabled, locally_disabled = derive_node_template_overrides(
+            self._prompt_injection_config,
+            self._prompt_injection_config.default_enabled_template_ids,
+            checked_ids,
+        )
+        node.prepend_template_ids = local_enabled
+        node.prepend_disabled_global_template_ids = locally_disabled
+        self._refresh_panel_overview()
+
+    def _on_panel_append_template_ids_changed(self, node_id: str, checked_ids: tuple[str, ...]):
+        node = self.canvas._nodes.get(node_id)
+        if node is None or not isinstance(node, LLMNode):
+            return
+        local_enabled, locally_disabled = derive_node_template_overrides(
+            self._prompt_injection_config,
+            self._prompt_injection_config.default_enabled_template_ids,
+            checked_ids,
+        )
+        node.append_template_ids = local_enabled
+        node.append_disabled_global_template_ids = locally_disabled
+        self._refresh_panel_overview()
+
     def _on_panel_filename_committed(self, node_id: str, text: str):
         node = self.canvas._nodes.get(node_id)
         if node is not None and isinstance(node, (FileOpNode, ConditionalNode)):
@@ -724,15 +750,10 @@ class MainWindow(QMainWindow):
 
     def _apply_prompt_injections_for_run(self):
         options = self._effective_prompt_injection_options()
-        (
-            prepend_template_contents,
-            append_template_contents,
-            one_off_text,
-            one_off_placement,
-        ) = self._resolve_prompt_injection_payload(options)
+        _, _, one_off_text, one_off_placement = self._resolve_prompt_injection_payload(options)
         self.canvas.set_prompt_injections(
-            prepend_template_contents,
-            append_template_contents,
+            self._prompt_injection_config,
+            options.enabled_template_ids,
             one_off_text,
             one_off_placement,
         )
@@ -776,14 +797,15 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_panel"):
             return
         (
-            prepend_template_contents,
-            append_template_contents,
+            _prepend_template_contents,
+            _append_template_contents,
             one_off_text,
             one_off_placement,
         ) = self._resolve_prompt_injection_payload(self._effective_preview_prompt_injection_options())
         self._panel.set_prompt_injection_preview_context(
-            prepend_template_contents,
-            append_template_contents,
+            self._prompt_injection_config,
+            self._prompt_injection_config.default_enabled_template_ids,
+            self._effective_preview_prompt_injection_options().enabled_template_ids,
             one_off_text,
             one_off_placement,
         )

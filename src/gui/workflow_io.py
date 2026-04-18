@@ -83,6 +83,21 @@ def parse_workflow_data(data: dict) -> dict:
                 raise ValueError(
                     f"Node record at index {idx_in_list} has non-string '{str_field}'."
                 )
+        for list_str_field in (
+            "prepend_template_ids",
+            "append_template_ids",
+            "prepend_disabled_global_template_ids",
+            "append_disabled_global_template_ids",
+        ):
+            if list_str_field not in b_data:
+                continue
+            raw_list = b_data[list_str_field]
+            if not isinstance(raw_list, list) or any(
+                not isinstance(item, str) for item in raw_list
+            ):
+                raise ValueError(
+                    f"Node record at index {idx_in_list} has invalid '{list_str_field}'."
+                )
         if "auto_send_enter" in b_data and not isinstance(b_data["auto_send_enter"], bool):
             raise ValueError(
                 f"Node record at index {idx_in_list} has non-boolean 'auto_send_enter'."

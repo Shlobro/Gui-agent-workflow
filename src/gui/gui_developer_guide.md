@@ -10,6 +10,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `canvas/` subpackage: Houses `WorkflowCanvas` plus execution, IO, subprocess, and named-session state mixins.
 - `control_flow/`: Coordination-oriented nodes such as `JoinNode`.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running or looping.
+- `checked_dropdown.py`: Reusable checked popup dropdown used by per-node prompt-template selection controls.
 - `llm_widget.py`: `ModelSelector`, model list widget, provider icon helpers, and `populate_model_selector`.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.
 - `git_action_node.py`: Compact node for git operations with action/message settings.
@@ -30,7 +31,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Overview data is maintained by `MainWindow` and includes working directory, connection count, selected counts, node counts by type, invalid node titles, prompt injection payload, resumable LLM count, and saved-session count.
 - Before any run, reachable nodes are validated with node-type rules (`LLMNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, `LoopNode`, `JoinNode`, `GitActionNode`, `ScriptNode`).
 - The same validation rules drive live node highlighting: invalid nodes get a red border until required fields are valid.
-- Prompt injection preview in selected LLM forms stays aligned with the current preview or active run context.
+- Prompt injection preview in selected LLM forms stays aligned with the current preview or active run context plus the selected node's saved prepend/append template overrides.
 - `JoinNode` is a barrier: it waits for `wait_for_count` arrivals from the same parallel split group before it releases one downstream continuation.
 
 ## LLM Session UI Rules
@@ -54,6 +55,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Manual connection vertices are persisted in workflow JSON as `connections[].vertices` and participate in undo/redo, paste, and load flows.
 - LLM output logs include per-invocation separators (`=== Call N ===`), and the LLM output pane renders those separators as separate nested `Call N` tabs.
 - Workflow-named LLM sessions share one in-memory output history across the save-owner and every resume node using that same session name; each call block includes the producing node title, the session label, the full composed prompt, and then the response content.
+- Each `LLMNode` has checked `Prepend` and `Append` dropdowns listing every saved prompt template. Saved global default templates appear selected in both dropdowns by default; the node stores only local additions and per-side opt-outs from that default set, while prompt preview can still reflect transient next-run injection state.
 - Ctrl+mouse-wheel inside properties panel changes panel text size.
 - Properties panel output areas stream execution output for the currently selected node.
 - Copy/paste generates a new node identity and never carries over a saved Claude/Codex session ID or named-session binding to the pasted node.

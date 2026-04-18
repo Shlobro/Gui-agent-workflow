@@ -290,6 +290,10 @@ class LLMNode(WorkflowNode):
         self.resume_named_session_name: str = ""
         self.saved_session_id: str = ""
         self.saved_session_provider: str = ""
+        self.prepend_template_ids: tuple[str, ...] = ()
+        self.append_template_ids: tuple[str, ...] = ()
+        self.prepend_disabled_global_template_ids: tuple[str, ...] = ()
+        self.append_disabled_global_template_ids: tuple[str, ...] = ()
         self._height = _COMPACT_NODE_HEIGHT
 
     # ------------------------------------------------------------------
@@ -476,6 +480,14 @@ class LLMNode(WorkflowNode):
             "resume_named_session_name": self.resume_named_session_name,
             "saved_session_id": self.saved_session_id,
             "saved_session_provider": self.saved_session_provider,
+            "prepend_template_ids": list(self.prepend_template_ids),
+            "append_template_ids": list(self.append_template_ids),
+            "prepend_disabled_global_template_ids": list(
+                self.prepend_disabled_global_template_ids
+            ),
+            "append_disabled_global_template_ids": list(
+                self.append_disabled_global_template_ids
+            ),
         }
 
     def from_dict(self, data: dict) -> None:
@@ -502,6 +514,26 @@ class LLMNode(WorkflowNode):
         self.saved_session_provider = (
             saved_session_provider if isinstance(saved_session_provider, str) else ""
         )
+        self.prepend_template_ids = self._tuple_of_strings(data.get("prepend_template_ids"))
+        self.append_template_ids = self._tuple_of_strings(data.get("append_template_ids"))
+        self.prepend_disabled_global_template_ids = self._tuple_of_strings(
+            data.get("prepend_disabled_global_template_ids")
+        )
+        self.append_disabled_global_template_ids = self._tuple_of_strings(
+            data.get("append_disabled_global_template_ids")
+        )
+
+    @staticmethod
+    def _tuple_of_strings(raw_value) -> tuple[str, ...]:
+        if not isinstance(raw_value, list):
+            return ()
+        normalized: list[str] = []
+        for item in raw_value:
+            if isinstance(item, str):
+                value = item.strip()
+                if value:
+                    normalized.append(value)
+        return tuple(normalized)
 
 
 # ---------------------------------------------------------------------------

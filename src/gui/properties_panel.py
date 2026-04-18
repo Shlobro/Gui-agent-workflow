@@ -1,5 +1,4 @@
 """PropertiesPanel - resizable side panel for editing node properties."""
-
 from typing import Optional, Sequence
 
 from PySide6.QtCore import QEvent, Signal, Qt
@@ -28,8 +27,8 @@ from ._panel_forms import (
     _LoopForm,
     _ScriptForm,
 )
-from .llm_sessions.panel_helpers import load_llm_form, refresh_llm_prompt_preview
-
+from src.llm.prompt_injection import PromptInjectionConfig, POSITION_APPEND
+from .llm_sessions.panel_helpers import load_llm_form, refresh_llm_prompt_preview, refresh_llm_template_controls
 DEFAULT_PANEL_WIDTH = 420
 MIN_PANEL_WIDTH = 300
 MAX_PANEL_WIDTH = 720
@@ -142,8 +141,6 @@ _PANEL_STYLE = """
         height: 0px;
     }
 """
-
-
 class _OverviewForm(QWidget):
     """Read-only panel shown when no workflow node is selected."""
 
@@ -163,8 +160,6 @@ class _OverviewForm(QWidget):
         self.summary_edit.setMinimumHeight(220)
         self.summary_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         layout.addWidget(self.summary_edit, stretch=1)
-
-
 class PropertiesPanel(QWidget):
     """Resizable panel that edits the currently selected node."""
 
@@ -175,6 +170,8 @@ class PropertiesPanel(QWidget):
     save_session_name_committed = Signal(str, str)
     resume_named_session_changed = Signal(str, str)
     prompt_committed = Signal(str, str)
+    prepend_template_ids_changed = Signal(str, tuple)
+    append_template_ids_changed = Signal(str, tuple)
     filename_committed = Signal(str, str)
     attention_message_committed = Signal(str, str)
     op_type_changed = Signal(str, str, str)
@@ -208,10 +205,11 @@ class PropertiesPanel(QWidget):
         self._is_committing: bool = False
         self._preferred_width: int = DEFAULT_PANEL_WIDTH
         self._text_zoom: int = DEFAULT_TEXT_ZOOM
-        self._preview_prepend_templates: list[str] = []
-        self._preview_append_templates: list[str] = []
+        self._prompt_injection_config = PromptInjectionConfig(templates=(), default_enabled_template_ids=())
+        self._persistent_global_template_ids: tuple[str, ...] = ()
+        self._preview_global_template_ids: tuple[str, ...] = ()
         self._preview_one_off_text: str = ""
-        self._preview_one_off_placement: str = "append"
+        self._preview_one_off_placement: str = POSITION_APPEND
         self._llm_named_session_options: list[tuple[str, str]] = []
 
         outer_layout = QVBoxLayout(self)
@@ -251,7 +249,6 @@ class PropertiesPanel(QWidget):
         self._wire_signals()
         self._install_zoom_filters()
         self._apply_text_zoom()
-
     def _wrap_form(self, form: QWidget) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -274,6 +271,12 @@ class PropertiesPanel(QWidget):
         )
         self._llm_form.prompt_edit.textChanged.connect(self._on_prompt_changed)
         self._llm_form.prompt_edit.installEventFilter(self)
+        self._llm_form.prepend_template_dropdown.selection_changed.connect(
+            self._on_prepend_template_ids_changed
+        )
+        self._llm_form.append_template_dropdown.selection_changed.connect(
+            self._on_append_template_ids_changed
+        )
 
         self._file_form.title_edit.editingFinished.connect(self._on_file_title_committed)
         self._file_form.filename_edit.editingFinished.connect(self._on_filename_committed)
@@ -313,7 +316,6 @@ class PropertiesPanel(QWidget):
         self._script_form.script_path_edit.installEventFilter(self)
         self._script_form.browse_requested.connect(self._on_script_browse_requested)
         self._script_form.auto_send_enter_changed.connect(self._on_script_auto_send_enter_changed)
-
     def _install_zoom_filters(self) -> None:
         for widget in self.findChildren(QWidget):
             widget.installEventFilter(self)
@@ -347,13 +349,10 @@ class PropertiesPanel(QWidget):
 
     def preferred_width(self) -> int:
         return self._preferred_width
-
     def set_preferred_width(self, width: int) -> None:
         self._preferred_width = max(MIN_PANEL_WIDTH, min(int(width), MAX_PANEL_WIDTH))
-
     def text_zoom(self) -> int:
         return self._text_zoom
-
     def set_text_zoom(self, zoom: int) -> None:
         zoom = max(MIN_TEXT_ZOOM, min(int(zoom), MAX_TEXT_ZOOM))
         if zoom == self._text_zoom:
@@ -361,10 +360,8 @@ class PropertiesPanel(QWidget):
         self._text_zoom = zoom
         self._apply_text_zoom()
         self.text_zoom_changed.emit(zoom)
-
     def adjust_text_zoom(self, delta: int) -> None:
         self.set_text_zoom(self._text_zoom + delta)
-
     def _set_font_size(self, widget: QWidget, size: int, bold: bool = False) -> None:
         font = QFont(widget.font())
         font.setPointSize(max(8, size))
@@ -401,7 +398,6 @@ class PropertiesPanel(QWidget):
         if new_title != self._old_title:
             self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
             self._old_title = new_title
-
     def _on_file_title_committed(self):
         if self._current_node is None:
             return
@@ -414,7 +410,6 @@ class PropertiesPanel(QWidget):
         if self._current_node is None:
             return
         self.model_changed.emit(self._current_node.node_id, old_id, new_id)
-
     def _on_resume_session_toggled(self, checked: bool):
         if self._current_node is None:
             return
@@ -429,29 +424,36 @@ class PropertiesPanel(QWidget):
             self._llm_form.save_session_name_edit.blockSignals(False)
             self._save_session_name_dirty = False
         self.save_session_changed.emit(self._current_node.node_id, bool(checked))
-
     def _on_save_session_name_changed(self):
         self._save_session_name_dirty = True
-
     def _on_save_session_name_committed(self):
         if self._save_session_name_dirty:
             self._flush_save_session_name()
-
     def _flush_save_session_name(self):
         if self._current_node is None:
             return
         text = self._llm_form.save_session_name_edit.text()
         self.save_session_name_committed.emit(self._current_node.node_id, text)
         self._save_session_name_dirty = False
-
     def _on_resume_named_session_changed(self, _index: int):
         if self._current_node is None:
             return
         value = self._llm_form.resume_named_session_combo.currentData() or ""
         self.resume_named_session_changed.emit(self._current_node.node_id, str(value))
-
     def _on_prompt_changed(self):
         self._prompt_dirty = True
+        self._refresh_llm_prompt_preview()
+
+    def _on_prepend_template_ids_changed(self, checked_ids: tuple[str, ...]):
+        if self._current_node is None:
+            return
+        self.prepend_template_ids_changed.emit(self._current_node.node_id, checked_ids)
+        self._refresh_llm_prompt_preview()
+
+    def _on_append_template_ids_changed(self, checked_ids: tuple[str, ...]):
+        if self._current_node is None:
+            return
+        self.append_template_ids_changed.emit(self._current_node.node_id, checked_ids)
         self._refresh_llm_prompt_preview()
 
     def _flush_prompt(self):
@@ -463,18 +465,15 @@ class PropertiesPanel(QWidget):
 
     def _on_filename_changed(self):
         self._filename_dirty = True
-
     def _on_filename_committed(self):
         if self._filename_dirty:
             self._flush_filename()
-
     def _flush_filename(self):
         if self._current_node is None:
             return
         text = self._file_form.filename_edit.text()
         self.filename_committed.emit(self._current_node.node_id, text)
         self._filename_dirty = False
-
     def _on_op_type_changed(self, old_type: str, new_type: str):
         if self._current_node is None:
             return
@@ -974,25 +973,21 @@ class PropertiesPanel(QWidget):
 
     def set_prompt_injection_preview_context(
         self,
-        prepend_template_contents: Sequence[str],
-        append_template_contents: Sequence[str],
+        config: PromptInjectionConfig,
+        persistent_global_template_ids: tuple[str, ...],
+        global_template_ids: tuple[str, ...],
         one_off_text: str = "",
-        one_off_placement: str = "append",
+        one_off_placement: str = POSITION_APPEND,
     ) -> None:
-        prepend_sections: list[str] = []
-        append_sections: list[str] = []
-        for section in prepend_template_contents:
-            normalized = str(section).strip()
-            if normalized:
-                prepend_sections.append(normalized)
-        for section in append_template_contents:
-            normalized = str(section).strip()
-            if normalized:
-                append_sections.append(normalized)
-        self._preview_prepend_templates = prepend_sections
-        self._preview_append_templates = append_sections
+        self._prompt_injection_config = config
+        self._persistent_global_template_ids = tuple(persistent_global_template_ids)
+        self._preview_global_template_ids = tuple(global_template_ids)
         self._preview_one_off_text = one_off_text or ""
-        self._preview_one_off_placement = one_off_placement or "append"
+        self._preview_one_off_placement = one_off_placement or POSITION_APPEND
+        from .llm_node import LLMNode
+
+        if isinstance(self._current_node, LLMNode):
+            refresh_llm_template_controls(self, self._current_node)
         self._refresh_llm_prompt_preview()
 
     def _refresh_llm_prompt_preview(self) -> None:

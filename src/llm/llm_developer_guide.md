@@ -8,7 +8,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `claude_provider.py`: Claude model list, command builder, and Claude-specific structured-output parsing.
 - `codex_provider.py`: Codex model list, reasoning-effort suffix parsing, command builder, and Codex-specific structured-output parsing.
 - `gemini_provider.py`: Gemini model list and command builder.
-- `prompt_injection.py`: Prompt template models, persistent JSON storage, run-option normalization, and prompt assembly helpers that place enabled template content plus optional one-off context on either side of the base prompt.
+- `prompt_injection.py`: Prompt template models, persistent JSON storage, run-option normalization, per-node effective-selection helpers, and prompt assembly helpers that place enabled template content plus optional one-off context on either side of the base prompt.
 - `__init__.py`: Explicitly re-exports all provider modules so they self-register at startup.
 
 ## Current Model Sets
@@ -43,6 +43,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - Built-in template `runtime_context_headless` is always available and is enabled by default on first load.
 - Each template has a persistent `placement` value (`prepend` or `append`), configured from the prompt-template dialog.
 - `PromptInjectionRunOptions` carries `one_off_placement` so one-off run context can also be prepended or appended.
+- `effective_node_template_ids()` and `derive_node_template_overrides()` merge workflow-global enabled-template IDs with a node's saved local additions and per-side opt-outs.
 - `compose_prompt()` performs deterministic assembly in three regions: prepend injections, base prompt, append injections, joined as plain text blocks without bracketed section headers.
 
 ## When To Edit

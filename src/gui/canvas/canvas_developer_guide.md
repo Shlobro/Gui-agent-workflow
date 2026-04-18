@@ -4,7 +4,7 @@
 The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. Splitting it into four files keeps each under the file-size cap while preserving `WorkflowCanvas` as the single public class.
 
 ## Files
-- `__init__.py`: `WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _IOMixin, QGraphicsView)` owns initialization, background grid, start-node creation, node and connection CRUD, panel commit handlers, mouse and keyboard event handling, connection drawing, connection-vertex editing interactions, prompt-injection state, and the undo stack.
+- `__init__.py`: `WorkflowCanvas(_SubprocessExecutionMixin, _ExecutionMixin, _SessionStateMixin, _IOMixin, QGraphicsView)` owns initialization, background grid, start-node creation, node and connection CRUD, panel commit handlers, mouse and keyboard event handling, connection drawing, connection-vertex editing interactions, prompt-injection state, node-specific prompt composition, and the undo stack.
 - `execution.py`: `_ExecutionMixin` contains run/stop logic, graph traversal, validation, and the core invocation engine (`_fire_invocation`, `_fire_condition_check`, `_fire_attention`, `_fire_loop`, `_fire_join`). It also owns usage-limit detection, LLM call headers, session capture persistence, and serialization for any resumed LLM conversation key (node-local or workflow-named).
 - `llm_output.py`: Shared helpers for mirroring named-session output across related LLM nodes and for building the per-call node/session/prompt metadata block that appears before each response.
 - `llm_resume.py`: Helpers for resolving the effective resume session ID / serialization key for LLM calls and for draining queued named-session resumptions one at a time.
@@ -37,6 +37,7 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its three behavior mixins. 
 
 ## Save/Load Notes
 - Saved LLM session metadata lives inside the workflow JSON. There is no separate session sidecar file.
+- Saved per-node prompt-template overrides also live inside workflow JSON. Missing template IDs are silently dropped on load via the shared prompt-injection normalization helpers.
 - Malformed node records abort load; malformed connections are dropped so a partial graph can still load.
 - Connection helpers accept `source_port` so multi-port node edges are preserved, and optional `vertices` so manual bend points survive save/load, undo/redo, and paste.
 
