@@ -182,6 +182,7 @@ class PropertiesPanel(QWidget):
     resume_session_changed = Signal(str, bool)
     save_session_changed = Signal(str, bool)
     save_session_name_committed = Signal(str, str)
+    restart_session_changed = Signal(str, bool)
     resume_named_session_changed = Signal(str, str)
     prompt_committed = Signal(str, str)
     prepend_template_ids_changed = Signal(str, tuple)
@@ -294,6 +295,9 @@ class PropertiesPanel(QWidget):
             self._on_save_session_name_committed
         )
         self._llm_form.save_session_name_edit.installEventFilter(self)
+        self._llm_form.restart_session_checkbox.toggled.connect(
+            self._on_restart_session_toggled
+        )
         self._llm_form.resume_named_session_combo.activated.connect(
             self._on_resume_named_session_changed
         )
@@ -469,6 +473,12 @@ class PropertiesPanel(QWidget):
     def _on_save_session_name_committed(self):
         if self._save_session_name_dirty:
             self._flush_save_session_name()
+
+    def _on_restart_session_toggled(self, checked: bool):
+        if self._current_node is None:
+            return
+        self.restart_session_changed.emit(self._current_node.node_id, bool(checked))
+
     def _flush_save_session_name(self):
         if self._current_node is None:
             return

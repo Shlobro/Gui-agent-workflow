@@ -83,6 +83,7 @@ class _SessionStateMixin:
         return {
             "save_session_enabled": bool(node.save_session_enabled),
             "save_session_name": str(node.save_session_name or ""),
+            "restart_session_enabled": bool(node.restart_session_enabled),
             "resume_named_session_name": str(node.resume_named_session_name or ""),
         }
 
@@ -93,6 +94,7 @@ class _SessionStateMixin:
             "resume_session_enabled": bool(node.resume_session_enabled),
             "save_session_enabled": bool(node.save_session_enabled),
             "save_session_name": str(node.save_session_name or ""),
+            "restart_session_enabled": bool(node.restart_session_enabled),
             "resume_named_session_name": str(node.resume_named_session_name or ""),
             "saved_session_id": str(node.saved_session_id or ""),
             "saved_session_provider": str(node.saved_session_provider or ""),
@@ -140,6 +142,7 @@ class _SessionStateMixin:
         *,
         save_enabled: bool | None = None,
         save_name: str | None = None,
+        restart_enabled: bool | None = None,
         resume_name: str | None = None,
         model_id: str | None = None,
     ) -> tuple[Dict[str, object], Dict[str, Dict[str, str]]]:
@@ -162,6 +165,11 @@ class _SessionStateMixin:
         new_save_name = (
             old_save_name if save_name is None else normalize_session_name(save_name)
         )
+        new_restart_enabled = (
+            node.restart_session_enabled
+            if restart_enabled is None
+            else bool(restart_enabled)
+        )
         new_resume_name = (
             normalize_session_name(node.resume_named_session_name)
             if resume_name is None
@@ -171,10 +179,12 @@ class _SessionStateMixin:
         if not supports_resume:
             new_save_enabled = False
             new_save_name = ""
+            new_restart_enabled = False
             new_resume_name = ""
 
         if new_resume_name:
             new_save_enabled = False
+            new_restart_enabled = False
 
         old_owned_record = None
         if old_save_name:
@@ -222,18 +232,22 @@ class _SessionStateMixin:
         next_state = {
             "save_session_enabled": bool(new_save_enabled),
             "save_session_name": new_save_name,
+            "restart_session_enabled": bool(new_restart_enabled),
             "resume_named_session_name": new_resume_name,
         }
 
         if not supports_resume:
             next_state["save_session_enabled"] = False
             next_state["save_session_name"] = ""
+            next_state["restart_session_enabled"] = False
             next_state["resume_named_session_name"] = ""
 
         if next_state["save_session_enabled"] and next_state["save_session_name"]:
             record = next_named_sessions.get(str(next_state["save_session_name"]))
             if record is None or record.get("owner_node_id") != node.node_id:
                 next_state["save_session_enabled"] = False
+        if not next_state["save_session_enabled"]:
+            next_state["restart_session_enabled"] = False
         if next_state["resume_named_session_name"] and not named_session_is_available(
             next_named_sessions,
             self._connections,
@@ -255,6 +269,9 @@ class _SessionStateMixin:
             return
         node.save_session_enabled = bool(node_state.get("save_session_enabled", False))
         node.save_session_name = str(node_state.get("save_session_name", "") or "")
+        node.restart_session_enabled = bool(
+            node_state.get("restart_session_enabled", False)
+        )
         node.resume_named_session_name = str(
             node_state.get("resume_named_session_name", "") or ""
         )
@@ -268,6 +285,7 @@ class _SessionStateMixin:
         *,
         save_enabled: bool | None = None,
         save_name: str | None = None,
+        restart_enabled: bool | None = None,
         resume_name: str | None = None,
         model_id: str | None = None,
     ) -> None:
@@ -275,6 +293,7 @@ class _SessionStateMixin:
             node_id,
             save_enabled=save_enabled,
             save_name=save_name,
+            restart_enabled=restart_enabled,
             resume_name=resume_name,
             model_id=model_id,
         )
@@ -321,11 +340,13 @@ class _SessionStateMixin:
                     node.resume_session_enabled
                     or node.save_session_enabled
                     or node.save_session_name
+                    or node.restart_session_enabled
                     or node.resume_named_session_name
                 ):
                     node.resume_session_enabled = False
                     node.save_session_enabled = False
                     node.save_session_name = ""
+                    node.restart_session_enabled = False
                     node.resume_named_session_name = ""
                     changed_node_ids.add(node.node_id)
                 continue
@@ -335,7 +356,11 @@ class _SessionStateMixin:
                 record = self._named_sessions.get(session_name)
                 if record is None or record.get("owner_node_id") != node.node_id:
                     node.save_session_enabled = False
+                    node.restart_session_enabled = False
                     changed_node_ids.add(node.node_id)
+            elif node.restart_session_enabled:
+                node.restart_session_enabled = False
+                changed_node_ids.add(node.node_id)
             if node.resume_named_session_name and not named_session_is_available(
                 self._named_sessions,
                 self._connections,

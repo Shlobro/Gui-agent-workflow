@@ -1,0 +1,7 @@
+when i uncheck save session ID it leaves the name there and i cannot edit or erase it. this is fine but it should be greyed out in a way that is clear that it is not using this.
+
+the side panel in the LLM node is too full. make all the session settings colapsable. make appending and prepending collapsable as well.
+
+it is unclear when running out of usage which provider is out. make sure it is clear
+
+when switching models for example when usage is used up the GUI to schedule resume is the worst UI/UX i have ever seen in my life. make it better. and the indication that it is scheduled to continue on the main screen is almost nonexistant make it clearer

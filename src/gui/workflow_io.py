@@ -117,6 +117,13 @@ def parse_workflow_data(data: dict) -> dict:
             raise ValueError(
                 f"Node record at index {idx_in_list} has non-boolean 'save_session_enabled'."
             )
+        if (
+            "restart_session_enabled" in b_data
+            and not isinstance(b_data["restart_session_enabled"], bool)
+        ):
+            raise ValueError(
+                f"Node record at index {idx_in_list} has non-boolean 'restart_session_enabled'."
+            )
 
         # For loop nodes, validate loop_count is a positive integer.
         if node_type == "loop":

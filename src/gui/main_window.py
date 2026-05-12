@@ -16,13 +16,13 @@ from PySide6.QtWidgets import (
 
 from .canvas import WorkflowCanvas
 from .conditional_node import ConditionalNode
-from .control_flow.join_node import JoinNode
 from .dialogs.prompt_injection_dialog import (
     PromptInjectionRunDialog,
     PromptTemplateManagerDialog,
 )
 from .llm_sessions.main_window_handlers import (
     handle_panel_model_changed,
+    handle_panel_restart_session_changed,
     handle_panel_resume_named_session_changed,
     handle_panel_save_session_changed,
     handle_panel_save_session_name_committed,
@@ -34,9 +34,7 @@ from .llm_sessions.overview import (
     selected_nodes,
 )
 from .file_op_node import AttentionNode, FileOpNode
-from .git_action_node import GitActionNode
 from .llm_node import LLMNode
-from .loop_node import LoopNode
 from .project_chooser import ProjectChooserDialog, add_to_recent
 from .properties_panel import DEFAULT_PANEL_WIDTH, DEFAULT_TEXT_ZOOM, PropertiesPanel
 from .script_runner.script_node import SCRIPT_FILE_FILTER, ScriptNode
@@ -118,6 +116,9 @@ class MainWindow(QMainWindow):
         self._panel.save_session_changed.connect(self._on_panel_save_session_changed)
         self._panel.save_session_name_committed.connect(
             self._on_panel_save_session_name_committed
+        )
+        self._panel.restart_session_changed.connect(
+            self._on_panel_restart_session_changed
         )
         self._panel.resume_named_session_changed.connect(
             self._on_panel_resume_named_session_changed
@@ -574,6 +575,9 @@ class MainWindow(QMainWindow):
     def _on_panel_save_session_name_committed(self, node_id: str, text: str):
         handle_panel_save_session_name_committed(self, node_id, text)
 
+    def _on_panel_restart_session_changed(self, node_id: str, checked: bool):
+        handle_panel_restart_session_changed(self, node_id, checked)
+
     def _on_panel_resume_named_session_changed(self, node_id: str, session_name: str):
         handle_panel_resume_named_session_changed(self, node_id, session_name)
 
@@ -851,12 +855,18 @@ class MainWindow(QMainWindow):
     def _refresh_panel_overview(self) -> None:
         refresh_panel_overview(self)
 
+    @staticmethod
+    def _saves_folder() -> str:
+        folder = os.path.join(os.getcwd(), "saves")
+        os.makedirs(folder, exist_ok=True)
+        return folder
+
     def _save(self):
         self._panel.commit_pending_edits()
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Workflow",
-            "",
+            self._saves_folder(),
             "JSON Files (*.json)",
         )
         if not path:
@@ -875,7 +885,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Workflow",
-            self.canvas._working_directory or os.getcwd(),
+            self._saves_folder(),
             "JSON Files (*.json)",
         )
         if not path:

@@ -25,16 +25,16 @@ The `canvas/` subpackage houses `WorkflowCanvas` and its four behavior mixins. S
 - `_lineage_variables` carries the active variable map for each execution lineage. Fan-out must copy parent state into child lineages, and join release must merge waiting lineage maps before downstream nodes run.
 
 ## LLM Session Resume Rules
-- LLM node JSON can persist `resume_session_enabled`, `save_session_enabled`, `save_session_name`, `resume_named_session_name`, `saved_session_id`, and `saved_session_provider`.
+- LLM node JSON can persist `resume_session_enabled`, `save_session_enabled`, `save_session_name`, `restart_session_enabled`, `resume_named_session_name`, `saved_session_id`, and `saved_session_provider`.
 - Workflow JSON also persists `named_sessions`, a workflow-level name-to-session store keyed by user-defined names.
 - `load_workflow_data()` normalizes unsupported session state away for non-resumable providers and reconciles stale named-session references after nodes and connections are restored.
 - `WorkflowCanvas.has_saved_llm_sessions()` and `clear_all_llm_sessions()` cover both node-local saved sessions and workflow-level named sessions for the main-window run prompt.
-- `execution.py` serializes concurrent invocations that reuse the same conversation key. Node-local resume uses `node:<node_id>` and named-session resume uses `named:<session_name>`.
+- `execution.py` serializes concurrent invocations that reuse the same conversation key. Node-local resume uses `node:<node_id>` and named-session resume uses `named:<session_name>`. A save-owner node with `restart_session_enabled` skips reuse for its own invocation so it can start a fresh conversation before overwriting the saved named session.
 - Named-session resume is only valid when the saved session already has a captured ID, matches the current provider, and the graph still has a path from the owner node to the current node.
 - When a connection add/remove/undo/redo changes graph reachability, selected LLM nodes must refresh their session dropdown immediately so newly valid named sessions appear without reselection.
 - Queued resumable LLM workers are fully signal-wired before they enter the wait queue, so releasing a queue slot only starts the already-connected worker.
 - `stop_all()` and node removal clear queued resumable LLM work so shutdown and deletion do not leave orphaned waiting executions behind.
-- Copy/paste never preserves provider session IDs or named-session bindings. Pasted LLM nodes keep `resume_session_enabled`, but start with cleared `saved_session_id`, `saved_session_provider`, `save_session_enabled`, `save_session_name`, and `resume_named_session_name`.
+- Copy/paste never preserves provider session IDs or named-session bindings. Pasted LLM nodes keep `resume_session_enabled`, but start with cleared `saved_session_id`, `saved_session_provider`, `save_session_enabled`, `save_session_name`, `restart_session_enabled`, and `resume_named_session_name`.
 - Named-session output is mirrored across all LLM nodes whose effective workflow session name matches, so save-owner and resume nodes display the same merged history. Per-call output blocks include node/session/prompt metadata before response lines.
 
 ## Save/Load Notes

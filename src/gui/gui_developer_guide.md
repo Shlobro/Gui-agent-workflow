@@ -37,13 +37,15 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `JoinNode` is a barrier: it waits for `wait_for_count` arrivals from the same parallel split group before it releases one downstream continuation.
 
 ## LLM Session UI Rules
-- Claude and Codex/OpenAI models show three controls: `Resume previous session`, `Save session ID`, and `Resume session ID`.
+- Claude and Codex/OpenAI models show three base controls: `Resume previous session`, `Save session ID`, and `Resume session ID`.
 - Gemini hides the entire session-controls block and any hidden session settings are cleared during reconciliation.
 - `Resume previous session` remains node-local and undoable.
 - `Save session ID` reserves a workflow-level name for the current node. The name is typed by the user and can only be owned by one node at a time.
+- When `Save session ID` is enabled, the form reveals `Restart session ID at this node`. That checkbox is persisted on the node, hidden again when saving is disabled, and causes the node to start fresh on each run before overwriting its saved named session after a successful call.
 - `Resume session ID` only lists names that already have a captured session ID, match the selected node's provider, and come from a save-owner node that can reach the current node through the graph.
 - Connection edits while an LLM node is selected must refresh that dropdown immediately; the user should not need to reselect the node after wiring a newly valid upstream path.
 - Selecting `Resume session ID` disables named-session saving on that node because the resumed named conversation becomes the active session source.
+- Restart does not clear the workflow-level named session preemptively. Other branches keep using the previously saved ID until they reach the restarting save-owner node and that node overwrites the session after its fresh call completes.
 - Changing a node's model while it owns saved session data prompts first; on confirmation, incompatible saved session IDs are cleared and named-session references are reconciled.
 - Loading a workflow with saved node or named sessions does not prompt immediately. The prompt appears only when the user starts a run.
 - Choosing `Start Fresh` on that prompt clears all captured node and named session IDs from the in-memory workflow.

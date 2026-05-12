@@ -72,6 +72,7 @@ def handle_panel_model_changed(main_window, node_id: str, old_model_id: str, new
             node_id,
             save_enabled=bool(old_state["save_session_enabled"]),
             save_name=str(old_state["save_session_name"]),
+            restart_enabled=bool(old_state["restart_session_enabled"]),
             resume_name="",
             model_id=new_model_id,
         )
@@ -80,6 +81,7 @@ def handle_panel_model_changed(main_window, node_id: str, old_model_id: str, new
             node_id,
             save_enabled=bool(old_state["save_session_enabled"]),
             save_name=str(old_state["save_session_name"]),
+            restart_enabled=bool(old_state["restart_session_enabled"]),
             resume_name=str(old_state["resume_named_session_name"]),
             model_id=new_model_id,
         )
@@ -90,6 +92,7 @@ def handle_panel_model_changed(main_window, node_id: str, old_model_id: str, new
             "resume_session_enabled": new_resume_enabled,
             "save_session_enabled": bool(named_state["save_session_enabled"]),
             "save_session_name": str(named_state["save_session_name"]),
+            "restart_session_enabled": bool(named_state["restart_session_enabled"]),
             "resume_named_session_name": str(named_state["resume_named_session_name"]),
             "saved_session_id": new_saved_session_id,
             "saved_session_provider": new_saved_session_provider,
@@ -169,6 +172,31 @@ def handle_panel_save_session_name_committed(main_window, node_id: str, text: st
         old_named_sessions=old_named_sessions,
         new_named_sessions=new_named_sessions,
         command_text="Rename Saved Session ID",
+    )
+    refresh_llm_panel_for_node(main_window, node)
+    main_window._panel.refresh_if_current(node)
+    main_window._refresh_panel_overview()
+
+
+def handle_panel_restart_session_changed(main_window, node_id: str, checked: bool) -> None:
+    node = main_window.canvas._nodes.get(node_id)
+    if node is None or not isinstance(node, LLMNode):
+        return
+    old_state = main_window.canvas.llm_node_state(node_id)
+    if old_state is None:
+        return
+    old_named_sessions = main_window.canvas.named_sessions_snapshot()
+    new_state, new_named_sessions = main_window.canvas.build_named_session_update(
+        node_id,
+        restart_enabled=checked,
+    )
+    main_window.canvas._on_named_session_config_changed(
+        node_id,
+        old_state=old_state,
+        new_state=new_state,
+        old_named_sessions=old_named_sessions,
+        new_named_sessions=new_named_sessions,
+        command_text="Toggle Restart Session ID",
     )
     refresh_llm_panel_for_node(main_window, node)
     main_window._panel.refresh_if_current(node)

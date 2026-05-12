@@ -117,6 +117,7 @@ def refresh_llm_session_state(panel, node) -> None:
     panel._llm_form.set_named_session_state(
         save_enabled=bool(node.save_session_enabled),
         save_name=node.save_session_name,
+        restart_enabled=bool(node.restart_session_enabled),
         resume_name=node.resume_named_session_name,
         options=list(panel._llm_named_session_options),
         note=note,

@@ -6,6 +6,8 @@ from src.gui.llm_node import LLMNode
 
 
 def llm_resume_serial_key(canvas, node: LLMNode) -> str:
+    if node.restart_session_enabled and node.save_session_enabled:
+        return ""
     if node.resume_named_session_name:
         record = canvas._named_sessions.get(node.resume_named_session_name.strip())
         if record is not None and record.get("session_id", "").strip():
@@ -17,6 +19,8 @@ def llm_resume_serial_key(canvas, node: LLMNode) -> str:
 
 
 def llm_resume_session_id(canvas, node: LLMNode, provider_name: str) -> str:
+    if node.restart_session_enabled and node.save_session_enabled:
+        return ""
     if node.resume_named_session_name:
         record = canvas._named_sessions.get(node.resume_named_session_name.strip())
         if record is None:

@@ -51,6 +51,7 @@ def _apply_llm_session_state(
     resume_session_enabled: bool,
     save_session_enabled: bool,
     save_session_name: str,
+    restart_session_enabled: bool,
     resume_named_session_name: str,
     saved_session_id: str,
     saved_session_provider: str,
@@ -59,6 +60,7 @@ def _apply_llm_session_state(
     node.resume_session_enabled = bool(resume_session_enabled)
     node.save_session_enabled = bool(save_session_enabled)
     node.save_session_name = save_session_name
+    node.restart_session_enabled = bool(restart_session_enabled)
     node.resume_named_session_name = resume_named_session_name
     node.saved_session_id = saved_session_id
     node.saved_session_provider = saved_session_provider
@@ -343,6 +345,9 @@ class ModelChangeCommand(QUndoCommand):
                     resume_session_enabled=bool(node_state.get("resume_session_enabled", False)),
                     save_session_enabled=bool(node_state.get("save_session_enabled", False)),
                     save_session_name=str(node_state.get("save_session_name", "") or ""),
+                    restart_session_enabled=bool(
+                        node_state.get("restart_session_enabled", False)
+                    ),
                     resume_named_session_name=str(
                         node_state.get("resume_named_session_name", "") or ""
                     ),
@@ -652,6 +657,7 @@ class PasteCommand(QUndoCommand):
                 snap["resume_session_enabled"] = bool(snap.get("resume_session_enabled", False))
                 snap["save_session_enabled"] = False
                 snap["save_session_name"] = ""
+                snap["restart_session_enabled"] = False
                 snap["resume_named_session_name"] = ""
                 snap["saved_session_id"] = ""
                 snap["saved_session_provider"] = ""

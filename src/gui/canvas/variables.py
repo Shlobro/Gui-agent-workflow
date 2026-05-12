@@ -6,7 +6,7 @@ import re
 from collections import deque
 from typing import TYPE_CHECKING, Dict, Iterable
 
-from src.gui.llm_node import LLMNode, WorkflowNode
+from src.gui.llm_node import LLMNode
 from src.gui.variables import (
     VARIABLE_TYPE_NUMBER,
     VariableNode,

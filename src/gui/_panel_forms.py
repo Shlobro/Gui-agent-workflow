@@ -94,6 +94,12 @@ class _LLMForm(QWidget):
         self.save_session_name_edit.setPlaceholderText("Saved session name...")
         named_layout.addWidget(self.save_session_name_edit)
 
+        self.restart_session_checkbox = QCheckBox("Restart session ID at this node")
+        self.restart_session_checkbox.setToolTip(
+            "Start fresh at this node, then overwrite the saved session ID with the new one."
+        )
+        named_layout.addWidget(self.restart_session_checkbox)
+
         resume_named_label = QLabel("Resume session ID")
         named_layout.addWidget(resume_named_label)
 
@@ -228,16 +234,19 @@ class _LLMForm(QWidget):
         *,
         save_enabled: bool,
         save_name: str,
+        restart_enabled: bool,
         resume_name: str,
         options: list[tuple[str, str]],
         note: str = "",
     ) -> None:
         self.save_session_checkbox.blockSignals(True)
         self.save_session_name_edit.blockSignals(True)
+        self.restart_session_checkbox.blockSignals(True)
         self.resume_named_session_combo.blockSignals(True)
 
         self.save_session_checkbox.setChecked(bool(save_enabled))
         self.save_session_name_edit.setText(save_name)
+        self.restart_session_checkbox.setChecked(bool(restart_enabled))
 
         self.resume_named_session_combo.clear()
         for value, label in options:
@@ -252,11 +261,14 @@ class _LLMForm(QWidget):
 
         self.save_session_checkbox.blockSignals(False)
         self.save_session_name_edit.blockSignals(False)
+        self.restart_session_checkbox.blockSignals(False)
         self.resume_named_session_combo.blockSignals(False)
 
         save_blocked = bool(resume_name)
         self.save_session_checkbox.setEnabled(not save_blocked)
         self.save_session_name_edit.setEnabled(bool(save_enabled) and not save_blocked)
+        self.restart_session_checkbox.setVisible(bool(save_enabled) and not save_blocked)
+        self.restart_session_checkbox.setEnabled(bool(save_enabled) and not save_blocked)
 
         normalized_note = note.strip()
         self.named_session_note.setText(normalized_note)

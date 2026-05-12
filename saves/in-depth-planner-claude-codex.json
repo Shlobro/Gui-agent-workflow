@@ -1,0 +1,387 @@
+{
+  "nodes": [
+    {
+      "node_type": "create_file",
+      "id": "5ddd26c0-a862-44d3-89d6-73edefba61d7",
+      "label_index": 17,
+      "x": -256.9203583463469,
+      "y": -200.87646913783178,
+      "name": "Create Claude Plan file",
+      "filename": "claude-plan.md"
+    },
+    {
+      "node_type": "create_file",
+      "id": "735e7973-ebf0-49b6-a7cb-bcf5557a624c",
+      "label_index": 18,
+      "x": -259.5290539985208,
+      "y": -47.832990876962185,
+      "name": "Create Codex Plan file",
+      "filename": "codex-plan.md"
+    },
+    {
+      "id": "54162f60-65a7-4170-9ab8-ef5406c8872b",
+      "label_index": 19,
+      "x": 338.69565217391306,
+      "y": -205.91304347826096,
+      "name": "Initial Claude Plan",
+      "model": "claude-sonnet-4-6",
+      "prompt": "I want to make a plan file. the objective in the end is to make a system that allows a drone to navigate using a only it's camera looking down. it will look directly down and compare to satilite footage. the drone will transmit it's footage to a computer that will proccess it and decide where the drone is. assume we have access to the drones height and compass and an approximate area that is accurate within a 100 meters area. so will be getting packets of height, the frame of what the drone is seeing looking down and the compass information (heading). I need you to design a vertical plan to impliment a neural net that does this. by vertical i mean that each phase of the plan will be something runnable that you can look at results at each step of the plan. for each step of the plan you will create 2 sections one for the AI Agent like yourself and one for the human. so the AI agent will write all the code and the human will do anything the agent can't like taking images and creating a dataset and actually running the training runs. you must also design a system to track what changes were made and create metrics to measure how we are doing. create a detail plan and put it in claude-plan.txt. you can use the research in the research folder if it helps.",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "Claude Planner",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "797710df-af7a-4717-9efa-8dd3be269755",
+      "label_index": 20,
+      "x": 346.0852282608697,
+      "y": -47.00086413043487,
+      "name": "Initial Claude Plan",
+      "model": "gpt-5.4",
+      "prompt": "I want to make a plan file. the objective in the end is to make a system that allows a drone to navigate using a only it's camera looking down. it will look directly down and compare to satilite footage. the drone will transmit it's footage to a computer that will proccess it and decide where the drone is. assume we have access to the drones height and compass and an approximate area that is accurate within a 100 meters area. so will be getting packets of height, the frame of what the drone is seeing looking down and the compass information (heading). I need you to design a vertical plan to impliment a neural net that does this. by vertical i mean that each phase of the plan will be something runnable that you can look at results at each step of the plan. for each step of the plan you will create 2 sections one for the AI Agent like yourself and one for the human. so the AI agent will write all the code and the human will do anything the agent can't like taking images and creating a dataset and actually running the training runs. you must also design a system to track what changes were made and create metrics to measure how we are doing. create a detail plan and put it in codex-plan.txt. you can use the research in the research folder if it helps.",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "Codex Planner",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "join",
+      "id": "a981c59e-e91d-4559-8323-727cde1a57f0",
+      "label_index": 21,
+      "x": 1473.4553745058975,
+      "y": -141.4947530553123,
+      "name": "Join Initial plan",
+      "wait_for_count": 2
+    },
+    {
+      "node_type": "create_file",
+      "id": "253109dc-509a-4e04-9dd2-06c3239b59e3",
+      "label_index": 23,
+      "x": 888.3270952025196,
+      "y": -198.7546209750584,
+      "name": "Create Claude Citique file",
+      "filename": "claude-citique.txt"
+    },
+    {
+      "node_type": "create_file",
+      "id": "f5a05f82-b44f-4858-9fe6-a2bfe9c1b8ce",
+      "label_index": 24,
+      "x": 883.7070423628456,
+      "y": -51.745214276688785,
+      "name": "Create Codex Citique file",
+      "filename": "codex-citique.txt"
+    },
+    {
+      "id": "29f1fcb0-95ff-4de7-8e6e-2ddfa3305b16",
+      "label_index": 26,
+      "x": -352.3627148964448,
+      "y": 423.9018111860933,
+      "name": "Critique",
+      "model": "claude-sonnet-4-6",
+      "prompt": "Codex made a competing plan to yours in the file codex-plan.txt. I want you to examine his plan and critique it, put your ciritique into the file claude-citique.txt. do not edit your plan at all currently.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "Claude Planner",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "loop",
+      "id": "1ba953bb-5b29-4f61-b86d-46cf24c1736e",
+      "label_index": 27,
+      "x": 893.4577772715645,
+      "y": 626.578744524129,
+      "name": "Loop 27",
+      "loop_count": 3
+    },
+    {
+      "id": "fd816feb-092d-4234-a214-c6f548e03eae",
+      "label_index": 28,
+      "x": -344.30108989644486,
+      "y": 643.6692361860934,
+      "name": "Critique",
+      "model": "gpt-5.4",
+      "prompt": "Claude made a competing plan to yours in the file claude-plan.txt. I want you to examine his plan and critique it, put your ciritique into the file codex-citique.txt. do not edit your plan at all currently.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "Codex Planner",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "join",
+      "id": "6fcd69c9-5262-46a4-a0c9-772c7b997806",
+      "label_index": 29,
+      "x": 331.10330135355525,
+      "y": 511.35725663921846,
+      "name": "Join 29",
+      "wait_for_count": 2
+    },
+    {
+      "id": "3d51bf3f-46fd-4b5d-8e27-29cd9814c4b6",
+      "label_index": 30,
+      "x": 1723.8716294583942,
+      "y": 350.0154276491287,
+      "name": "LLM 30",
+      "model": "claude-sonnet-4-6",
+      "prompt": "read the critique that codex wrote about your plan in the file codex-citique.txt. after reading the critique and reading codex's own plan you can now change anything about your plan that you want to change. also append to the end of codex-citique.txt what you agree with, what you disagree with and why.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "Claude Planner",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "7c62a963-dcc0-4d71-ad7f-387980bdd6ea",
+      "label_index": 32,
+      "x": 1718.0039405521443,
+      "y": 628.7810158678785,
+      "name": "LLM 30",
+      "model": "gpt-5.4",
+      "prompt": "read the critique that claude wrote about your plan in the file claude-citique.txt. after reading the critique and reading claude's own plan you can now change anything about your plan that you want to change. also append to the end of claude-citique.txt what you agree with, what you disagree with and why.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "Codex Planner",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "join",
+      "id": "d735a48b-ccc1-4bff-8f30-2091878f3e40",
+      "label_index": 33,
+      "x": 2327.849198313862,
+      "y": 466.8925506108476,
+      "name": "Join Initial plan",
+      "wait_for_count": 2
+    },
+    {
+      "id": "b6c4e5a6-987d-4894-a91d-a844fd638e48",
+      "label_index": 34,
+      "x": 3387.1930333353716,
+      "y": 377.4877116238033,
+      "name": "Critique",
+      "model": "claude-sonnet-4-6",
+      "prompt": "Codex and responded to your critique in the file claude-citique.txt and has also edited his plan. append to the end of claude-citique.txt your response to his response and your new critique",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "Claude Planner",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "2aafc956-4565-46b8-a900-d57199eaf680",
+      "label_index": 35,
+      "x": 3376.342908335371,
+      "y": 607.7028866238034,
+      "name": "Critique",
+      "model": "gpt-5.4",
+      "prompt": "Claude and responded to your critique in the file codex-citique.txt and has also edited his plan. append to the end of codex-citique.txt your response to his response and your new critique",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "Codex Planner",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "attention",
+      "id": "ad140683-84b5-40f3-abe5-eff20fa7bd24",
+      "label_index": 36,
+      "x": 4484.218311313294,
+      "y": 469.09232663224407,
+      "name": "Attention 36",
+      "message": "User attention needed."
+    },
+    {
+      "node_type": "attention",
+      "id": "386ee175-4345-4295-ae40-1352fdc5608c",
+      "label_index": 37,
+      "x": 1997.2458874999986,
+      "y": -152.68143124999995,
+      "name": "Attention 37",
+      "message": "User attention needed."
+    },
+    {
+      "node_type": "attention",
+      "id": "f2773ab8-e003-4259-8ec9-3fccf49bc36d",
+      "label_index": 38,
+      "x": 2843.4894440156236,
+      "y": 463.22237465624954,
+      "name": "Attention 38",
+      "message": "User attention needed."
+    },
+    {
+      "node_type": "join",
+      "id": "9f796d5e-135d-43dc-a2a9-a647f104d943",
+      "label_index": 39,
+      "x": 3952.634874999998,
+      "y": 483.95684374999985,
+      "name": "Join 39",
+      "wait_for_count": 2
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "5ddd26c0-a862-44d3-89d6-73edefba61d7"
+    },
+    {
+      "from": "start",
+      "to": "735e7973-ebf0-49b6-a7cb-bcf5557a624c"
+    },
+    {
+      "from": "5ddd26c0-a862-44d3-89d6-73edefba61d7",
+      "to": "54162f60-65a7-4170-9ab8-ef5406c8872b"
+    },
+    {
+      "from": "735e7973-ebf0-49b6-a7cb-bcf5557a624c",
+      "to": "797710df-af7a-4717-9efa-8dd3be269755"
+    },
+    {
+      "from": "54162f60-65a7-4170-9ab8-ef5406c8872b",
+      "to": "253109dc-509a-4e04-9dd2-06c3239b59e3"
+    },
+    {
+      "from": "797710df-af7a-4717-9efa-8dd3be269755",
+      "to": "f5a05f82-b44f-4858-9fe6-a2bfe9c1b8ce"
+    },
+    {
+      "from": "253109dc-509a-4e04-9dd2-06c3239b59e3",
+      "to": "a981c59e-e91d-4559-8323-727cde1a57f0"
+    },
+    {
+      "from": "f5a05f82-b44f-4858-9fe6-a2bfe9c1b8ce",
+      "to": "a981c59e-e91d-4559-8323-727cde1a57f0"
+    },
+    {
+      "from": "29f1fcb0-95ff-4de7-8e6e-2ddfa3305b16",
+      "to": "6fcd69c9-5262-46a4-a0c9-772c7b997806"
+    },
+    {
+      "from": "fd816feb-092d-4234-a214-c6f548e03eae",
+      "to": "6fcd69c9-5262-46a4-a0c9-772c7b997806"
+    },
+    {
+      "from": "6fcd69c9-5262-46a4-a0c9-772c7b997806",
+      "to": "1ba953bb-5b29-4f61-b86d-46cf24c1736e"
+    },
+    {
+      "from": "3d51bf3f-46fd-4b5d-8e27-29cd9814c4b6",
+      "to": "d735a48b-ccc1-4bff-8f30-2091878f3e40"
+    },
+    {
+      "from": "7c62a963-dcc0-4d71-ad7f-387980bdd6ea",
+      "to": "d735a48b-ccc1-4bff-8f30-2091878f3e40"
+    },
+    {
+      "from": "ad140683-84b5-40f3-abe5-eff20fa7bd24",
+      "to": "1ba953bb-5b29-4f61-b86d-46cf24c1736e"
+    },
+    {
+      "from": "a981c59e-e91d-4559-8323-727cde1a57f0",
+      "to": "386ee175-4345-4295-ae40-1352fdc5608c"
+    },
+    {
+      "from": "386ee175-4345-4295-ae40-1352fdc5608c",
+      "to": "29f1fcb0-95ff-4de7-8e6e-2ddfa3305b16"
+    },
+    {
+      "from": "386ee175-4345-4295-ae40-1352fdc5608c",
+      "to": "fd816feb-092d-4234-a214-c6f548e03eae"
+    },
+    {
+      "from": "d735a48b-ccc1-4bff-8f30-2091878f3e40",
+      "to": "f2773ab8-e003-4259-8ec9-3fccf49bc36d"
+    },
+    {
+      "from": "f2773ab8-e003-4259-8ec9-3fccf49bc36d",
+      "to": "b6c4e5a6-987d-4894-a91d-a844fd638e48"
+    },
+    {
+      "from": "f2773ab8-e003-4259-8ec9-3fccf49bc36d",
+      "to": "2aafc956-4565-46b8-a900-d57199eaf680"
+    },
+    {
+      "from": "b6c4e5a6-987d-4894-a91d-a844fd638e48",
+      "to": "9f796d5e-135d-43dc-a2a9-a647f104d943"
+    },
+    {
+      "from": "2aafc956-4565-46b8-a900-d57199eaf680",
+      "to": "9f796d5e-135d-43dc-a2a9-a647f104d943"
+    },
+    {
+      "from": "9f796d5e-135d-43dc-a2a9-a647f104d943",
+      "to": "ad140683-84b5-40f3-abe5-eff20fa7bd24"
+    },
+    {
+      "from": "1ba953bb-5b29-4f61-b86d-46cf24c1736e",
+      "to": "3d51bf3f-46fd-4b5d-8e27-29cd9814c4b6",
+      "source_port": "loop"
+    },
+    {
+      "from": "1ba953bb-5b29-4f61-b86d-46cf24c1736e",
+      "to": "7c62a963-dcc0-4d71-ad7f-387980bdd6ea",
+      "source_port": "loop"
+    }
+  ],
+  "node_counter": 39,
+  "start_pos": [
+    -942.6891304347827,
+    -103.72608695652174
+  ],
+  "named_sessions": [
+    {
+      "name": "Claude Planner",
+      "owner_node_id": "54162f60-65a7-4170-9ab8-ef5406c8872b",
+      "provider": "claude",
+      "session_id": ""
+    },
+    {
+      "name": "Codex Planner",
+      "owner_node_id": "797710df-af7a-4717-9efa-8dd3be269755",
+      "provider": "codex",
+      "session_id": ""
+    }
+  ]
+}

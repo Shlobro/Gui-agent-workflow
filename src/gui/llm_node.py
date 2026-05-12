@@ -294,6 +294,7 @@ class LLMNode(WorkflowNode):
         self.resume_session_enabled: bool = False
         self.save_session_enabled: bool = False
         self.save_session_name: str = ""
+        self.restart_session_enabled: bool = False
         self.resume_named_session_name: str = ""
         self.saved_session_id: str = ""
         self.saved_session_provider: str = ""
@@ -494,6 +495,7 @@ class LLMNode(WorkflowNode):
             "resume_session_enabled": self.resume_session_enabled,
             "save_session_enabled": self.save_session_enabled,
             "save_session_name": self.save_session_name,
+            "restart_session_enabled": self.restart_session_enabled,
             "resume_named_session_name": self.resume_named_session_name,
             "saved_session_id": self.saved_session_id,
             "saved_session_provider": self.saved_session_provider,
@@ -522,6 +524,7 @@ class LLMNode(WorkflowNode):
         self.save_session_name = (
             save_session_name if isinstance(save_session_name, str) else ""
         )
+        self.restart_session_enabled = bool(data.get("restart_session_enabled", False))
         resume_named_session_name = data.get("resume_named_session_name", "")
         self.resume_named_session_name = (
             resume_named_session_name if isinstance(resume_named_session_name, str) else ""

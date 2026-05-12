@@ -1,0 +1,268 @@
+{
+  "nodes": [
+    {
+      "id": "9cd6a2c6-250a-411c-bd11-40690b4d22b7",
+      "label_index": 1,
+      "x": 250.0,
+      "y": -156.0,
+      "name": "Claude Initial Review",
+      "model": "claude-sonnet-4-6",
+      "prompt": "Review the recent changes made by a Junior dev straight out of college using git diff. review the staged and unstaged files. output your findings into cla-review.txt. ",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "claude-reviewer",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "create_file",
+      "id": "32397b2b-8386-4297-a708-d901a4fdfeab",
+      "label_index": 2,
+      "x": -262.0,
+      "y": -155.0,
+      "name": "Claude Review File",
+      "filename": "cla-review.txt"
+    },
+    {
+      "node_type": "create_file",
+      "id": "0c1585f9-9713-44b2-a6e9-a4c4af2b36db",
+      "label_index": 3,
+      "x": -266.0,
+      "y": -33.0,
+      "name": "Codex Review File",
+      "filename": "cod-review.txt"
+    },
+    {
+      "id": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
+      "label_index": 5,
+      "x": 248.0,
+      "y": -31.0,
+      "name": "Codex Initial Review",
+      "model": "gpt-5.4",
+      "prompt": "Review the recent changes made by a Junior dev straight out of college using git diff. review the staged and unstaged files. output your findings into cod-review.txt. ",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "codex-reviewer",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "join",
+      "id": "07378ff3-a66f-4fd8-b6e2-f54235fe6511",
+      "label_index": 7,
+      "x": 781.0,
+      "y": -90.0,
+      "name": "Wait for initial review",
+      "wait_for_count": 2
+    },
+    {
+      "id": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "label_index": 8,
+      "x": 1293.0,
+      "y": -90.0,
+      "name": "Critique review",
+      "model": "gpt-5.4",
+      "prompt": "Read cla-review.txt and cod-review.txt. append to both of these files in a new section called critique, what you agree with, what you disagree with and why",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "fixer",
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "7e9809f0-f636-4529-a9e1-f782593a894f",
+      "label_index": 9,
+      "x": 1883.0,
+      "y": -158.0,
+      "name": "Respond to critique",
+      "model": "claude-sonnet-4-6",
+      "prompt": "A critique has been appended to the file. add to the end of the file a \"response to critique\" section where you respond to the critique and give your final thoughts",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "claude-reviewer",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "85cf1a71-1c80-4504-b1ef-979d1b3a14eb",
+      "label_index": 10,
+      "x": 1884.0,
+      "y": -26.0,
+      "name": "Respond to critique",
+      "model": "gpt-5.4",
+      "prompt": "A critique has been appended to the file. add to the end of the file a \"response to critique\" section where you respond to the critique and give your final thoughts",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "codex-reviewer",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "join",
+      "id": "5c583fb4-762e-4d4b-8259-6116b1fdc830",
+      "label_index": 11,
+      "x": 2409.0,
+      "y": -102.0,
+      "name": "Wait for response",
+      "wait_for_count": 2
+    },
+    {
+      "id": "8c64b955-bd1f-444d-9910-b5320c20e5ff",
+      "label_index": 12,
+      "x": 3410.0,
+      "y": -106.0,
+      "name": "LLM 12",
+      "model": "gpt-5.4",
+      "prompt": "the reviewers have responded to your critique and have written them into the end of the review files. read them and fix all you agree with",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "resume_named_session_name": "fixer",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "attention",
+      "id": "7b5ca8f7-7fe6-4931-9d4f-fc8f3320ea25",
+      "label_index": 13,
+      "x": 2930.0,
+      "y": -105.0,
+      "name": "Review before fix",
+      "message": "The review files have been completed"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "3841b471-dc4d-4a96-8299-a3934ff610e3",
+      "label_index": 15,
+      "x": 3989.0666048340668,
+      "y": -53.481088148833194,
+      "name": "Codex Review File",
+      "filename": "cod-review.txt"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "6c28488e-ca69-4954-8ceb-025b992c78bd",
+      "label_index": 16,
+      "x": 3993.0666048340668,
+      "y": -175.48108814883318,
+      "name": "Claude Review File",
+      "filename": "cla-review.txt"
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "32397b2b-8386-4297-a708-d901a4fdfeab"
+    },
+    {
+      "from": "start",
+      "to": "0c1585f9-9713-44b2-a6e9-a4c4af2b36db"
+    },
+    {
+      "from": "0c1585f9-9713-44b2-a6e9-a4c4af2b36db",
+      "to": "f6c5401b-e546-4e34-94d1-d89a066da7d5"
+    },
+    {
+      "from": "32397b2b-8386-4297-a708-d901a4fdfeab",
+      "to": "9cd6a2c6-250a-411c-bd11-40690b4d22b7"
+    },
+    {
+      "from": "9cd6a2c6-250a-411c-bd11-40690b4d22b7",
+      "to": "07378ff3-a66f-4fd8-b6e2-f54235fe6511"
+    },
+    {
+      "from": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
+      "to": "07378ff3-a66f-4fd8-b6e2-f54235fe6511"
+    },
+    {
+      "from": "07378ff3-a66f-4fd8-b6e2-f54235fe6511",
+      "to": "639b62e8-3960-4e86-a345-9e1abf083278"
+    },
+    {
+      "from": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "to": "7e9809f0-f636-4529-a9e1-f782593a894f"
+    },
+    {
+      "from": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "to": "85cf1a71-1c80-4504-b1ef-979d1b3a14eb"
+    },
+    {
+      "from": "7e9809f0-f636-4529-a9e1-f782593a894f",
+      "to": "5c583fb4-762e-4d4b-8259-6116b1fdc830"
+    },
+    {
+      "from": "85cf1a71-1c80-4504-b1ef-979d1b3a14eb",
+      "to": "5c583fb4-762e-4d4b-8259-6116b1fdc830"
+    },
+    {
+      "from": "5c583fb4-762e-4d4b-8259-6116b1fdc830",
+      "to": "7b5ca8f7-7fe6-4931-9d4f-fc8f3320ea25"
+    },
+    {
+      "from": "7b5ca8f7-7fe6-4931-9d4f-fc8f3320ea25",
+      "to": "8c64b955-bd1f-444d-9910-b5320c20e5ff"
+    },
+    {
+      "from": "8c64b955-bd1f-444d-9910-b5320c20e5ff",
+      "to": "6c28488e-ca69-4954-8ceb-025b992c78bd"
+    },
+    {
+      "from": "8c64b955-bd1f-444d-9910-b5320c20e5ff",
+      "to": "3841b471-dc4d-4a96-8299-a3934ff610e3"
+    }
+  ],
+  "node_counter": 16,
+  "start_pos": [
+    -528.0,
+    -44.0
+  ],
+  "named_sessions": [
+    {
+      "name": "claude-reviewer",
+      "owner_node_id": "9cd6a2c6-250a-411c-bd11-40690b4d22b7",
+      "provider": "claude",
+      "session_id": ""
+    },
+    {
+      "name": "codex-reviewer",
+      "owner_node_id": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
+      "provider": "codex",
+      "session_id": ""
+    },
+    {
+      "name": "fixer",
+      "owner_node_id": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "provider": "codex",
+      "session_id": ""
+    }
+  ]
+}

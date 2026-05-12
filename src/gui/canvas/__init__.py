@@ -280,6 +280,7 @@ class WorkflowCanvas(
             "resume_session_enabled": False,
             "save_session_enabled": False,
             "save_session_name": "",
+            "restart_session_enabled": False,
             "resume_named_session_name": "",
             "saved_session_id": "",
             "saved_session_provider": "",

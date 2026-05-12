@@ -8,6 +8,7 @@ from uuid import uuid4
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from src.workers.git_worker import GitWorker
 from src.workers.llm_worker import LLMWorker
 from src.gui.file_op_node import AttentionNode, FileOpNode
 from src.gui.conditional_node import (
@@ -404,6 +405,12 @@ class _ExecutionMixin:
         composed_prompt = self.compose_llm_prompt(node, prompt_text=prompt_text)
         for warning in runtime_warnings:
             append_output_line(self, node, f"[Warning] {warning}")
+        if node.restart_session_enabled and node.save_session_enabled:
+            append_output_line(
+                self,
+                node,
+                "[Session] Restarting at this node and overwriting the saved session ID after this call.",
+            )
         start_llm_output_block(self, node, composed_prompt)
         worker = LLMWorker(
             provider,
