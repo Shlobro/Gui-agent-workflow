@@ -33,6 +33,15 @@
     },
     {
       "node_type": "create_file",
+      "id": "n03b-target-sha-file",
+      "label_index": 20,
+      "x": -1400.0,
+      "y": -350.0,
+      "name": "create target-sha.txt",
+      "filename": "target-sha.txt"
+    },
+    {
+      "node_type": "create_file",
       "id": "n04-cla-review-file",
       "label_index": 4,
       "x": -1400.0,
@@ -74,7 +83,7 @@
       "y": -300.0,
       "name": "Initial merge/rebase + resolve",
       "model": "claude-sonnet-4-6",
-      "prompt": "You are performing a git $mode against the target branch '$branch' and resolving any conflicts. MODE = '$mode'. TARGET BRANCH = '$branch'.\n\nSTEP 1: Validate. $mode must be exactly 'merge' or 'rebase'. $branch must be a real branch (verify with `git rev-parse --verify $branch`). If either is invalid, write the error to fixes-made.txt and stop.\n\nSTEP 2: Capture the current HEAD commit SHA via `git rev-parse HEAD` and write the SHA (and only the SHA, no extra text) to pre-op-sha.txt. This is the baseline reviewers will diff against.\n\nSTEP 3: Run the operation:\n  - If $mode == 'merge': run `git merge $branch --no-ff --no-edit`\n  - If $mode == 'rebase': run `git rebase $branch`\n\nSTEP 4: If conflicts arise, resolve them carefully. Preserve intent from both sides. Do NOT silently delete logic. After resolving, stage the resolved files and continue (for merge: `git commit --no-edit`; for rebase: `git rebase --continue`). Repeat until the operation completes.\n\nSTEP 5: Append to fixes-made.txt a clear summary: which files had conflicts, how each was resolved, and any judgement calls made. If there were no conflicts, write that explicitly.\n\nYou run in headless mode; the user sees nothing of your output. All status info must go in fixes-made.txt. Do NOT push. Do NOT abort the operation no matter what — if you cannot resolve, leave the repo in its conflicted state and describe the blocker in fixes-made.txt; a later node decides whether to abort.",
+      "prompt": "You are performing a git $mode against the target branch '$branch' and resolving any conflicts. MODE = '$mode'. TARGET BRANCH = '$branch'.\n\nSTEP 1: Validate. $mode must be exactly 'merge' or 'rebase'. $branch must be a real branch (verify with `git rev-parse --verify $branch`). If either is invalid, write the error to fixes-made.txt and stop.\n\nSTEP 2: Capture two baseline SHAs the reviewers will diff against. Run `git rev-parse HEAD` and write that SHA (and only the SHA, no extra text) to pre-op-sha.txt. Run `git rev-parse $branch` and write that SHA (and only the SHA, no extra text) to target-sha.txt. pre-op-sha = your branch tip before op. target-sha = target branch tip at op time, frozen so later pushes to the target do not move the goalposts mid-loop.\n\nSTEP 3: Run the operation:\n  - If $mode == 'merge': run `git merge $branch --no-ff --no-edit`\n  - If $mode == 'rebase': run `git rebase $branch`\n\nSTEP 4: If conflicts arise, resolve them carefully. Preserve intent from both sides. Do NOT silently delete logic. After resolving, stage the resolved files and continue (for merge: `git commit --no-edit`; for rebase: `git rebase --continue`). Repeat until the operation completes.\n\nSTEP 5: Append to fixes-made.txt a clear summary: which files had conflicts, how each was resolved, and any judgement calls made. If there were no conflicts, write that explicitly.\n\nYou run in headless mode; the user sees nothing of your output. All status info must go in fixes-made.txt. Do NOT push. Do NOT abort the operation no matter what — if you cannot resolve, leave the repo in its conflicted state and describe the blocker in fixes-made.txt; a later node decides whether to abort.",
       "resume_session_enabled": false,
       "save_session_enabled": true,
       "save_session_name": "resolver",
@@ -94,7 +103,7 @@
       "y": -500.0,
       "name": "Claude review (regression check)",
       "model": "claude-sonnet-4-6",
-      "prompt": "A junior dev just performed a git $mode against branch '$branch' and resolved conflicts. MODE = '$mode'. TARGET BRANCH = '$branch'. Read pre-op-sha.txt to get the BASELINE SHA (the commit before the operation). Read fixes-made.txt to see what the dev claims they did.\n\nDiff the current working tree against the BASELINE SHA: `git diff <BASELINE_SHA>..HEAD` and also `git diff <BASELINE_SHA>` for any unstaged remains. Compare against the changes that should have come from the target branch: `git log <BASELINE_SHA>..$branch` and `git diff <BASELINE_SHA>...$branch`.\n\nLook for: regressions, silently dropped logic, conflict resolutions that picked one side when both were needed, broken imports/references, stale .md guides, accidentally reverted commits, half-merged code.\n\nDo NOT run the code. Analyze only. Be ruthless. For each issue, suggest the fix.\n\nWrite findings to cla-review.txt. If there are NO issues, leave cla-review.txt completely empty. You run headless; only cla-review.txt is seen. An empty file means 'approved' and lets the workflow proceed.",
+      "prompt": "A junior dev just performed a git $mode against branch '$branch' and resolved conflicts. MODE = '$mode'. TARGET BRANCH = '$branch'. Read pre-op-sha.txt for PRE_OP_SHA (your branch tip before the op) and target-sha.txt for TARGET_SHA (target branch tip frozen at op time). Read fixes-made.txt to see what the dev claims they did.\n\nDiff 1 — what the op added to your side: `git diff <PRE_OP_SHA>..HEAD` plus `git diff <PRE_OP_SHA>` for any unstaged remains.\n\nDiff 2 — verify target-branch changes survived: `git log <PRE_OP_SHA>..<TARGET_SHA>` lists every commit that should have landed in HEAD via this op. For each such commit, run `git show <commit>` and confirm its changes are present in HEAD (use `git diff <TARGET_SHA>..HEAD -- <files>` on the touched paths). Anything from <TARGET_SHA> that is missing from HEAD = the resolver dropped it during conflict resolution.\n\nLook for: regressions on your side, silently dropped target-branch logic, conflict resolutions that picked one side when both were needed, broken imports/references, stale .md guides, accidentally reverted commits, half-merged code.\n\nDo NOT run the code. Analyze only. Be ruthless. For each issue, suggest the fix.\n\nWrite findings to cla-review.txt. If there are NO issues, leave cla-review.txt completely empty. You run headless; only cla-review.txt is seen. An empty file means 'approved' and lets the workflow proceed.",
       "resume_session_enabled": false,
       "save_session_enabled": true,
       "save_session_name": "claude-reviewer",
@@ -114,7 +123,7 @@
       "y": -100.0,
       "name": "Codex review (regression check)",
       "model": "gpt-5.4",
-      "prompt": "A junior dev just performed a git $mode against branch '$branch' and resolved conflicts. MODE = '$mode'. TARGET BRANCH = '$branch'. Read pre-op-sha.txt to get the BASELINE SHA (the commit before the operation). Read fixes-made.txt to see what the dev claims they did.\n\nDiff the current working tree against the BASELINE SHA: `git diff <BASELINE_SHA>..HEAD` and also `git diff <BASELINE_SHA>` for any unstaged remains. Compare against the changes that should have come from the target branch: `git log <BASELINE_SHA>..$branch` and `git diff <BASELINE_SHA>...$branch`.\n\nLook for: regressions, silently dropped logic, conflict resolutions that picked one side when both were needed, broken imports/references, stale .md guides, accidentally reverted commits, half-merged code.\n\nDo NOT run the code. Analyze only. Be ruthless. For each issue, suggest the fix.\n\nWrite findings to cod-review.txt. If there are NO issues, leave cod-review.txt completely empty. You run headless; only cod-review.txt is seen. An empty file means 'approved' and lets the workflow proceed.",
+      "prompt": "A junior dev just performed a git $mode against branch '$branch' and resolved conflicts. MODE = '$mode'. TARGET BRANCH = '$branch'. Read pre-op-sha.txt for PRE_OP_SHA (your branch tip before the op) and target-sha.txt for TARGET_SHA (target branch tip frozen at op time). Read fixes-made.txt to see what the dev claims they did.\n\nDiff 1 — what the op added to your side: `git diff <PRE_OP_SHA>..HEAD` plus `git diff <PRE_OP_SHA>` for any unstaged remains.\n\nDiff 2 — verify target-branch changes survived: `git log <PRE_OP_SHA>..<TARGET_SHA>` lists every commit that should have landed in HEAD via this op. For each such commit, run `git show <commit>` and confirm its changes are present in HEAD (use `git diff <TARGET_SHA>..HEAD -- <files>` on the touched paths). Anything from <TARGET_SHA> that is missing from HEAD = the resolver dropped it during conflict resolution.\n\nLook for: regressions on your side, silently dropped target-branch logic, conflict resolutions that picked one side when both were needed, broken imports/references, stale .md guides, accidentally reverted commits, half-merged code.\n\nDo NOT run the code. Analyze only. Be ruthless. For each issue, suggest the fix.\n\nWrite findings to cod-review.txt. If there are NO issues, leave cod-review.txt completely empty. You run headless; only cod-review.txt is seen. An empty file means 'approved' and lets the workflow proceed.",
       "resume_session_enabled": false,
       "save_session_enabled": true,
       "save_session_name": "codex-reviewer",
@@ -249,7 +258,8 @@
     {"from": "start", "to": "n00a-var-branch"},
     {"from": "n00a-var-branch", "to": "n00b-var-mode"},
     {"from": "n00b-var-mode", "to": "n03-presha-file"},
-    {"from": "n03-presha-file", "to": "n04-cla-review-file"},
+    {"from": "n03-presha-file", "to": "n03b-target-sha-file"},
+    {"from": "n03b-target-sha-file", "to": "n04-cla-review-file"},
     {"from": "n04-cla-review-file", "to": "n05-cod-review-file"},
     {"from": "n05-cod-review-file", "to": "n06-fixes-file"},
     {"from": "n06-fixes-file", "to": "n07-verdict-file"},
@@ -270,7 +280,7 @@
     {"from": "n19-trunc-cod", "to": "n09-cla-review"},
     {"from": "n19-trunc-cod", "to": "n10-cod-review"}
   ],
-  "node_counter": 20,
+  "node_counter": 21,
   "start_pos": [-2000.0, -440.0],
   "named_sessions": [
     {
