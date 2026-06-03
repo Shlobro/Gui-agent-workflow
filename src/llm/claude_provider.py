@@ -39,6 +39,9 @@ class ClaudeProvider(BaseLLMProvider):
         _ = model
         return True
 
+    def supports_profiles(self) -> bool:
+        return True
+
     def uses_structured_output(self, model: Optional[str] = None) -> bool:
         _ = model
         return True

@@ -38,6 +38,14 @@ class BaseLLMProvider(ABC):
         _ = model
         return False
 
+    def supports_profiles(self) -> bool:
+        """Whether this provider exposes selectable account profiles.
+
+        Profiles are config-home directories selected via an environment
+        variable; see ``src/llm/profiles.py``.
+        """
+        return False
+
     def uses_structured_output(self, model: Optional[str] = None) -> bool:
         _ = model
         return False

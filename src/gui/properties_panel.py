@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ._panel_forms import (
+from .panel_forms import (
     _AttentionForm,
     _ConditionalForm,
     _FileOpForm,
@@ -179,6 +179,7 @@ class PropertiesPanel(QWidget):
 
     title_committed = Signal(str, str, str)
     model_changed = Signal(str, str, str)
+    profile_changed = Signal(str, str)
     resume_session_changed = Signal(str, bool)
     save_session_changed = Signal(str, bool)
     save_session_name_committed = Signal(str, str)
@@ -288,6 +289,7 @@ class PropertiesPanel(QWidget):
     def _wire_signals(self):
         self._llm_form.title_edit.editingFinished.connect(self._on_llm_title_committed)
         self._llm_form.model_selector.model_changed.connect(self._on_model_changed)
+        self._llm_form.profile_combo.activated.connect(self._on_profile_changed)
         self._llm_form.resume_session_checkbox.toggled.connect(self._on_resume_session_toggled)
         self._llm_form.save_session_checkbox.toggled.connect(self._on_save_session_toggled)
         self._llm_form.save_session_name_edit.textChanged.connect(self._on_save_session_name_changed)
@@ -454,6 +456,12 @@ class PropertiesPanel(QWidget):
         if self._current_node is None:
             return
         self.model_changed.emit(self._current_node.node_id, old_id, new_id)
+    def _on_profile_changed(self, _index: int):
+        if self._current_node is None:
+            return
+        profile_name = self._llm_form.current_profile_name()
+        self.profile_changed.emit(self._current_node.node_id, profile_name)
+
     def _on_resume_session_toggled(self, checked: bool):
         if self._current_node is None:
             return

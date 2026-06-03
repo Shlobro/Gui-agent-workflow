@@ -9,7 +9,7 @@ Hosts threaded execution logic so long-running subprocess calls do not block the
 - `script_worker.py`: `QThread` wrapper that runs `.bat`, `.cmd`, or `.ps1` launch commands in the background with timeout and cancellation support.
 
 ## Key Behavior
-- `LLMWorker` receives a `BaseLLMProvider`, prompt text, model id, optional session id, optional working directory, and timeout. It runs the provider command, writes prompt text to stdin only when the provider says it uses stdin, merges stdout and stderr, and emits lines through `output_line` for plain-text providers.
+- `LLMWorker` receives a `BaseLLMProvider`, prompt text, model id, optional session id, optional working directory, optional `env_overlay`, and timeout. It runs the provider command, writes prompt text to stdin only when the provider says it uses stdin, merges stdout and stderr, and emits lines through `output_line` for plain-text providers. When `env_overlay` is non-empty it is merged onto a copy of `os.environ` for the subprocess; this is how account-profile selection (e.g. `CODEX_HOME`, `CLAUDE_CONFIG_DIR`) reaches the CLI.
 - `GitWorker` receives a concrete git command, optional working directory, and timeout; validates cwd exists before launch; merges stdout and stderr and emits lines through `output_line`.
 - `ScriptWorker` receives a fully built script command, optional working directory, timeout, and optional `stdin_text`; validates cwd exists before launch; writes `stdin_text` once after spawn when provided; then merges stdout and stderr and emits lines through `output_line`.
 - `LLMWorker.finished` and `LLMWorker.error` both emit `(output_text, session_id)`.

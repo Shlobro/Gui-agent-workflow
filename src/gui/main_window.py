@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
 
         self._panel.title_committed.connect(self._on_panel_title_committed)
         self._panel.model_changed.connect(self._on_panel_model_changed)
+        self._panel.profile_changed.connect(self._on_panel_profile_changed)
         self._panel.resume_session_changed.connect(self._on_panel_resume_session_changed)
         self._panel.save_session_changed.connect(self._on_panel_save_session_changed)
         self._panel.save_session_name_committed.connect(
@@ -551,6 +552,12 @@ class MainWindow(QMainWindow):
 
     def _on_panel_model_changed(self, node_id: str, old_model_id: str, new_model_id: str):
         handle_panel_model_changed(self, node_id, old_model_id, new_model_id)
+
+    def _on_panel_profile_changed(self, node_id: str, profile_name: str):
+        node = self.canvas._nodes.get(node_id)
+        if node is None or not isinstance(node, LLMNode):
+            return
+        node.profile_name = profile_name or ""
 
     def _on_panel_resume_session_changed(self, node_id: str, checked: bool):
         node = self.canvas._nodes.get(node_id)
