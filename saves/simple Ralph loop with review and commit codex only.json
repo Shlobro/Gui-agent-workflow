@@ -1,0 +1,179 @@
+{
+  "nodes": [
+    {
+      "node_type": "create_file",
+      "id": "0c1585f9-9713-44b2-a6e9-a4c4af2b36db",
+      "label_index": 3,
+      "x": -176.07000000000005,
+      "y": -345.1099999999999,
+      "name": "Codex Review File",
+      "filename": "cod-review.txt"
+    },
+    {
+      "id": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
+      "label_index": 5,
+      "x": 337.93000000000006,
+      "y": -343.1099999999999,
+      "name": "Codex Initial Review",
+      "model": "gpt-5.4",
+      "prompt": "Review the recent changes made by a Junior dev straight out of college using git diff. review the staged and unstaged files. output your findings into cod-review.txt. just to be clear you are not reviewing the branch you are reviewing the recent changes both staged and unstaged. do not edit the code just create a detailed review file with your findings. do not hold back",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "codex-reviewer",
+      "restart_session_enabled": true,
+      "resume_named_session_name": "",
+      "saved_session_id": "019e265d-85b8-78b2-a934-346665b1de31",
+      "saved_session_provider": "codex",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "label_index": 8,
+      "x": 1000.3495280049551,
+      "y": -342.1236234531248,
+      "name": "Critique review",
+      "model": "gpt-5.4",
+      "prompt": "Read cod-review.txt. and fix what you agree with.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "019e2658-dd34-7c23-8c6b-0a3df04e6424",
+      "saved_session_provider": "codex",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "delete_file",
+      "id": "3841b471-dc4d-4a96-8299-a3934ff610e3",
+      "label_index": 15,
+      "x": 1691.18558961608,
+      "y": -184.27455480407727,
+      "name": "Codex Review File",
+      "filename": "cod-review.txt"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "6c28488e-ca69-4954-8ceb-025b992c78bd",
+      "label_index": 16,
+      "x": 1703.1364468653194,
+      "y": -340.0553616230518,
+      "name": "Claude Review File",
+      "filename": "cla-review.txt"
+    },
+    {
+      "id": "b5af0afe-9549-4d22-8fc0-93bba6d278ab",
+      "label_index": 17,
+      "x": 263.56967728124977,
+      "y": -572.4820937812499,
+      "name": "Do something from list",
+      "model": "gpt-5.5",
+      "prompt": "Pick one thing from TODOs.txt and impliment it. once complete erase it from the list. if it is the last thing there make sure to leave the file completely empty",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "implimentor",
+      "restart_session_enabled": true,
+      "resume_named_session_name": "",
+      "saved_session_id": "019e2671-a91e-7660-882a-44a62d6f5e74",
+      "saved_session_provider": "codex",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "conditional",
+      "id": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8",
+      "label_index": 18,
+      "x": -281.70488373437485,
+      "y": -636.7696775312497,
+      "name": "TODO file empty",
+      "filename": "TODOs.txt",
+      "condition_type": "file_empty"
+    },
+    {
+      "id": "8beec733-99dc-4aea-89a7-f1f1ef09bd35",
+      "label_index": 20,
+      "x": 1695.3443335639786,
+      "y": 27.02951455946635,
+      "name": "LLM 20",
+      "model": "gemini-3-flash-preview",
+      "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore. do not ask for confirmation do not ask if a commit message is good do not fix anything just stage commit and push.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    }
+  ],
+  "connections": [
+    {
+      "from": "0c1585f9-9713-44b2-a6e9-a4c4af2b36db",
+      "to": "f6c5401b-e546-4e34-94d1-d89a066da7d5"
+    },
+    {
+      "from": "b5af0afe-9549-4d22-8fc0-93bba6d278ab",
+      "to": "0c1585f9-9713-44b2-a6e9-a4c4af2b36db"
+    },
+    {
+      "from": "start",
+      "to": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8"
+    },
+    {
+      "from": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8",
+      "to": "b5af0afe-9549-4d22-8fc0-93bba6d278ab",
+      "source_port": "false"
+    },
+    {
+      "from": "6c28488e-ca69-4954-8ceb-025b992c78bd",
+      "to": "3841b471-dc4d-4a96-8299-a3934ff610e3"
+    },
+    {
+      "from": "3841b471-dc4d-4a96-8299-a3934ff610e3",
+      "to": "8beec733-99dc-4aea-89a7-f1f1ef09bd35"
+    },
+    {
+      "from": "8beec733-99dc-4aea-89a7-f1f1ef09bd35",
+      "to": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8"
+    },
+    {
+      "from": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "to": "6c28488e-ca69-4954-8ceb-025b992c78bd"
+    },
+    {
+      "from": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
+      "to": "639b62e8-3960-4e86-a345-9e1abf083278"
+    }
+  ],
+  "node_counter": 24,
+  "start_pos": [
+    -780.1901617343748,
+    -648.1381267968749
+  ],
+  "named_sessions": [
+    {
+      "name": "codex-reviewer",
+      "owner_node_id": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
+      "provider": "codex",
+      "session_id": "019e265d-85b8-78b2-a934-346665b1de31"
+    },
+    {
+      "name": "implimentor",
+      "owner_node_id": "b5af0afe-9549-4d22-8fc0-93bba6d278ab",
+      "provider": "codex",
+      "session_id": "019e2671-a91e-7660-882a-44a62d6f5e74"
+    }
+  ]
+}

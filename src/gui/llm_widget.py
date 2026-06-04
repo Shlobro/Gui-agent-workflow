@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.llm.base_provider import LLMProviderRegistry
+from src.llm.base_provider import LLMProviderRegistry, normalize_model_id
 
 NODE_WIDTH = 420
 ICON_SIZE = 16
@@ -147,13 +147,14 @@ class ModelSelector(QWidget):
         return self._current_model_id
 
     def set_model_id(self, model_id: Optional[str]):
-        if not model_id:
+        normalized_model_id = normalize_model_id(model_id)
+        if not normalized_model_id:
             self._clear_selection()
             return
 
         for i in range(self._list.count()):
             item = self._list.item(i)
-            if item.data(Qt.ItemDataRole.UserRole) == model_id:
+            if item.data(Qt.ItemDataRole.UserRole) == normalized_model_id:
                 self._select_item(item)
                 return
 
@@ -392,12 +393,13 @@ def provider_icon(provider_name: str) -> QIcon:
 
 def provider_for_model(model_id: str) -> Optional[str]:
     """Find the provider name that owns the given model_id."""
-    if not model_id:
+    normalized_model_id = normalize_model_id(model_id)
+    if not normalized_model_id:
         return None
     providers = get_registered_providers()
     for prov in providers:
         for mid, _ in prov.get_models():
-            if mid == model_id:
+            if mid == normalized_model_id:
                 return prov.name
     return None
 

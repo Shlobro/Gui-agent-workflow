@@ -36,7 +36,7 @@ Each node does one job. LLM nodes call Claude, Codex/OpenAI, or Gemini. Other no
 
 | Provider | Models |
 |----------|--------|
-| **Claude** | Opus 4.6, Sonnet 4.6, Haiku 4.5 |
+| **Claude** | Opus 4, Sonnet 4, Haiku 3.5 |
 | **Codex / OpenAI** | GPT-5.4 and GPT-5.3 Codex with `low` / `medium` / `high` / `xhigh` effort |
 | **Gemini** | Gemini 3.1 Pro, Gemini 3 Flash, Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash Lite |
 

@@ -5,3 +5,9 @@ the side panel in the LLM node is too full. make all the session settings colaps
 it is unclear when running out of usage which provider is out. make sure it is clear
 
 when switching models for example when usage is used up the GUI to schedule resume is the worst UI/UX i have ever seen in my life. make it better. and the indication that it is scheduled to continue on the main screen is almost nonexistant make it clearer
+
+add gemini to have the option to keep going with session ID like claude and codex have. look at how it's done here C:\Users\shlob\Pycharm Projects\Vertical\Vertical-agentic-workflow.
+
+this can also appear as claude running out of usage and we are not detecting it at the moment. add it "[Response] [Error] You're out of extra usage · resets 7:50pm (Asia/Jerusalem)"
+
+clicking on stop at the moment stops everything in it's tracks. i need a pause and play button. the pause will stop after all llm calls finish and the play will continue after that. if the play is clicked when not paused this should not be possible it should be greyed out. if the play is clicked before the llm's stopped running then just let it continue without blocking

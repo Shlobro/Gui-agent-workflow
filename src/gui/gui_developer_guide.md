@@ -55,6 +55,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Changing a node's model while it owns saved session data prompts first; on confirmation, incompatible saved session IDs are cleared and named-session references are reconciled.
 - Loading a workflow with saved node or named sessions does not prompt immediately. The prompt appears only when the user starts a run.
 - Choosing `Start Fresh` on that prompt clears all captured node and named session IDs from the in-memory workflow.
+- Saved workflows that still contain older Claude model IDs are normalized onto the current Claude aliases during load and provider lookup, so existing graphs remain runnable after catalog updates.
 
 ## Behavior Notes
 - The Start node is permanent and recreated after Clear Canvas.

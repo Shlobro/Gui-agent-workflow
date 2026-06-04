@@ -33,7 +33,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
    `git_changes` runs `git status --porcelain --untracked-files=all` against the selected project folder in a background `GitWorker`, streams git output into the node log, and fails with a clear timeout error after 15 seconds if git does not return. Other conditional evaluators still execute synchronously. Deferred callbacks resolve safely after workers finish.
 
 ## Built-In Models
-- Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
+- Claude: Opus 4, Sonnet 4, Haiku 3.5. The provider uses Anthropic's stable Claude model aliases instead of pinning the UI to a specific minor revision label.
 - Codex CLI / OpenAI: GPT-5.5, GPT-5.4, and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` reasoning effort.
 - Gemini: Gemini 3.1 Pro (Preview), Gemini 3 Flash (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, and Gemini 2.5 Flash Lite. The default new-node model is Gemini 3.1 Pro (Preview) when available.
 

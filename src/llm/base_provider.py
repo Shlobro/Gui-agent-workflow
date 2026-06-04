@@ -5,6 +5,20 @@ from abc import ABC, abstractmethod
 from typing import Dict, Iterable, List, Optional, Tuple
 
 
+LEGACY_MODEL_ID_ALIASES: Dict[str, str] = {
+    "claude-opus-4-6": "claude-opus-4-0",
+    "claude-sonnet-4-6": "claude-sonnet-4-0",
+    "claude-haiku-4-5-20251001": "claude-3-5-haiku-latest",
+}
+
+
+def normalize_model_id(model_id: Optional[str]) -> Optional[str]:
+    """Map saved legacy model ids onto the currently registered catalog."""
+    if model_id is None:
+        return None
+    return LEGACY_MODEL_ID_ALIASES.get(model_id, model_id)
+
+
 class BaseLLMProvider(ABC):
 
     @property

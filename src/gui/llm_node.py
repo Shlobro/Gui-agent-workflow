@@ -17,6 +17,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QGraphicsItem
 
+from src.llm.base_provider import normalize_model_id
 from .llm_widget import (
     NODE_WIDTH,
     ICON_SIZE,
@@ -324,8 +325,9 @@ class LLMNode(WorkflowNode):
 
     @model_id.setter
     def model_id(self, value: str):
-        self._model_id = value
-        self._provider_name = provider_for_model(value)
+        normalized_value = normalize_model_id(value)
+        self._model_id = normalized_value
+        self._provider_name = provider_for_model(normalized_value or "")
         self.update()
 
     @property
@@ -517,7 +519,7 @@ class LLMNode(WorkflowNode):
         self.setPos(data.get("x", 0), data.get("y", 0))
         self._title = data.get("name", f"LLM {self.label_index}")
         if data.get("model"):
-            self._model_id = data["model"]
+            self._model_id = normalize_model_id(data["model"])
             self._provider_name = provider_for_model(self._model_id)
         self._prompt_text = data.get("prompt", "")
         profile_name = data.get("profile_name", "")

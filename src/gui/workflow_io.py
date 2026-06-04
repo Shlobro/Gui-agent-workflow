@@ -8,7 +8,7 @@ here; callers are responsible for applying the returned data to the scene.
 
 from typing import List
 
-from src.llm.base_provider import LLMProviderRegistry
+from src.llm.base_provider import LLMProviderRegistry, normalize_model_id
 from .llm_node import LLMNode
 from .file_op_node import NODE_TYPE_MAP
 from .conditional_node import CONDITION_REGISTRY
@@ -17,9 +17,10 @@ from .llm_sessions.session_state import build_named_sessions_payload, parse_name
 
 def get_provider_for_model(model_id: str):
     """Return the first registered provider that exposes model_id, or None."""
+    normalized_model_id = normalize_model_id(model_id)
     for provider in LLMProviderRegistry.all():
         for mid, _ in provider.get_models():
-            if mid == model_id:
+            if mid == normalized_model_id:
                 return provider
     return None
 

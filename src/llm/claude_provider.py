@@ -7,9 +7,9 @@ from .base_provider import BaseLLMProvider, LLMProviderRegistry
 
 class ClaudeProvider(BaseLLMProvider):
     MODELS = [
-        ("claude-opus-4-6", "Claude Opus 4.6"),
-        ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
-        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+        ("claude-opus-4-0", "Claude Opus 4"),
+        ("claude-sonnet-4-0", "Claude Sonnet 4"),
+        ("claude-3-5-haiku-latest", "Claude Haiku 3.5"),
     ]
 
     @property
