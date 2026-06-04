@@ -22,6 +22,7 @@ from src.gui.variables import VariableNode
 from src.gui.canvas.llm_output import append_output_line, clear_node_output, start_llm_output_block
 from src.gui.canvas.llm_resume import llm_resume_serial_key, llm_resume_session_id, release_serial_llm_resume_slot
 from src.gui.workflow_io import get_provider_for_model
+from src.llm.profiles import resolve_profile_env
 
 if TYPE_CHECKING:
     from src.gui.canvas import WorkflowCanvas
@@ -346,6 +347,13 @@ class _ExecutionMixin:
         node.last_join_token = join_token
         self._fire_invocation(node, self._exec_counter, lineage_token, loop_token, join_token)
 
+    def _drop_exec(self: "WorkflowCanvas", exec_id: int) -> None:
+        """Remove all per-execution bookkeeping for a finished/aborted exec."""
+        del self._active_workers[exec_id]
+        self._exec_node.pop(exec_id, None)
+        self._exec_lineage.pop(exec_id, None)
+        self._current_run_exec_ids.discard(exec_id)
+
     def _fire_invocation(self: "WorkflowCanvas", node: GraphNode, exec_id: int,
                          lineage_token: str = "", loop_token: str = "", join_token: str = ""):
         from src.gui.loop_node import LoopNode
@@ -385,20 +393,13 @@ class _ExecutionMixin:
         if not model_id:
             append_output_line(self, node, "[Error] No model selected.")
             node.set_status("error")
-            del self._active_workers[exec_id]
-            self._exec_node.pop(exec_id, None)
-            self._exec_lineage.pop(exec_id, None)
-            self._current_run_exec_ids.discard(exec_id)
+            self._drop_exec(exec_id)
             return
         provider = get_provider_for_model(model_id)
         if provider is None:
-            msg = f"[Error] Unknown model: {model_id}"
-            append_output_line(self, node, msg)
+            append_output_line(self, node, f"[Error] Unknown model: {model_id}")
             node.set_status("error")
-            del self._active_workers[exec_id]
-            self._exec_node.pop(exec_id, None)
-            self._exec_lineage.pop(exec_id, None)
-            self._current_run_exec_ids.discard(exec_id)
+            self._drop_exec(exec_id)
             return
 
         prompt_text, runtime_warnings = self.render_llm_prompt_text(node, lineage_token=lineage_token)
@@ -418,6 +419,7 @@ class _ExecutionMixin:
             model=model_id,
             session_id=llm_resume_session_id(self, node, provider.name),
             working_directory=self._working_directory,
+            env_overlay=resolve_profile_env(provider.name, getattr(node, "profile_name", "")),
         )
         run_id = self._run_id
         self._active_workers[exec_id] = worker
@@ -671,10 +673,7 @@ class _ExecutionMixin:
             return
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
-        del self._active_workers[exec_id]
-        self._exec_node.pop(exec_id, None)
-        self._exec_lineage.pop(exec_id, None)
-        self._current_run_exec_ids.discard(exec_id)
+        self._drop_exec(exec_id)
         if run_id != self._run_id or not self._running:
             self._check_drain()
             return
@@ -711,10 +710,7 @@ class _ExecutionMixin:
             return
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
-        del self._active_workers[exec_id]
-        self._exec_node.pop(exec_id, None)
-        self._exec_lineage.pop(exec_id, None)
-        self._current_run_exec_ids.discard(exec_id)
+        self._drop_exec(exec_id)
         if run_id != self._run_id or not self._running:
             self._check_drain()
             return
@@ -803,10 +799,7 @@ class _ExecutionMixin:
             return
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
-        del self._active_workers[exec_id]
-        self._exec_node.pop(exec_id, None)
-        self._exec_lineage.pop(exec_id, None)
-        self._current_run_exec_ids.discard(exec_id)
+        self._drop_exec(exec_id)
         if run_id != self._run_id or not self._running or retired:
             self._check_drain()
             return
@@ -825,10 +818,7 @@ class _ExecutionMixin:
             return
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
-        del self._active_workers[exec_id]
-        self._exec_node.pop(exec_id, None)
-        self._exec_lineage.pop(exec_id, None)
-        self._current_run_exec_ids.discard(exec_id)
+        self._drop_exec(exec_id)
         if run_id != self._run_id or not self._running or retired:
             self._check_drain()
             return
@@ -917,10 +907,7 @@ class _ExecutionMixin:
         streamed_output = self._exec_streamed_output.pop(exec_id, False)
         retired = exec_id in self._retired_exec_ids
         self._retired_exec_ids.discard(exec_id)
-        del self._active_workers[exec_id]
-        self._exec_node.pop(exec_id, None)
-        self._exec_lineage.pop(exec_id, None)
-        self._current_run_exec_ids.discard(exec_id)
+        self._drop_exec(exec_id)
         self._llm_serial_waiting_exec_ids.discard(exec_id)
         if isinstance(node, LLMNode):
             serial_key = llm_resume_serial_key(self, node)

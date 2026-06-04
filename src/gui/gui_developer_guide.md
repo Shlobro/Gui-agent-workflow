@@ -15,7 +15,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `variables/`: Variable-node package with the graphics item, validation helpers, and variable form widget.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.
 - `git_action_node.py`: Compact node for git operations with action/message settings.
-- `_panel_forms.py`: Form widget classes used by `PropertiesPanel`.
+- `panel_forms/`: Form widget classes used by `PropertiesPanel`, split into `llm_form.py` (the LLM-call form) and `node_forms.py` (file-op, conditional, loop, join, git-action, attention, and script forms).
 - `properties_panel.py`: Resizable side panel with `_OverviewForm`, per-node forms, and the LLM Prompt/Output tabs. The stacked panel switches among overview, LLM, file-op, conditional, loop, join, git-action, attention, script, and variable forms. The LLM form owns the model selector, the session controls, prompt preview, variable-warning note, and per-call output tabs.
 - `properties_panel_node_helpers.py`: Non-LLM node form loaders plus output-routing helpers for the side panel.
 - `workflow_io.py`: Pure serialization and validation helpers.
@@ -35,6 +35,12 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - The same validation rules drive live node highlighting: invalid nodes get a red border until required fields are valid.
 - Prompt injection preview in selected LLM forms stays aligned with the current preview or active run context plus the selected node's saved prepend/append template overrides, and applies any uniquely-resolved reachable upstream `$name` substitutions inside the node prompt text.
 - `JoinNode` is a barrier: it waits for `wait_for_count` arrivals from the same parallel split group before it releases one downstream continuation.
+
+## LLM Profile UI Rules
+- The LLM form shows a `Profile` dropdown only for providers that support profiles (Claude, Codex). It is hidden for Gemini.
+- Options come from `src.llm.profiles.discover_profiles`. The first entry is always `Default account` (empty value) which runs the CLI with no environment override. The default config dir (`~/.codex`, `~/.claude`) is labeled `<name> (default)`.
+- The selection is stored on the node as `profile_name` and resolved to an env overlay at run time in `execution.py`. A saved profile name that no longer exists on disk falls back to the default selection.
+- Switching a node's model to a different provider refreshes the dropdown; because Claude and Codex profile names are disjoint, a stale selection resets to the default.
 
 ## LLM Session UI Rules
 - Claude and Codex/OpenAI models show three base controls: `Resume previous session`, `Save session ID`, and `Resume session ID`.

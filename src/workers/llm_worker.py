@@ -1,9 +1,10 @@
 """QThread-based LLM worker with streaming output."""
 
+import os
 import subprocess
 import sys
 import threading
-from typing import Optional
+from typing import Dict, Optional
 
 from PySide6.QtCore import QThread, Signal
 
@@ -19,6 +20,7 @@ class LLMWorker(QThread):
                  model: Optional[str] = None,
                  session_id: Optional[str] = None,
                  working_directory: Optional[str] = None,
+                 env_overlay: Optional[Dict[str, str]] = None,
                  timeout: int = 3600):
         super().__init__()
         self.provider = provider
@@ -26,6 +28,7 @@ class LLMWorker(QThread):
         self.model = model
         self.session_id = session_id
         self.working_directory = working_directory
+        self.env_overlay = dict(env_overlay) if env_overlay else {}
         self.timeout = timeout
         self._process: Optional[subprocess.Popen] = None
         self._cancelled = False
@@ -63,6 +66,11 @@ class LLMWorker(QThread):
             )
             use_shell = sys.platform == "win32" and command[0].lower() != "cmd"
 
+            process_env = None
+            if self.env_overlay:
+                process_env = os.environ.copy()
+                process_env.update(self.env_overlay)
+
             self._process = subprocess.Popen(
                 command,
                 stdin=subprocess.PIPE,
@@ -72,6 +80,7 @@ class LLMWorker(QThread):
                 encoding="utf-8",
                 errors="replace",
                 cwd=self.working_directory or None,
+                env=process_env,
                 bufsize=1,
                 universal_newlines=True,
                 shell=use_shell,

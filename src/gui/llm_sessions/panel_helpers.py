@@ -7,6 +7,7 @@ from src.llm.prompt_injection import (
     effective_node_template_ids,
     resolve_template_contents_for_ids,
 )
+from src.llm.profiles import discover_profiles
 from src.gui.workflow_io import get_provider_for_model
 
 
@@ -18,6 +19,7 @@ def load_llm_form(panel, node) -> None:
 
     form.title_edit.setText(node.title)
     form.model_selector.set_model_id(node.model_id)
+    refresh_llm_profile_state(panel, node)
     refresh_llm_session_state(panel, node)
     form.prompt_edit.setPlainText(node.prompt_text)
     refresh_llm_template_controls(panel, node)
@@ -101,6 +103,34 @@ def refresh_llm_prompt_preview(panel) -> None:
         panel._preview_one_off_placement,
     )
     panel._llm_form.prompt_preview_edit.setPlainText(preview_text)
+
+
+def refresh_llm_profile_state(panel, node) -> None:
+    """Populate the profile dropdown for the node's provider.
+
+    Hidden for providers without profile support (e.g. Gemini). The first
+    option is always "Default account" (empty value), which runs the CLI with
+    no environment override. A saved profile name that no longer exists falls
+    back to the default selection.
+    """
+    provider = get_provider_for_model(node.model_id or "")
+    supports = bool(provider and provider.supports_profiles())
+    options: list[tuple[str, str]] = [("", "Default account")]
+    selected = node.profile_name or ""
+    if supports and provider is not None:
+        profiles = discover_profiles(provider.name)
+        for profile in profiles:
+            label = f"{profile.name} (default)" if profile.is_default else profile.name
+            options.append((profile.name, label))
+        known = {value for value, _ in options}
+        if selected not in known:
+            selected = ""
+            node.profile_name = ""
+    panel._llm_form.set_profile_state(
+        visible=supports,
+        options=options,
+        selected_name=selected,
+    )
 
 
 def refresh_llm_session_state(panel, node) -> None:

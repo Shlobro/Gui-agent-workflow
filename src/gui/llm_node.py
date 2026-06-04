@@ -292,6 +292,7 @@ class LLMNode(WorkflowNode):
         self._model_id: Optional[str] = None
         self._provider_name: Optional[str] = None
         self._prompt_text: str = ""
+        self.profile_name: str = ""
         self.resume_session_enabled: bool = False
         self.save_session_enabled: bool = False
         self.save_session_name: str = ""
@@ -494,6 +495,7 @@ class LLMNode(WorkflowNode):
             "name": self._title,
             "model": self._model_id or "",
             "prompt": self._prompt_text,
+            "profile_name": self.profile_name,
             "resume_session_enabled": self.resume_session_enabled,
             "save_session_enabled": self.save_session_enabled,
             "save_session_name": self.save_session_name,
@@ -520,6 +522,8 @@ class LLMNode(WorkflowNode):
             self._model_id = normalize_model_id(data["model"])
             self._provider_name = provider_for_model(self._model_id)
         self._prompt_text = data.get("prompt", "")
+        profile_name = data.get("profile_name", "")
+        self.profile_name = profile_name if isinstance(profile_name, str) else ""
         self.resume_session_enabled = bool(data.get("resume_session_enabled", False))
         self.save_session_enabled = bool(data.get("save_session_enabled", False))
         save_session_name = data.get("save_session_name", "")

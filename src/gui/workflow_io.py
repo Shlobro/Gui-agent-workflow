@@ -77,7 +77,8 @@ def parse_workflow_data(data: dict) -> dict:
         # (0, false, [], null) are caught rather than silently collapsed to "".
         for str_field in ("name", "model", "prompt", "filename", "condition_type",
                           "git_action", "msg_source", "commit_msg", "commit_msg_file",
-                          "message", "script_path", "save_session_name",
+                          "message", "script_path", "profile_name",
+                          "save_session_name",
                           "resume_named_session_name",
                           "saved_session_id", "saved_session_provider",
                           "variable_name", "variable_type", "variable_value"):
