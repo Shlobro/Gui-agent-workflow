@@ -6,7 +6,7 @@
       "x": 250.0,
       "y": -156.0,
       "name": "Claude Initial Review",
-      "model": "claude-sonnet-4-6",
+      "model": "claude-sonnet-4-0",
       "prompt": "Review the recent changes made by a Junior dev straight out of college using git diff. review the staged and unstaged files. output your findings into cla-review.txt. just to be clear you are not reviewing the branch you are reviewing the recent changes both staged and unstaged. do not edit the code just create a detailed review file with your findings. do not hold back",
       "resume_session_enabled": false,
       "save_session_enabled": true,
@@ -74,76 +74,7 @@
       "y": -90.0,
       "name": "Critique review",
       "model": "gpt-5.4",
-      "prompt": "Read cla-review.txt and cod-review.txt. append to both of these files in a new section called critique, what you agree with, what you disagree with and why.",
-      "resume_session_enabled": false,
-      "save_session_enabled": false,
-      "save_session_name": "",
-      "restart_session_enabled": false,
-      "resume_named_session_name": "implimentor",
-      "saved_session_id": "019e2658-dd34-7c23-8c6b-0a3df04e6424",
-      "saved_session_provider": "codex",
-      "prepend_template_ids": [],
-      "append_template_ids": [],
-      "prepend_disabled_global_template_ids": [],
-      "append_disabled_global_template_ids": []
-    },
-    {
-      "id": "7e9809f0-f636-4529-a9e1-f782593a894f",
-      "label_index": 9,
-      "x": 1883.0,
-      "y": -158.0,
-      "name": "Respond to critique",
-      "model": "claude-sonnet-4-6",
-      "prompt": "A critique has been appended to the file. add to the end of the file a \"response to critique\" section where you respond to the critique and give your final thoughts. there will be no more back and forth after this. do not edit the code just respond to the critique and give your final verdict of what you think needs to be fixed and what does not. all of this must be written into the file do not answer here as it will not be seen by the implimentor.",
-      "resume_session_enabled": false,
-      "save_session_enabled": false,
-      "save_session_name": "",
-      "restart_session_enabled": false,
-      "resume_named_session_name": "",
-      "saved_session_id": "ca441a3d-4089-4704-a48b-574ee00b1f45",
-      "saved_session_provider": "claude",
-      "prepend_template_ids": [],
-      "append_template_ids": [],
-      "prepend_disabled_global_template_ids": [],
-      "append_disabled_global_template_ids": []
-    },
-    {
-      "id": "85cf1a71-1c80-4504-b1ef-979d1b3a14eb",
-      "label_index": 10,
-      "x": 1884.0,
-      "y": -26.0,
-      "name": "Respond to critique",
-      "model": "gpt-5.4",
-      "prompt": "A critique has been appended to the file. add to the end of the file a \"response to critique\" section where you respond to the critique and give your final thoughts. there will be no more back and forth after this. do not edit the code just respond to the critique and give your final verdict of what you think needs to be fixed and what does not. all of this must be written into the file do not answer here as it will not be seen by the implimentor.",
-      "resume_session_enabled": false,
-      "save_session_enabled": false,
-      "save_session_name": "",
-      "restart_session_enabled": false,
-      "resume_named_session_name": "",
-      "saved_session_id": "019e266e-a982-77e3-bf54-0a3e64d927de",
-      "saved_session_provider": "codex",
-      "prepend_template_ids": [],
-      "append_template_ids": [],
-      "prepend_disabled_global_template_ids": [],
-      "append_disabled_global_template_ids": []
-    },
-    {
-      "node_type": "join",
-      "id": "5c583fb4-762e-4d4b-8259-6116b1fdc830",
-      "label_index": 11,
-      "x": 2409.0,
-      "y": -102.0,
-      "name": "Wait for response",
-      "wait_for_count": 2
-    },
-    {
-      "id": "8c64b955-bd1f-444d-9910-b5320c20e5ff",
-      "label_index": 12,
-      "x": 2947.387846875001,
-      "y": -96.7477569375,
-      "name": "LLM 12",
-      "model": "gpt-5.4",
-      "prompt": "the reviewers have responded to your critique and have written them into the end of the review files. read them and fix all you agree with. so to be clear make sure you fix the actual code on the issues you agree with the review files. no need to write anything else in the review files since they will be auto deleted and the reviewers will not see the response. just fix the code on the points you agree with. the code will be auto commited after your changes so make sure they are robust.",
+      "prompt": "Read cla-review.txt and cod-review.txt. and fix what you agree with.",
       "resume_session_enabled": false,
       "save_session_enabled": false,
       "save_session_name": "",
@@ -160,8 +91,8 @@
       "node_type": "delete_file",
       "id": "3841b471-dc4d-4a96-8299-a3934ff610e3",
       "label_index": 15,
-      "x": 4085.203482037953,
-      "y": -96.03128659548355,
+      "x": 2435.99115614733,
+      "y": -98.6913064759523,
       "name": "Codex Review File",
       "filename": "cod-review.txt"
     },
@@ -169,8 +100,8 @@
       "node_type": "delete_file",
       "id": "6c28488e-ca69-4954-8ceb-025b992c78bd",
       "label_index": 16,
-      "x": 3528.1413909434423,
-      "y": -110.71538671133322,
+      "x": 1878.9290650528192,
+      "y": -113.37540659180198,
       "name": "Claude Review File",
       "filename": "cla-review.txt"
     },
@@ -207,11 +138,11 @@
     {
       "id": "8beec733-99dc-4aea-89a7-f1f1ef09bd35",
       "label_index": 20,
-      "x": 2401.6717625952283,
-      "y": 544.8884026063411,
+      "x": 1514.9255938452288,
+      "y": 293.0315026063412,
       "name": "LLM 20",
       "model": "gemini-3-flash-preview",
-      "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore",
+      "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore. do not ask for confirmation do not ask if a commit message is good do not fix anything just stage commit and push.",
       "resume_session_enabled": false,
       "save_session_enabled": false,
       "save_session_name": "",
@@ -241,30 +172,6 @@
     {
       "from": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
       "to": "07378ff3-a66f-4fd8-b6e2-f54235fe6511"
-    },
-    {
-      "from": "639b62e8-3960-4e86-a345-9e1abf083278",
-      "to": "7e9809f0-f636-4529-a9e1-f782593a894f"
-    },
-    {
-      "from": "639b62e8-3960-4e86-a345-9e1abf083278",
-      "to": "85cf1a71-1c80-4504-b1ef-979d1b3a14eb"
-    },
-    {
-      "from": "7e9809f0-f636-4529-a9e1-f782593a894f",
-      "to": "5c583fb4-762e-4d4b-8259-6116b1fdc830"
-    },
-    {
-      "from": "85cf1a71-1c80-4504-b1ef-979d1b3a14eb",
-      "to": "5c583fb4-762e-4d4b-8259-6116b1fdc830"
-    },
-    {
-      "from": "8c64b955-bd1f-444d-9910-b5320c20e5ff",
-      "to": "6c28488e-ca69-4954-8ceb-025b992c78bd"
-    },
-    {
-      "from": "5c583fb4-762e-4d4b-8259-6116b1fdc830",
-      "to": "8c64b955-bd1f-444d-9910-b5320c20e5ff"
     },
     {
       "from": "b5af0afe-9549-4d22-8fc0-93bba6d278ab",
@@ -298,6 +205,10 @@
     {
       "from": "8beec733-99dc-4aea-89a7-f1f1ef09bd35",
       "to": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8"
+    },
+    {
+      "from": "639b62e8-3960-4e86-a345-9e1abf083278",
+      "to": "6c28488e-ca69-4954-8ceb-025b992c78bd"
     }
   ],
   "node_counter": 24,

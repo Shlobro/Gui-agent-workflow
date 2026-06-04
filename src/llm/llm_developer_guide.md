@@ -12,7 +12,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `__init__.py`: Explicitly re-exports all provider modules so they self-register at startup.
 
 ## Current Model Sets
-- Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
+- Claude: Opus 4, Sonnet 4, Haiku 3.5. `claude_provider.py` uses Anthropic's stable alias IDs (`claude-opus-4-0`, `claude-sonnet-4-0`, `claude-3-5-haiku-latest`) so the dropdown stays current without manual minor-version relabeling.
 - Codex CLI / OpenAI: GPT-5.5, GPT-5.4, and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` reasoning-effort options.
 - Gemini: Gemini 3.1 Pro (Preview), Gemini 3 Flash (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, and Gemini 2.5 Flash Lite.
 
@@ -37,6 +37,10 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - Claude parsing should prefer the provider's explicit result or message fields and only fall back to flattened content blocks when those are absent. If multiple explicit result/message payloads arrive, the parser returns the last non-empty candidate.
 - Codex parsing should handle both legacy top-level terminal message fields and current `item.completed` events whose nested `item` carries `type=agent_message` plus the final text payload.
 - If a provider's event schema changes, update only that provider's parser. Do not push schema guesses back into `BaseLLMProvider`.
+
+## Model ID Normalization
+- `normalize_model_id()` in `base_provider.py` maps saved legacy model IDs onto the currently registered catalog before provider lookup or UI selection.
+- Claude currently normalizes `claude-opus-4-6` -> `claude-opus-4-0`, `claude-sonnet-4-6` -> `claude-sonnet-4-0`, and `claude-haiku-4-5-20251001` -> `claude-3-5-haiku-latest`.
 
 ## Prompt Injection
 - Prompt template state is persisted in repo-root `.prompt_injections.json` and loaded through `PromptInjectionStore`.

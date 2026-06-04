@@ -1,0 +1,555 @@
+{
+  "nodes": [
+    {
+      "id": "17c94592-f29c-49b9-8304-11f260ccaad6",
+      "label_index": 3,
+      "x": -116.54037772890615,
+      "y": -776.142092388281,
+      "name": "Review Merge Claude",
+      "model": "claude-opus-4-0",
+      "prompt": "Review this branch for merging into master. Produce a review file called CL_review.md organized by priority with three sections:\nMust fix before merge \u2013 things that need to be changed now\nNeeds investigation \u2013 things that are unclear or potentially problematic\nOut of scope TODOs \u2013 issues that don't need to block this merge but should be tracked\nMake sure nothing in this branch breaks existing functionality. Ignore any TODOs already in the code \u2014 only surface new issues that aren't already flagged, and decide for each whether it's blocking, worth investigating, or just a future TODO.\n\nNeeds investigation \u2013 things that are unclear or potentially problematic\nOut of scope TODOs \u2013 issues that don't need to block this merge but should be tracked\nMake sure nothing in this branch breaks existing functionality. Ignore any TODOs already in the code \u2014 only surface new issues that aren't already flagged, and decide for each whether it's blocking, worth investigating, or just a future TODO.\n",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "4e1c013d-32f0-429b-a106-bb4431f16f0f",
+      "label_index": 4,
+      "x": -117.54037772890615,
+      "y": -537.464592388281,
+      "name": "Review Merge Codex",
+      "model": "gpt-5.5:high",
+      "prompt": "Review this branch for merging into master. Produce a review file called CO_review.md organized by priority with three sections:\nMust fix before merge \u2013 things that need to be changed now\nNeeds investigation \u2013 things that are unclear or potentially problematic\nOut of scope TODOs \u2013 issues that don't need to block this merge but should be tracked\nMake sure nothing in this branch breaks existing functionality. Ignore any TODOs already in the code \u2014 only surface new issues that aren't already flagged, and decide for each whether it's blocking, worth investigating, or just a future TODO.\n",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "join",
+      "id": "289848ca-804d-45f7-9c10-85a5b4d29abe",
+      "label_index": 5,
+      "x": 408.4921222710939,
+      "y": -662.1095923882809,
+      "name": "Wait for initial review",
+      "wait_for_count": 2
+    },
+    {
+      "id": "e76c5606-e618-4b4a-8be4-2e49f1f9e701",
+      "label_index": 6,
+      "x": 477.74947492265676,
+      "y": -28.42334428281231,
+      "name": "Fix one review Item",
+      "model": "gpt-5.4",
+      "prompt": "look at CL_review.md and CO_review.md. choose one item and fix it if you think it needs fixing or add a TODO in the code if you think it's out of the scope of this branch. either way once you are done remove it from the review file. make sure that if there is nothing left relevant to leave the review files empty.",
+      "resume_session_enabled": false,
+      "save_session_enabled": true,
+      "save_session_name": "Implimentor",
+      "restart_session_enabled": true,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "label_index": 7,
+      "x": 2844.8516347203135,
+      "y": 172.05815610625004,
+      "name": "LLM 7",
+      "model": "gpt-5.4",
+      "prompt": "Review the uncommitted changes, put your findings in Codex-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in Codex-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "label_index": 8,
+      "x": 2853.9768847203127,
+      "y": -139.9493501437499,
+      "name": "LLM 8",
+      "model": "claude-opus-4-0",
+      "prompt": "Review the uncommitted changes, put your findings in claude-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in claude-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "create_file",
+      "id": "e79dd30e-4a53-437b-b676-7d24e60ad1df",
+      "label_index": 9,
+      "x": 2087.470447098438,
+      "y": -34.98183703046874,
+      "name": "claude-review",
+      "filename": "claude-review.md"
+    },
+    {
+      "node_type": "create_file",
+      "id": "1f2253ff-8c82-4756-aac0-f63e52876e6f",
+      "label_index": 10,
+      "x": 1562.2512073765618,
+      "y": -33.63509378125002,
+      "name": "Codex-review",
+      "filename": "Codex-review.md"
+    },
+    {
+      "node_type": "join",
+      "id": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
+      "label_index": 11,
+      "x": 3468.8074946882775,
+      "y": 13.220337967968788,
+      "name": "Wait for changes review",
+      "wait_for_count": 2
+    },
+    {
+      "node_type": "conditional",
+      "id": "8d2348a1-16d3-4bbf-a4e6-b584b69bd338",
+      "label_index": 12,
+      "x": 3569.40175818906,
+      "y": 262.77315826562494,
+      "name": "Condition 12",
+      "filename": "claude-review.md",
+      "condition_type": "file_empty"
+    },
+    {
+      "node_type": "conditional",
+      "id": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "label_index": 13,
+      "x": 3635.788845453123,
+      "y": 475.1877604062498,
+      "name": "Condition 13",
+      "filename": "Codex-review.md",
+      "condition_type": "file_empty"
+    },
+    {
+      "id": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "label_index": 14,
+      "x": 2679.537842035154,
+      "y": 889.4598853687495,
+      "name": "LLM 14",
+      "model": "gpt-5.4",
+      "prompt": "look at claude-review.md and Codex-review.md. fix what you agree with",
+      "resume_session_enabled": true,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "loop",
+      "id": "45e0b481-91c5-405c-99df-f4617e53f85a",
+      "label_index": 16,
+      "x": 1139.596108724898,
+      "y": -614.5858918855633,
+      "name": "Decide how many items to remove from the reviews before merging",
+      "loop_count": 5
+    },
+    {
+      "node_type": "truncate_file",
+      "id": "ca6c9909-820f-4d45-925c-3fdf6c293205",
+      "label_index": 17,
+      "x": 1540.7207885937476,
+      "y": 132.51838899999998,
+      "name": "File Op 17",
+      "filename": "claude-review.md"
+    },
+    {
+      "node_type": "truncate_file",
+      "id": "720460ac-da4c-4fe9-a886-e56ff9e6ef28",
+      "label_index": 18,
+      "x": 2116.9584756718755,
+      "y": 123.99549139062538,
+      "name": "File Op 17",
+      "filename": "Codex-review.md"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "label_index": 19,
+      "x": 4222.093661514259,
+      "y": 356.06735582744534,
+      "name": "File Op 17",
+      "filename": "claude-review.md"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "0db9608d-2695-4ecc-87c7-4d70897a036a",
+      "label_index": 20,
+      "x": 4630.49190208016,
+      "y": 505.58462647961926,
+      "name": "File Op 17",
+      "filename": "Codex-review.md"
+    },
+    {
+      "node_type": "attention",
+      "id": "489eea50-5e2b-4a50-9a58-8c70b2476622",
+      "label_index": 22,
+      "x": 1520.4978275148435,
+      "y": 748.4020569773437,
+      "name": "Attention 22",
+      "message": "User attention needed."
+    },
+    {
+      "id": "cac88573-ccab-4eb3-aa65-95a8a520b6a0",
+      "label_index": 23,
+      "x": 4655.458657792127,
+      "y": 851.5489160701148,
+      "name": "LLM 23",
+      "model": "gemini-3.1-pro-preview",
+      "prompt": "stage commit and push. do not ask for confirmation about the commit message or anything. just stage commit and push.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "conditional",
+      "id": "4887aa9a-8730-4921-ade7-24df0ef7146d",
+      "label_index": 24,
+      "x": 1415.4441244531242,
+      "y": -420.97537704687477,
+      "name": "Condition 24",
+      "filename": "CL_review.md",
+      "condition_type": "file_empty"
+    },
+    {
+      "node_type": "conditional",
+      "id": "3b0dcf3e-bcac-4d90-b316-e3eb50811a3d",
+      "label_index": 25,
+      "x": 1377.7801053124992,
+      "y": -238.56142728124988,
+      "name": "Condition 24",
+      "filename": "CO_review.md",
+      "condition_type": "file_empty"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "00474c87-e25b-41f7-ba28-355e5a251350",
+      "label_index": 28,
+      "x": 2005.5152169374983,
+      "y": -504.7146565937496,
+      "name": "File Op 28",
+      "filename": "CL_review.md"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "78672005-6a2a-4c3e-a019-2b6910c34f8a",
+      "label_index": 29,
+      "x": 2545.4419134843724,
+      "y": -511.4323406874997,
+      "name": "File Op 28",
+      "filename": "CO_review.md"
+    },
+    {
+      "node_type": "loop",
+      "id": "8cc324b9-72ea-4cc5-8f88-95077d01c544",
+      "label_index": 30,
+      "x": 1401.6330457250779,
+      "y": 386.0177286253904,
+      "name": "Decide how many times to review uncommited changes",
+      "loop_count": 3
+    }
+  ],
+  "connections": [
+    {
+      "from": "start",
+      "to": "17c94592-f29c-49b9-8304-11f260ccaad6"
+    },
+    {
+      "from": "start",
+      "to": "4e1c013d-32f0-429b-a106-bb4431f16f0f"
+    },
+    {
+      "from": "4e1c013d-32f0-429b-a106-bb4431f16f0f",
+      "to": "289848ca-804d-45f7-9c10-85a5b4d29abe"
+    },
+    {
+      "from": "17c94592-f29c-49b9-8304-11f260ccaad6",
+      "to": "289848ca-804d-45f7-9c10-85a5b4d29abe"
+    },
+    {
+      "from": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "to": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf"
+    },
+    {
+      "from": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "to": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf"
+    },
+    {
+      "from": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
+      "to": "8d2348a1-16d3-4bbf-a4e6-b584b69bd338"
+    },
+    {
+      "from": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "to": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "source_port": "false"
+    },
+    {
+      "from": "8d2348a1-16d3-4bbf-a4e6-b584b69bd338",
+      "to": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "source_port": "true",
+      "vertices": [
+        [
+          4090.4924999999985,
+          290.94999999999993
+        ],
+        [
+          4095.7824999999984,
+          416.58749999999986
+        ],
+        [
+          3991.3049999999985,
+          416.58749999999986
+        ],
+        [
+          3591.909999999999,
+          419.23249999999985
+        ],
+        [
+          3590.5874999999987,
+          498.5824999999998
+        ],
+        [
+          3588.788845453123,
+          515.1877604062498
+        ]
+      ]
+    },
+    {
+      "from": "8d2348a1-16d3-4bbf-a4e6-b584b69bd338",
+      "to": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "source_port": "false",
+      "vertices": [
+        [
+          4036.40175818906,
+          316.37315826562497
+        ],
+        [
+          4037.075090622114,
+          354.0763010515647
+        ],
+        [
+          4037.592499999999,
+          386.16999999999985
+        ],
+        [
+          2806.065494023547,
+          392.7696208856489
+        ],
+        [
+          2803.1260734999973,
+          774.8118328281247
+        ]
+      ]
+    },
+    {
+      "from": "289848ca-804d-45f7-9c10-85a5b4d29abe",
+      "to": "45e0b481-91c5-405c-99df-f4617e53f85a"
+    },
+    {
+      "from": "ca6c9909-820f-4d45-925c-3fdf6c293205",
+      "to": "720460ac-da4c-4fe9-a886-e56ff9e6ef28"
+    },
+    {
+      "from": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "to": "0db9608d-2695-4ecc-87c7-4d70897a036a"
+    },
+    {
+      "from": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "to": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "source_port": "true"
+    },
+    {
+      "from": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "to": "489eea50-5e2b-4a50-9a58-8c70b2476622"
+    },
+    {
+      "from": "e79dd30e-4a53-437b-b676-7d24e60ad1df",
+      "to": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "vertices": [
+        [
+          2599.579758107132,
+          -5.400985828762767
+        ],
+        [
+          2599.1616668036495,
+          -105.20259718911811
+        ],
+        [
+          2806.9768847203127,
+          -107.94935014374991
+        ]
+      ]
+    },
+    {
+      "from": "e79dd30e-4a53-437b-b676-7d24e60ad1df",
+      "to": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "vertices": [
+        [
+          2601.134215500945,
+          13.807840881071753
+        ],
+        [
+          2595.0315595144893,
+          153.2174400896385
+        ],
+        [
+          2639.376495792752,
+          157.19711385820054
+        ],
+        [
+          2797.8516347203135,
+          204.05815610625004
+        ]
+      ]
+    },
+    {
+      "from": "1f2253ff-8c82-4756-aac0-f63e52876e6f",
+      "to": "e79dd30e-4a53-437b-b676-7d24e60ad1df"
+    },
+    {
+      "from": "e76c5606-e618-4b4a-8be4-2e49f1f9e701",
+      "to": "1f2253ff-8c82-4756-aac0-f63e52876e6f"
+    },
+    {
+      "from": "720460ac-da4c-4fe9-a886-e56ff9e6ef28",
+      "to": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "vertices": [
+        [
+          2594.9462807908776,
+          153.64383370769872
+        ],
+        [
+          2597.389999999999,
+          -107.12249999999996
+        ]
+      ]
+    },
+    {
+      "from": "720460ac-da4c-4fe9-a886-e56ff9e6ef28",
+      "to": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "vertices": [
+        [
+          2595.9269861124158,
+          128.14549534769765
+        ],
+        [
+          2594.9462807908776,
+          155.27834257692956
+        ]
+      ]
+    },
+    {
+      "from": "0db9608d-2695-4ecc-87c7-4d70897a036a",
+      "to": "cac88573-ccab-4eb3-aa65-95a8a520b6a0"
+    },
+    {
+      "from": "cac88573-ccab-4eb3-aa65-95a8a520b6a0",
+      "to": "45e0b481-91c5-405c-99df-f4617e53f85a"
+    },
+    {
+      "from": "45e0b481-91c5-405c-99df-f4617e53f85a",
+      "to": "4887aa9a-8730-4921-ade7-24df0ef7146d",
+      "source_port": "loop"
+    },
+    {
+      "from": "4887aa9a-8730-4921-ade7-24df0ef7146d",
+      "to": "e76c5606-e618-4b4a-8be4-2e49f1f9e701",
+      "source_port": "false"
+    },
+    {
+      "from": "4887aa9a-8730-4921-ade7-24df0ef7146d",
+      "to": "3b0dcf3e-bcac-4d90-b316-e3eb50811a3d",
+      "source_port": "true"
+    },
+    {
+      "from": "3b0dcf3e-bcac-4d90-b316-e3eb50811a3d",
+      "to": "e76c5606-e618-4b4a-8be4-2e49f1f9e701",
+      "source_port": "false"
+    },
+    {
+      "from": "3b0dcf3e-bcac-4d90-b316-e3eb50811a3d",
+      "to": "00474c87-e25b-41f7-ba28-355e5a251350",
+      "source_port": "true"
+    },
+    {
+      "from": "00474c87-e25b-41f7-ba28-355e5a251350",
+      "to": "78672005-6a2a-4c3e-a019-2b6910c34f8a"
+    },
+    {
+      "from": "489eea50-5e2b-4a50-9a58-8c70b2476622",
+      "to": "8cc324b9-72ea-4cc5-8f88-95077d01c544"
+    },
+    {
+      "from": "8cc324b9-72ea-4cc5-8f88-95077d01c544",
+      "to": "ca6c9909-820f-4d45-925c-3fdf6c293205",
+      "source_port": "loop"
+    },
+    {
+      "from": "8cc324b9-72ea-4cc5-8f88-95077d01c544",
+      "to": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "source_port": "done"
+    }
+  ],
+  "node_counter": 30,
+  "start_pos": [
+    -627.2709631164062,
+    -665.9494419289059
+  ],
+  "named_sessions": [
+    {
+      "name": "Implimentor",
+      "owner_node_id": "e76c5606-e618-4b4a-8be4-2e49f1f9e701",
+      "provider": "codex",
+      "session_id": ""
+    }
+  ]
+}

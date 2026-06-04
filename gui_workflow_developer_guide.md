@@ -33,12 +33,12 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
    `git_changes` runs `git status --porcelain --untracked-files=all` against the selected project folder in a background `GitWorker`, streams git output into the node log, and fails with a clear timeout error after 15 seconds if git does not return. Other conditional evaluators still execute synchronously. Deferred callbacks resolve safely after workers finish.
 
 ## Built-In Models
-- Claude: Opus 4.6, Sonnet 4.6, Haiku 4.5.
+- Claude: Opus 4, Sonnet 4, Haiku 3.5. The provider uses Anthropic's stable Claude model aliases instead of pinning the UI to a specific minor revision label.
 - Codex CLI / OpenAI: GPT-5.5, GPT-5.4, and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` reasoning effort.
 - Gemini: Gemini 3.1 Pro (Preview), Gemini 3 Flash (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, and Gemini 2.5 Flash Lite. The default new-node model is Gemini 3.1 Pro (Preview) when available.
 
 ## User Data And Artifacts
-- Workflow graphs are user-saved JSON files chosen from the Save/Load dialogs. Workflow files can be saved anywhere. LLM node session state is stored inside those workflow JSON files via per-node `resume_session_enabled`, `save_session_enabled`, `save_session_name`, `restart_session_enabled`, `resume_named_session_name`, `saved_session_id`, and `saved_session_provider` fields plus a workflow-level `named_sessions` array. Per-node prompt-template overrides are also saved in workflow JSON through `prepend_template_ids`, `append_template_ids`, `prepend_disabled_global_template_ids`, and `append_disabled_global_template_ids`.
+- Workflow graphs are user-saved JSON files chosen from the Save/Load dialogs. Workflow files can be saved anywhere. LLM node session state is stored inside those workflow JSON files via per-node `resume_session_enabled`, `save_session_enabled`, `save_session_name`, `restart_session_enabled`, `resume_named_session_name`, `saved_session_id`, and `saved_session_provider` fields plus a workflow-level `named_sessions` array. Per-node prompt-template overrides are also saved in workflow JSON through `prepend_template_ids`, `append_template_ids`, `prepend_disabled_global_template_ids`, and `append_disabled_global_template_ids`. Saved legacy Claude model IDs are normalized onto the current alias catalog when workflows are loaded.
 - `saves/*.json` holds tracked workflow fixtures used for manual and testing scenarios.
 - Node output is held in memory during runtime and displayed in the `PropertiesPanel` for the currently selected node. LLM named-session histories are mirrored into every node that saves to or resumes that same workflow session name, so selecting any of those nodes shows the same merged conversation log.
 - Prompt injection templates/defaults are persisted in `.prompt_injections.json` at the repo root (gitignored).

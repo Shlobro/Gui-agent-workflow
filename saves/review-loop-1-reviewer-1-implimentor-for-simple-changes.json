@@ -4,8 +4,8 @@
       "node_type": "create_file",
       "id": "c8d10de3-7c63-4d62-9359-16a4d46cf730",
       "label_index": 1,
-      "x": -790.5010000000001,
-      "y": 84.92049999999989,
+      "x": -786.7202816635161,
+      "y": 84.92049999999988,
       "name": "create review file",
       "filename": "review.txt"
     },
@@ -16,14 +16,25 @@
       "y": -442.0,
       "name": "Review recent changes (initial)",
       "model": "gpt-5.4",
-      "prompt": "A Junior dev straight out of college just made some changes. Use git diff to see these changes and review them. Do not hold back. Do not run the code, just analyze it and provide a review. Also review all the relevant .md guides, are they up to date with the changes and review the updates to the .md files as well? For any issue found, suggest how you would fix it. all your findings must go in review.txt you are running in headless mode and the user cannot see your output at all. so any relevent output put in review.txt. if no issues or errors were found keep review.txt empty. this is part of an automated workflow so if there are no errors for the workflow to keep working you must leave the file empty"
+      "prompt": "A Junior dev straight out of college just made some changes. Use git diff to see these changes and review them. Do not hold back. Do not run the code, just analyze it and provide a review. Also review all the relevant .md guides, are they up to date with the changes and review the updates to the .md files as well? For any issue found, suggest how you would fix it. all your findings must go in review.txt you are running in headless mode and the user cannot see your output at all. so any relevent output put in review.txt. if no issues or errors were found keep review.txt empty. this is part of an automated workflow so if there are no errors for the workflow to keep working you must leave the file empty",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
     },
     {
       "node_type": "create_file",
       "id": "b5ddfbfe-b090-454d-a0b9-c0076e4b98f6",
       "label_index": 4,
-      "x": -814.5010000000001,
-      "y": -103.07950000000005,
+      "x": -812.9887126654065,
+      "y": -96.27420699432898,
       "name": "create response file",
       "filename": "fixes-made.txt"
     },
@@ -33,8 +44,19 @@
       "x": 114.11660869565208,
       "y": -248.7348097826086,
       "name": "Fix reviewed files",
-      "model": "claude-sonnet-4-6",
-      "prompt": "I asked a junior dev to review the recent changes you can use git diff to see these changes and he put his findings into review.txt. read the review and fix bugs you agree with. either way input into fixes-made.txt a summary of each bug, if you agreed or disagreed and why and if you did something about it what you did."
+      "model": "claude-sonnet-4-0",
+      "prompt": "I asked a junior dev to review the recent changes you can use git diff to see these changes and he put his findings into review.txt. read the review and fix bugs you agree with. either way input into fixes-made.txt a summary of each bug, if you agreed or disagreed and why and if you did something about it what you did.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
     },
     {
       "node_type": "conditional",
@@ -53,7 +75,18 @@
       "y": 232.58812500000002,
       "name": "Review recent changes (post-fix)",
       "model": "gpt-5.4",
-      "prompt": "A junior dev straight out of college made some changes you can view these changes using git diff. reviews that have already been done and fixed are in fixes-made.txt read that file and then do a full review of the changes. Do not hold back. Do not run the code, just analyze it and provide a review. Also review all the relevant .md guides, are they up to date with the changes and review the updates to the .md files as well? For any issue found, suggest how you would fix it. all your findings must go in review.txt you are running in headless mode and the user cannot see your output at all. so any relevent output put in review.txt. if no issues or errors were found keep review.txt empty. this is part of an automated workflow so if there are no errors for the workflow to keep working you must leave the file empty."
+      "prompt": "A junior dev straight out of college made some changes you can view these changes using git diff. reviews that have already been done and fixed are in fixes-made.txt read that file and then do a full review of the changes. Do not hold back. Do not run the code, just analyze it and provide a review. Also review all the relevant .md guides, are they up to date with the changes and review the updates to the .md files as well? For any issue found, suggest how you would fix it. all your findings must go in review.txt you are running in headless mode and the user cannot see your output at all. so any relevent output put in review.txt. if no issues or errors were found keep review.txt empty. this is part of an automated workflow so if there are no errors for the workflow to keep working you must leave the file empty.",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "",
+      "saved_session_provider": "",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
     },
     {
       "node_type": "truncate_file",
@@ -163,5 +196,6 @@
   "start_pos": [
     -1046.5010000000002,
     106.92049999999995
-  ]
+  ],
+  "named_sessions": []
 }
