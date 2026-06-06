@@ -5,7 +5,7 @@
       "label_index": 7,
       "x": 2844.8516347203135,
       "y": 172.05815610625004,
-      "name": "LLM 7",
+      "name": "Codex Reviewer",
       "model": "gpt-5.4",
       "prompt": "Review the uncommitted changes, put your findings in Codex-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in Codex-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
       "profile_name": "",
@@ -14,8 +14,8 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "019e9d22-cddb-7192-a579-3e6e7660e556",
-      "saved_session_provider": "codex",
+      "saved_session_id": "",
+      "saved_session_provider": "",
       "prepend_template_ids": [],
       "append_template_ids": [],
       "prepend_disabled_global_template_ids": [],
@@ -26,7 +26,7 @@
       "label_index": 8,
       "x": 2849.402858755568,
       "y": -143.95162286290116,
-      "name": "11 %",
+      "name": "Claude Review (with opus 4.8 takes about 10% usage on the 20$ plan) ",
       "model": "claude-opus-4-8:medium",
       "prompt": "Review the uncommitted changes, put your findings in claude-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in claude-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
       "profile_name": "",
@@ -35,7 +35,7 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "abeb4644-0e94-4e10-8c9d-898ee1427436",
+      "saved_session_id": "b886840a-726f-4395-a8c3-2b369f5f1cc6",
       "saved_session_provider": "claude",
       "prepend_template_ids": [],
       "append_template_ids": [],
@@ -48,7 +48,7 @@
       "label_index": 9,
       "x": 1415.8520470984383,
       "y": -24.48779953046874,
-      "name": "claude-review",
+      "name": "create claude-review file",
       "filename": "claude-review.md"
     },
     {
@@ -57,16 +57,16 @@
       "label_index": 10,
       "x": 890.6328073765619,
       "y": -23.141056281250023,
-      "name": "Codex-review",
+      "name": "create Codex-review file",
       "filename": "Codex-review.md"
     },
     {
       "node_type": "join",
       "id": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
       "label_index": 11,
-      "x": 3540.2224946882775,
-      "y": -66.1296620320312,
-      "name": "Wait for changes review",
+      "x": 3546.305994688277,
+      "y": -69.17141203203121,
+      "name": "Wait for both reviewers to complete",
       "wait_for_count": 2
     },
     {
@@ -75,16 +75,16 @@
       "label_index": 13,
       "x": 3639.811559828123,
       "y": 477.19911759374986,
-      "name": "Condition 13",
+      "name": "Did codex find anything?",
       "filename": "Codex-review.md",
       "condition_type": "file_empty"
     },
     {
       "id": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
       "label_index": 14,
-      "x": 2850.5032029726535,
-      "y": 967.9028156812493,
-      "name": "LLM 14",
+      "x": 2815.9229445265596,
+      "y": 997.1630343664054,
+      "name": "Fix problems found",
       "model": "gpt-5.4",
       "prompt": "look at claude-review.md and Codex-review.md. and fix what you agree with.",
       "profile_name": "",
@@ -93,8 +93,8 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "019e9d27-438d-7ad2-ab92-097acf36d082",
-      "saved_session_provider": "codex",
+      "saved_session_id": "",
+      "saved_session_provider": "",
       "prepend_template_ids": [],
       "append_template_ids": [],
       "prepend_disabled_global_template_ids": [],
@@ -106,7 +106,7 @@
       "label_index": 17,
       "x": 884.8434448437479,
       "y": 174.49453899999997,
-      "name": "File Op 17",
+      "name": "Truncate claude review file",
       "filename": "claude-review.md"
     },
     {
@@ -115,7 +115,7 @@
       "label_index": 18,
       "x": 1422.6029944218758,
       "y": 174.71667264062538,
-      "name": "File Op 17",
+      "name": "Truncate Codex review file",
       "filename": "Codex-review.md"
     },
     {
@@ -124,7 +124,7 @@
       "label_index": 19,
       "x": 4222.093661514259,
       "y": 356.06735582744534,
-      "name": "File Op 17",
+      "name": "Delete Claude review file",
       "filename": "claude-review.md"
     },
     {
@@ -133,7 +133,7 @@
       "label_index": 20,
       "x": 4630.49190208016,
       "y": 505.58462647961926,
-      "name": "File Op 17",
+      "name": "Delete Codex review file",
       "filename": "Codex-review.md"
     },
     {
@@ -142,7 +142,7 @@
       "label_index": 23,
       "x": 2092.1425941093735,
       "y": -43.44116979687493,
-      "name": "Loop 23",
+      "name": "Amount of times you want the review loop to run",
       "loop_count": 5
     },
     {
@@ -151,7 +151,7 @@
       "label_index": 24,
       "x": 1217.158492390624,
       "y": 756.7537210781247,
-      "name": "Attention 24",
+      "name": "Attention After each review iteration",
       "message": "User attention needed."
     }
   ],
@@ -287,8 +287,8 @@
       "to": "b21c18df-3561-4cce-bb66-24c63828ab71",
       "vertices": [
         [
-          2044.8520470984383,
-          201.55883020312507
+          2045.550259687499,
+          209.1811474999999
         ],
         [
           2045.1425941093735,
@@ -359,15 +359,69 @@
     },
     {
       "from": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
-      "to": "309d93ad-f421-4250-bd7c-1c376fd2bf7f"
+      "to": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "vertices": [
+        [
+          4013.305994688277,
+          -37.17141203203121
+        ],
+        [
+          4012.349999999999,
+          32.19999999999999
+        ],
+        [
+          3599.305994688277,
+          31.828587967968787
+        ],
+        [
+          3592.811559828123,
+          517.1991175937499
+        ]
+      ]
     },
     {
       "from": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
-      "to": "b3ac4723-b0c1-48b5-a80c-03f8be6aa3cd"
+      "to": "b3ac4723-b0c1-48b5-a80c-03f8be6aa3cd",
+      "vertices": [
+        [
+          3282.9229445265596,
+          1029.1630343664056
+        ],
+        [
+          3282.5349299999984,
+          1118.3145962499993
+        ],
+        [
+          1162.5644543749993,
+          1112.2805246874993
+        ],
+        [
+          1170.158492390624,
+          788.7537210781247
+        ]
+      ]
     },
     {
       "from": "b3ac4723-b0c1-48b5-a80c-03f8be6aa3cd",
-      "to": "ca6c9909-820f-4d45-925c-3fdf6c293205"
+      "to": "ca6c9909-820f-4d45-925c-3fdf6c293205",
+      "vertices": [
+        [
+          1684.158492390624,
+          788.7537210781247
+        ],
+        [
+          1689.540037499999,
+          710.0090871874996
+        ],
+        [
+          832.9797139869377,
+          713.0816576605928
+        ],
+        [
+          828.6791612499995,
+          207.16979031249988
+        ]
+      ]
     }
   ],
   "node_counter": 24,
