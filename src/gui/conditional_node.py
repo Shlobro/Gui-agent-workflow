@@ -46,8 +46,18 @@ _CONDITIONAL_NODE_HEIGHT = 80
 # ---------------------------------------------------------------------------
 
 def _check_file_empty(resolved_path: str) -> bool:
-    """Return True if the file at the already-resolved absolute path does not exist or is empty."""
-    return not os.path.exists(resolved_path) or os.path.getsize(resolved_path) == 0
+    """Return True if the file is missing or contains only whitespace.
+
+    Newlines, spaces, and tabs are treated as empty; only meaningful content
+    counts as non-empty.
+    """
+    if not os.path.exists(resolved_path):
+        return True
+    try:
+        with open(resolved_path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read().strip() == ""
+    except OSError:
+        return False
 
 
 CONDITION_REGISTRY: dict = {
