@@ -41,6 +41,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - Options come from `src.llm.profiles.discover_profiles`. The first entry is always `Default account` (empty value) which runs the CLI with no environment override. The default config dir (`~/.codex`, `~/.claude`) is labeled `<name> (default)`.
 - The selection is stored on the node as `profile_name` and resolved to an env overlay at run time in `execution.py`. A saved profile name that no longer exists on disk falls back to the default selection.
 - Switching a node's model to a different provider refreshes the dropdown; because Claude and Codex profile names are disjoint, a stale selection resets to the default.
+- Claude's selector entries are reasoning-tier variants of Opus 4.8 and Sonnet 4.6; choosing one changes the saved model id suffix and the provider maps that suffix to Claude Code's `--effort` flag at run time.
 
 ## LLM Session UI Rules
 - Claude and Codex/OpenAI models show three base controls: `Resume previous session`, `Save session ID`, and `Resume session ID`.

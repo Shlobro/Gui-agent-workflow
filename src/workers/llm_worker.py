@@ -108,6 +108,12 @@ class LLMWorker(QThread):
                     self._output_lines.append(stripped)
                 if not structured_output:
                     self.output_line.emit(stripped)
+                    continue
+                for progress_line in self.provider.structured_output_progress_lines(
+                    stripped,
+                    self.model,
+                ):
+                    self.output_line.emit(progress_line)
 
             if self._cancelled:
                 self._terminate_process()

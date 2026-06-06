@@ -12,17 +12,17 @@
     {
       "id": "f6c5401b-e546-4e34-94d1-d89a066da7d5",
       "label_index": 5,
-      "x": 359.22225000000003,
-      "y": -346.1517499999998,
+      "x": 361.52225,
+      "y": -346.15174999999977,
       "name": "Codex Review",
       "model": "gpt-5.4",
-      "prompt": "Review the recent changes made by a Junior dev straight out of college using git diff. review the staged and unstaged files. output your findings into cod-review.txt. just to be clear you are not reviewing the branch you are reviewing the recent changes both staged and unstaged. do not edit the code just create a detailed review file with your findings. do not hold back.\n\nif nothing is found make sure to leave the file empty",
+      "prompt": "Review the uncommitted changes, put your findings in cod-review.txt only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in cod-review.txt if you find nothing at all just leave the file empty and do nothing. it is super important to make sure that cod-review.txt stays empty if no problems are found.\n\n",
       "resume_session_enabled": false,
       "save_session_enabled": false,
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "019e265d-85b8-78b2-a934-346665b1de31",
+      "saved_session_id": "019e92a4-7e87-7de3-85a7-130647547f72",
       "saved_session_provider": "codex",
       "prepend_template_ids": [],
       "append_template_ids": [],
@@ -32,8 +32,8 @@
     {
       "id": "639b62e8-3960-4e86-a345-9e1abf083278",
       "label_index": 8,
-      "x": 1503.2690795526107,
-      "y": -165.58129943984366,
+      "x": 1407.819079552611,
+      "y": -77.03129943984368,
       "name": "Fix review items",
       "model": "gpt-5.4",
       "prompt": "Read cod-review.txt. and fix what you agree with.",
@@ -42,7 +42,7 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "019e2658-dd34-7c23-8c6b-0a3df04e6424",
+      "saved_session_id": "019e92a6-8f6f-7883-b404-68e8ebe177e9",
       "saved_session_provider": "codex",
       "prepend_template_ids": [],
       "append_template_ids": [],
@@ -53,7 +53,7 @@
       "node_type": "delete_file",
       "id": "3841b471-dc4d-4a96-8299-a3934ff610e3",
       "label_index": 15,
-      "x": 2125.0574161637364,
+      "x": 2164.600166163737,
       "y": -128.33761829079617,
       "name": "Codex Review File",
       "filename": "cod-review.txt"
@@ -71,8 +71,8 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "",
-      "saved_session_provider": "",
+      "saved_session_id": "019e92a1-ea43-7c23-8964-e12ed808fd38",
+      "saved_session_provider": "codex",
       "prepend_template_ids": [],
       "append_template_ids": [],
       "prepend_disabled_global_template_ids": [],
@@ -87,26 +87,6 @@
       "name": "TODO file empty",
       "filename": "TODOs.txt",
       "condition_type": "file_empty"
-    },
-    {
-      "id": "8beec733-99dc-4aea-89a7-f1f1ef09bd35",
-      "label_index": 20,
-      "x": 2022.5267788616347,
-      "y": 215.89092607274745,
-      "name": "stage commit and push",
-      "model": "gemini-3-flash-preview",
-      "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore. do not ask for confirmation do not ask if a commit message is good do not fix anything just stage commit and push.",
-      "resume_session_enabled": false,
-      "save_session_enabled": false,
-      "save_session_name": "",
-      "restart_session_enabled": false,
-      "resume_named_session_name": "",
-      "saved_session_id": "",
-      "saved_session_provider": "",
-      "prepend_template_ids": [],
-      "append_template_ids": [],
-      "prepend_disabled_global_template_ids": [],
-      "append_disabled_global_template_ids": []
     },
     {
       "node_type": "conditional",
@@ -147,14 +127,6 @@
       "source_port": "false"
     },
     {
-      "from": "3841b471-dc4d-4a96-8299-a3934ff610e3",
-      "to": "8beec733-99dc-4aea-89a7-f1f1ef09bd35"
-    },
-    {
-      "from": "8beec733-99dc-4aea-89a7-f1f1ef09bd35",
-      "to": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8"
-    },
-    {
       "from": "639b62e8-3960-4e86-a345-9e1abf083278",
       "to": "3841b471-dc4d-4a96-8299-a3934ff610e3"
     },
@@ -176,6 +148,10 @@
       "from": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8",
       "to": "8dbf0353-c33b-4947-8859-db191286adf9",
       "source_port": "true"
+    },
+    {
+      "from": "3841b471-dc4d-4a96-8299-a3934ff610e3",
+      "to": "c047a9a8-5f3f-40ed-882e-47bafc9fa3e8"
     }
   ],
   "node_counter": 26,

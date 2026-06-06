@@ -13,7 +13,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `__init__.py`: Explicitly re-exports all provider modules so they self-register at startup.
 
 ## Current Model Sets
-- Claude: Opus 4, Sonnet 4, Haiku 3.5. `claude_provider.py` uses Anthropic's stable alias IDs (`claude-opus-4-0`, `claude-sonnet-4-0`, `claude-3-5-haiku-latest`) so the dropdown stays current without manual minor-version relabeling.
+- Claude: Opus 4.8 and Sonnet 4.6 only. `claude_provider.py` maps the UI entries onto Anthropic's CLI `--effort` flag. Opus 4.8 exposes `low`, `medium`, `high`, `xhigh`, and `max`; Sonnet 4.6 exposes `low`, `medium`, `high`, and `max`.
 - Codex CLI / OpenAI: GPT-5.5, GPT-5.4, and GPT-5.3 Codex, each with `low`, default (medium), `high`, and `xhigh` reasoning-effort options.
 - Gemini: Gemini 3.1 Pro (Preview), Gemini 3 Flash (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, and Gemini 2.5 Flash Lite.
 
@@ -25,6 +25,7 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 - `supports_session_resume(model)` declares whether a model can reuse a prior CLI session.
 - `supports_profiles()` declares whether the provider exposes selectable account profiles (config-home directories). Claude and Codex return `True`; Gemini returns `False`.
 - `uses_structured_output(model)` declares whether the worker should parse structured CLI output instead of streaming plain text directly.
+- `structured_output_progress_lines(line, model)` optionally maps one structured event line into zero or more human-readable progress lines for the node output while the subprocess is still running.
 - `parse_structured_output(lines)` must be provider-specific whenever JSON schemas differ. The base implementation only joins raw structured lines and extracts the resumable conversation identifier (`session_id` or `thread_id`); it is not responsible for guessing the final assistant message.
 
 ## Session Resume Rules
@@ -38,11 +39,12 @@ Defines provider contracts and the registry used by the UI and worker layer to i
 ## Structured Output Parsing
 - Claude parsing should prefer the provider's explicit result or message fields and only fall back to flattened content blocks when those are absent. If multiple explicit result/message payloads arrive, the parser returns the last non-empty candidate.
 - Codex parsing should handle both legacy top-level terminal message fields and current `item.completed` events whose nested `item` carries `type=agent_message` plus the final text payload.
+- Codex live progress should stay concise and human-readable. Surface useful thread/tool/status milestones in the node output, but do not dump raw JSON lines into the GUI.
 - If a provider's event schema changes, update only that provider's parser. Do not push schema guesses back into `BaseLLMProvider`.
 
 ## Model ID Normalization
 - `normalize_model_id()` in `base_provider.py` maps saved legacy model IDs onto the currently registered catalog before provider lookup or UI selection.
-- Claude currently normalizes `claude-opus-4-6` -> `claude-opus-4-0`, `claude-sonnet-4-6` -> `claude-sonnet-4-0`, and `claude-haiku-4-5-20251001` -> `claude-3-5-haiku-latest`.
+- Claude currently normalizes saved no-effort and older minor-version IDs onto the current medium-effort entries: older Opus ids map to `claude-opus-4-8:medium`, older Sonnet ids map to `claude-sonnet-4-6:medium`, and legacy Haiku ids also map to `claude-sonnet-4-6:medium`.
 
 ## Prompt Injection
 - Prompt template state is persisted in repo-root `.prompt_injections.json` and loaded through `PromptInjectionStore`.

@@ -6,9 +6,15 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 
 LEGACY_MODEL_ID_ALIASES: Dict[str, str] = {
-    "claude-opus-4-6": "claude-opus-4-0",
-    "claude-sonnet-4-6": "claude-sonnet-4-0",
-    "claude-haiku-4-5-20251001": "claude-3-5-haiku-latest",
+    "claude-opus-4-8": "claude-opus-4-8:medium",
+    "claude-opus-4-7": "claude-opus-4-8:medium",
+    "claude-opus-4-6": "claude-opus-4-8:medium",
+    "claude-opus-4-0": "claude-opus-4-8:medium",
+    "claude-sonnet-4-6": "claude-sonnet-4-6:medium",
+    "claude-sonnet-4-5": "claude-sonnet-4-6:medium",
+    "claude-sonnet-4-0": "claude-sonnet-4-6:medium",
+    "claude-haiku-4-5-20251001": "claude-sonnet-4-6:medium",
+    "claude-3-5-haiku-latest": "claude-sonnet-4-6:medium",
 }
 
 
@@ -63,6 +69,14 @@ class BaseLLMProvider(ABC):
     def uses_structured_output(self, model: Optional[str] = None) -> bool:
         _ = model
         return False
+
+    def structured_output_progress_lines(
+        self,
+        line: str,
+        model: Optional[str] = None,
+    ) -> List[str]:
+        _ = line, model
+        return []
 
     def parse_structured_output(self, lines: Iterable[str]) -> Tuple[str, str]:
         text_lines: List[str] = []

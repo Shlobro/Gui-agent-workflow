@@ -78,6 +78,73 @@ class CodexProvider(BaseLLMProvider):
         _ = model
         return True
 
+    def structured_output_progress_lines(
+        self,
+        line: str,
+        model: Optional[str] = None,
+    ) -> List[str]:
+        _ = model
+        text = str(line).strip()
+        if not text:
+            return []
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, dict):
+            return []
+
+        event_type = str(payload.get("type", "")).strip().lower()
+        item = payload.get("item")
+        lines: List[str] = []
+
+        if event_type == "thread.started":
+            thread_id = self._find_session_id(payload)
+            if thread_id:
+                lines.append(f"[Thread] Started {thread_id}")
+            return lines
+
+        if event_type == "error":
+            message = self._extract_progress_message(payload)
+            if message:
+                lines.append(f"[Codex] {message}")
+            return lines
+
+        if isinstance(item, dict):
+            item_type = str(item.get("type", "")).strip().lower()
+            if item_type in {"agent_message", "assistant_message", "message"}:
+                return []
+
+            if "started" in event_type:
+                label = self._describe_progress_item(item)
+                if label:
+                    lines.append(f"[Progress] Started {label}")
+                return lines
+
+            if "completed" in event_type:
+                label = self._describe_progress_item(item)
+                if label:
+                    lines.append(f"[Progress] Finished {label}")
+                return lines
+
+            if item_type:
+                label = self._describe_progress_item(item)
+                if label:
+                    lines.append(f"[Progress] {label}")
+                return lines
+
+        if event_type in {"turn.started", "step.started"}:
+            lines.append("[Progress] Working...")
+            return lines
+
+        if event_type in {"turn.completed", "step.completed", "result"}:
+            return []
+
+        message = self._extract_progress_message(payload)
+        if message:
+            lines.append(f"[Codex] {message}")
+        return lines
+
     def parse_structured_output(self, lines: Iterable[str]) -> Tuple[str, str]:
         session_id = ""
         final_messages: List[str] = []
@@ -131,6 +198,89 @@ class CodexProvider(BaseLLMProvider):
             ).strip()
             if joined:
                 return joined
+        return ""
+
+    def _describe_progress_item(self, item: dict) -> str:
+        item_type = str(item.get("type", "")).strip().lower()
+        tool_name = self._first_non_empty_text(
+            item.get("tool_name"),
+            item.get("name"),
+            item.get("title"),
+            item.get("command"),
+            item.get("action"),
+            item.get("kind"),
+            item.get("description"),
+            item.get("path"),
+            item.get("file_path"),
+            item.get("query"),
+            item.get("pattern"),
+            item.get("input"),
+            item.get("arguments"),
+            item.get("params"),
+            item.get("call"),
+        )
+        item_label = item_type.replace("_", " ").strip() if item_type else "step"
+        if tool_name:
+            tool_name = " ".join(tool_name.split())
+            return f"{item_label}: {tool_name}"
+        return item_label
+
+    def _extract_progress_message(self, payload: dict) -> str:
+        for key in ("message", "detail", "status", "summary", "result"):
+            message = self._first_non_empty_text(payload.get(key))
+            if message:
+                return message
+        return ""
+
+    def _first_non_empty_text(self, *values: object) -> str:
+        for value in values:
+            text = self._value_to_text(value)
+            if text:
+                return text
+        return ""
+
+    def _value_to_text(self, value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        if isinstance(value, list):
+            for item in value:
+                text = self._value_to_text(item)
+                if text:
+                    return text
+            return ""
+        if isinstance(value, dict):
+            preferred_keys = (
+                "name",
+                "tool_name",
+                "command",
+                "title",
+                "action",
+                "kind",
+                "description",
+                "path",
+                "file_path",
+                "query",
+                "pattern",
+                "text",
+                "input",
+                "arguments",
+                "params",
+            )
+            for key in preferred_keys:
+                text = self._value_to_text(value.get(key))
+                if text:
+                    return text
+            flattened = [
+                part.strip()
+                for part in self._flatten_text(value)
+                if isinstance(part, str) and part.strip()
+            ]
+            if flattened:
+                return flattened[0]
         return ""
 
 

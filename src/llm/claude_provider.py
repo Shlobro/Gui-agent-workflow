@@ -7,9 +7,15 @@ from .base_provider import BaseLLMProvider, LLMProviderRegistry
 
 class ClaudeProvider(BaseLLMProvider):
     MODELS = [
-        ("claude-opus-4-0", "Claude Opus 4"),
-        ("claude-sonnet-4-0", "Claude Sonnet 4"),
-        ("claude-3-5-haiku-latest", "Claude Haiku 3.5"),
+        ("claude-opus-4-8:low", "Claude Opus 4.8 (Low)"),
+        ("claude-opus-4-8:medium", "Claude Opus 4.8 (Medium)"),
+        ("claude-opus-4-8:high", "Claude Opus 4.8 (High)"),
+        ("claude-opus-4-8:xhigh", "Claude Opus 4.8 (Ultra High)"),
+        ("claude-opus-4-8:max", "Claude Opus 4.8 (Max)"),
+        ("claude-sonnet-4-6:low", "Claude Sonnet 4.6 (Low)"),
+        ("claude-sonnet-4-6:medium", "Claude Sonnet 4.6 (Medium)"),
+        ("claude-sonnet-4-6:high", "Claude Sonnet 4.6 (High)"),
+        ("claude-sonnet-4-6:max", "Claude Sonnet 4.6 (Max)"),
     ]
 
     @property
@@ -28,8 +34,15 @@ class ClaudeProvider(BaseLLMProvider):
                       session_id: Optional[str] = None) -> List[str]:
         _ = working_directory
         cmd = ["claude", "--dangerously-skip-permissions", "--output-format", "json"]
-        if model:
-            cmd.extend(["--model", model])
+        actual_model = model
+        effort = None
+        if model and ":" in model:
+            actual_model, effort = model.split(":", 1)
+
+        if actual_model:
+            cmd.extend(["--model", actual_model])
+        if effort:
+            cmd.extend(["--effort", effort])
         if session_id:
             cmd.extend(["--resume", session_id])
         cmd.append("-p")

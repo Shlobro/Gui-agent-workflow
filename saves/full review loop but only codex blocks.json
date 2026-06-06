@@ -1,0 +1,366 @@
+{
+  "nodes": [
+    {
+      "id": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "label_index": 7,
+      "x": 2844.8516347203135,
+      "y": 172.05815610625004,
+      "name": "LLM 7",
+      "model": "gpt-5.4",
+      "prompt": "Review the uncommitted changes, put your findings in Codex-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in Codex-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
+      "profile_name": "",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "019e8e5d-2285-7332-b420-2d750904c0c9",
+      "saved_session_provider": "codex",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "id": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "label_index": 8,
+      "x": 2849.402858755568,
+      "y": -143.95162286290116,
+      "name": "LLM 8",
+      "model": "claude-opus-4-0",
+      "prompt": "Review the uncommitted changes, put your findings in claude-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in claude-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
+      "profile_name": "",
+      "resume_session_enabled": false,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "c5ba3fff-c88c-4fad-b721-2d524dac1ed3",
+      "saved_session_provider": "claude",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "create_file",
+      "id": "e79dd30e-4a53-437b-b676-7d24e60ad1df",
+      "label_index": 9,
+      "x": 1415.8520470984383,
+      "y": -24.48779953046874,
+      "name": "claude-review",
+      "filename": "claude-review.md"
+    },
+    {
+      "node_type": "create_file",
+      "id": "1f2253ff-8c82-4756-aac0-f63e52876e6f",
+      "label_index": 10,
+      "x": 890.6328073765619,
+      "y": -23.141056281250023,
+      "name": "Codex-review",
+      "filename": "Codex-review.md"
+    },
+    {
+      "node_type": "join",
+      "id": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
+      "label_index": 11,
+      "x": 3540.2224946882775,
+      "y": -66.1296620320312,
+      "name": "Wait for changes review",
+      "wait_for_count": 2
+    },
+    {
+      "node_type": "conditional",
+      "id": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "label_index": 13,
+      "x": 3639.811559828123,
+      "y": 477.19911759374986,
+      "name": "Condition 13",
+      "filename": "Codex-review.md",
+      "condition_type": "file_empty"
+    },
+    {
+      "id": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "label_index": 14,
+      "x": 2850.5032029726535,
+      "y": 967.9028156812493,
+      "name": "LLM 14",
+      "model": "gpt-5.4",
+      "prompt": "look at claude-review.md and Codex-review.md. and fix what you agree with.",
+      "profile_name": "",
+      "resume_session_enabled": true,
+      "save_session_enabled": false,
+      "save_session_name": "",
+      "restart_session_enabled": false,
+      "resume_named_session_name": "",
+      "saved_session_id": "019e8db5-27b6-7251-b1ae-307da4680d6d",
+      "saved_session_provider": "codex",
+      "prepend_template_ids": [],
+      "append_template_ids": [],
+      "prepend_disabled_global_template_ids": [],
+      "append_disabled_global_template_ids": []
+    },
+    {
+      "node_type": "truncate_file",
+      "id": "ca6c9909-820f-4d45-925c-3fdf6c293205",
+      "label_index": 17,
+      "x": 884.8434448437479,
+      "y": 174.49453899999997,
+      "name": "File Op 17",
+      "filename": "claude-review.md"
+    },
+    {
+      "node_type": "truncate_file",
+      "id": "720460ac-da4c-4fe9-a886-e56ff9e6ef28",
+      "label_index": 18,
+      "x": 1422.6029944218758,
+      "y": 174.71667264062538,
+      "name": "File Op 17",
+      "filename": "Codex-review.md"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "label_index": 19,
+      "x": 4222.093661514259,
+      "y": 356.06735582744534,
+      "name": "File Op 17",
+      "filename": "claude-review.md"
+    },
+    {
+      "node_type": "delete_file",
+      "id": "0db9608d-2695-4ecc-87c7-4d70897a036a",
+      "label_index": 20,
+      "x": 4630.49190208016,
+      "y": 505.58462647961926,
+      "name": "File Op 17",
+      "filename": "Codex-review.md"
+    },
+    {
+      "node_type": "loop",
+      "id": "b21c18df-3561-4cce-bb66-24c63828ab71",
+      "label_index": 23,
+      "x": 2092.1425941093735,
+      "y": -43.44116979687493,
+      "name": "Loop 23",
+      "loop_count": 5
+    }
+  ],
+  "connections": [
+    {
+      "from": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "to": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
+      "vertices": [
+        [
+          3492.06871044629,
+          -111.12024328100603
+        ],
+        [
+          3493.2224946882775,
+          -34.129662032031206
+        ]
+      ]
+    },
+    {
+      "from": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "to": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
+      "vertices": [
+        [
+          3489.438645516562,
+          205.14506451878034
+        ],
+        [
+          3493.2224946882775,
+          -34.129662032031206
+        ]
+      ]
+    },
+    {
+      "from": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "to": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "source_port": "false",
+      "vertices": [
+        [
+          4102.788845453123,
+          528.7877604062498
+        ],
+        [
+          4103.199596416786,
+          602.0810264462291
+        ],
+        [
+          2803.5032029726535,
+          601.0673558274453
+        ],
+        [
+          2803.5032029726535,
+          999.9028156812493
+        ]
+      ]
+    },
+    {
+      "from": "ca6c9909-820f-4d45-925c-3fdf6c293205",
+      "to": "720460ac-da4c-4fe9-a886-e56ff9e6ef28"
+    },
+    {
+      "from": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "to": "0db9608d-2695-4ecc-87c7-4d70897a036a",
+      "vertices": [
+        [
+          4689.093661514259,
+          388.06735582744534
+        ],
+        [
+          4689.192749014243,
+          457.09395856055426
+        ],
+        [
+          4583.447131735309,
+          457.09395856055426
+        ],
+        [
+          4583.49190208016,
+          537.5846264796193
+        ]
+      ]
+    },
+    {
+      "from": "309d93ad-f421-4250-bd7c-1c376fd2bf7f",
+      "to": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "source_port": "true",
+      "vertices": [
+        [
+          4176.181474480152,
+          501.3232514177694
+        ],
+        [
+          4175.093661514259,
+          388.06735582744534
+        ]
+      ]
+    },
+    {
+      "from": "1f2253ff-8c82-4756-aac0-f63e52876e6f",
+      "to": "e79dd30e-4a53-437b-b676-7d24e60ad1df",
+      "vertices": [
+        [
+          1368.8520470984383,
+          7.512200469531258
+        ]
+      ]
+    },
+    {
+      "from": "start",
+      "to": "1f2253ff-8c82-4756-aac0-f63e52876e6f",
+      "vertices": [
+        [
+          809.0165099144951,
+          6.390929678692573
+        ]
+      ]
+    },
+    {
+      "from": "e79dd30e-4a53-437b-b676-7d24e60ad1df",
+      "to": "b21c18df-3561-4cce-bb66-24c63828ab71",
+      "vertices": [
+        [
+          2044.8520470984383,
+          9.55883020312507
+        ],
+        [
+          2045.1425941093735,
+          -3.441169796874931
+        ]
+      ]
+    },
+    {
+      "from": "720460ac-da4c-4fe9-a886-e56ff9e6ef28",
+      "to": "b21c18df-3561-4cce-bb66-24c63828ab71",
+      "vertices": [
+        [
+          2044.8520470984383,
+          201.55883020312507
+        ],
+        [
+          2045.1425941093735,
+          -3.441169796874931
+        ]
+      ]
+    },
+    {
+      "from": "b21c18df-3561-4cce-bb66-24c63828ab71",
+      "to": "5f6d37b8-3fec-4ea8-a891-d4c890c4d56e",
+      "source_port": "loop",
+      "vertices": [
+        [
+          2559.1425941093735,
+          -17.04116979687493
+        ],
+        [
+          2577.1425941093735,
+          -18.95162286290116
+        ],
+        [
+          2793.1425941093735,
+          -18.95162286290116
+        ],
+        [
+          2790.4988904413585,
+          -113.09279197830199
+        ]
+      ]
+    },
+    {
+      "from": "b21c18df-3561-4cce-bb66-24c63828ab71",
+      "to": "dbd3d7b2-4b3d-4416-8125-9ad0b51af966",
+      "source_port": "loop",
+      "vertices": [
+        [
+          2793.1425941093735,
+          -18.95162286290116
+        ],
+        [
+          2790.674631609097,
+          202.32931488660842
+        ]
+      ]
+    },
+    {
+      "from": "b21c18df-3561-4cce-bb66-24c63828ab71",
+      "to": "80b27833-6c0b-43c8-972b-4c1cbffd0926",
+      "source_port": "done",
+      "vertices": [
+        [
+          2559.1425941093735,
+          10.15883020312507
+        ],
+        [
+          2547.1349999999998,
+          -424.5224999999999
+        ],
+        [
+          4179.099999999999,
+          -427.79999999999995
+        ],
+        [
+          4175.093661514259,
+          388.06735582744534
+        ]
+      ]
+    },
+    {
+      "from": "af54ba6b-e365-4d1b-9600-e1c2ea8500cf",
+      "to": "309d93ad-f421-4250-bd7c-1c376fd2bf7f"
+    },
+    {
+      "from": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "to": "ca6c9909-820f-4d45-925c-3fdf6c293205"
+    }
+  ],
+  "node_counter": 23,
+  "start_pos": [
+    587.9797139869377,
+    -35.91834233940716
+  ],
+  "named_sessions": []
+}

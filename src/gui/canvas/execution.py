@@ -427,7 +427,8 @@ class _ExecutionMixin:
 
         def on_output(line: str, _n=node, _e=exec_id, _r=run_id):
             if _r == self._run_id and self._running and _e in self._active_workers and _e not in self._retired_exec_ids:
-                self._exec_streamed_output[_e] = True
+                if not provider.uses_structured_output(model_id):
+                    self._exec_streamed_output[_e] = True
                 append_output_line(self, _n, line)
 
         def on_finished(
