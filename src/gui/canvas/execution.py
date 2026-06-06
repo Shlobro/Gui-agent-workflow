@@ -23,6 +23,7 @@ from src.gui.canvas.llm_output import append_output_line, clear_node_output, sta
 from src.gui.canvas.llm_resume import llm_resume_serial_key, llm_resume_session_id, release_serial_llm_resume_slot
 from src.gui.workflow_io import get_provider_for_model
 from src.llm.profiles import resolve_profile_env
+from src.platform_power import allow_sleep, prevent_sleep, sleep_prevented
 
 if TYPE_CHECKING:
     from src.gui.canvas import WorkflowCanvas
@@ -639,7 +640,17 @@ class _ExecutionMixin:
             "Stop Workflow", QMessageBox.ButtonRole.RejectRole
         )
         dialog.setDefaultButton(continue_button)
-        dialog.exec()
+        # While the workflow is blocked waiting for the user to respond, let the
+        # machine sleep; re-arm sleep prevention once the user has answered and
+        # any other branches/workers keep running.
+        was_preventing = sleep_prevented()
+        if was_preventing:
+            allow_sleep()
+        try:
+            dialog.exec()
+        finally:
+            if was_preventing and self._running:
+                prevent_sleep()
         if dialog.clickedButton() is not continue_button:
             if exec_id not in self._active_workers:
                 return

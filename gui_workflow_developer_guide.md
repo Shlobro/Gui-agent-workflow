@@ -70,6 +70,7 @@ GUI Workflow is a PySide6 desktop application for building and executing node-ba
 - Provider models, structured CLI session/thread capture, and resume command construction: `src/llm/*_provider.py`.
 - Account-profile discovery (scanning home dirs for Codex/Claude config homes) and env-overlay resolution: `src/llm/profiles.py`; the per-node profile dropdown is wired through `src/gui/_panel_forms.py`, `src/gui/llm_sessions/panel_helpers.py`, and applied at run time in `src/gui/canvas/execution.py` via `LLMWorker`'s `env_overlay`.
 - Subprocess streaming, cancellation, and timeouts: `src/workers/llm_worker.py`, `src/workers/git_worker.py`, `src/workers/script_worker.py`.
+- Keeping the machine awake during runs (and letting it sleep when idle or waiting on an Attention dialog): `src/platform_power/*`, wired from `src/gui/main_window.py` `_on_run_state_changed` and `src/gui/canvas/execution.py` `_fire_attention`.
 - Usage and rate-limit detection dialog flow, including Claude CLI quota text like `You've hit your limit · resets ...`, OpenAI-style `rate limit reached for requests` / `You exceeded your current quota`, Anthropic-style `rate_limit_error`, and Gemini-style `RESOURCE_EXHAUSTED`, `QUOTA_EXHAUSTED`, `TerminalQuotaError`, or `You have exhausted your capacity on this model`, plus change-model / schedule-auto-resume (calendar + clock dials) / stop dialog actions: `src/gui/canvas/execution.py`, `src/gui/dialogs/usage_limit_dialog.py`, `src/gui/main_window.py`.
 
 ## Attention And Git-Change Conditions

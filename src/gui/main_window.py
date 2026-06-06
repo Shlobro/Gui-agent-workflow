@@ -47,6 +47,7 @@ from src.llm.prompt_injection import (
     normalize_run_options,
     resolve_template_contents,
 )
+from src.platform_power import allow_sleep, prevent_sleep
 
 _PANEL_WIDTH_KEY = "properties_panel/width"
 _PANEL_TEXT_ZOOM_KEY = "properties_panel/text_zoom"
@@ -385,6 +386,12 @@ class MainWindow(QMainWindow):
             self._apply_project_folder(dlg.chosen_folder)
 
     def _on_run_state_changed(self, running: bool) -> None:
+        # Keep the machine awake while a workflow is actively running; release
+        # the guarantee as soon as it stops or finishes so the PC can idle-sleep.
+        if running:
+            prevent_sleep()
+        else:
+            allow_sleep()
         if self._open_folder_action is None:
             return
         if running:

@@ -14,7 +14,7 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "019e8e5d-2285-7332-b420-2d750904c0c9",
+      "saved_session_id": "019e9d22-cddb-7192-a579-3e6e7660e556",
       "saved_session_provider": "codex",
       "prepend_template_ids": [],
       "append_template_ids": [],
@@ -26,8 +26,8 @@
       "label_index": 8,
       "x": 2849.402858755568,
       "y": -143.95162286290116,
-      "name": "LLM 8",
-      "model": "claude-opus-4-0",
+      "name": "11 %",
+      "model": "claude-opus-4-8:medium",
       "prompt": "Review the uncommitted changes, put your findings in claude-review.md only the uncommitted changes not the entire branch. The changes were made by top of his class junior dev so he's smart but lacks experience so make sure to be meticulous.\n\nI\u2019m not interested in the good stuff. I know he\u2019s good. Output only these sections if they are needed:\n- Definite bugs\n- Needs investigation\n- Questions\n\nIgnore any TODOs already present in the codebase and focus only on issues introduced or exposed by the uncommitted changes. No summaries or anything else. \n\nput all your findings in claude-review.md if you find nothing at all just leave the file empty and do nothing.\n\n",
       "profile_name": "",
       "resume_session_enabled": false,
@@ -35,7 +35,7 @@
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "c5ba3fff-c88c-4fad-b721-2d524dac1ed3",
+      "saved_session_id": "abeb4644-0e94-4e10-8c9d-898ee1427436",
       "saved_session_provider": "claude",
       "prepend_template_ids": [],
       "append_template_ids": [],
@@ -88,12 +88,12 @@
       "model": "gpt-5.4",
       "prompt": "look at claude-review.md and Codex-review.md. and fix what you agree with.",
       "profile_name": "",
-      "resume_session_enabled": true,
+      "resume_session_enabled": false,
       "save_session_enabled": false,
       "save_session_name": "",
       "restart_session_enabled": false,
       "resume_named_session_name": "",
-      "saved_session_id": "019e8db5-27b6-7251-b1ae-307da4680d6d",
+      "saved_session_id": "019e9d27-438d-7ad2-ab92-097acf36d082",
       "saved_session_provider": "codex",
       "prepend_template_ids": [],
       "append_template_ids": [],
@@ -144,6 +144,15 @@
       "y": -43.44116979687493,
       "name": "Loop 23",
       "loop_count": 5
+    },
+    {
+      "node_type": "attention",
+      "id": "b3ac4723-b0c1-48b5-a80c-03f8be6aa3cd",
+      "label_index": 24,
+      "x": 1217.158492390624,
+      "y": 756.7537210781247,
+      "name": "Attention 24",
+      "message": "User attention needed."
     }
   ],
   "connections": [
@@ -354,10 +363,14 @@
     },
     {
       "from": "f9b6ee5b-ee92-49b3-98ec-f63a04bd4d43",
+      "to": "b3ac4723-b0c1-48b5-a80c-03f8be6aa3cd"
+    },
+    {
+      "from": "b3ac4723-b0c1-48b5-a80c-03f8be6aa3cd",
       "to": "ca6c9909-820f-4d45-925c-3fdf6c293205"
     }
   ],
-  "node_counter": 23,
+  "node_counter": 24,
   "start_pos": [
     587.9797139869377,
     -35.91834233940716
