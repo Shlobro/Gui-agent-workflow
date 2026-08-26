@@ -1,8 +1,9 @@
 """The LLM-call form widget used inside PropertiesPanel."""
 
 import re
+from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..checked_dropdown import CheckedDropdown
-from ..llm_widget import ModelSelector, populate_model_selector
+from ..llm_widget import ModelSelector, default_variant_for, populate_model_selector, variant_options_for
+from src.llm.base_provider import compose_model_variant, normalize_model_id, split_model_variant
 
 
 class _LLMForm(QWidget):
@@ -26,6 +28,8 @@ class _LLMForm(QWidget):
 
     _CALL_HEADER_RE = re.compile(r"^=== Call (\d+) ===$")
     _CALL_OUTPUT_FONT_BUMP = 1
+
+    model_selection_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,6 +57,20 @@ class _LLMForm(QWidget):
         self.model_selector = ModelSelector(popup_parent=self)
         populate_model_selector(self.model_selector)
         layout.addWidget(self.model_selector)
+
+        self._effort_widget = QWidget()
+        effort_layout = QVBoxLayout(self._effort_widget)
+        effort_layout.setContentsMargins(0, 0, 0, 0)
+        effort_layout.setSpacing(4)
+        self.effort_label = QLabel("Effort")
+        effort_layout.addWidget(self.effort_label)
+        self.effort_combo = QComboBox()
+        self.effort_combo.setToolTip(
+            "Reasoning effort used for this call. Options depend on the selected model."
+        )
+        effort_layout.addWidget(self.effort_combo)
+        self._effort_widget.setVisible(False)
+        layout.addWidget(self._effort_widget)
 
         layout.addSpacing(4)
 
@@ -228,6 +246,55 @@ class _LLMForm(QWidget):
         self._tabs.addTab(self._output_tab, "Output")
 
         self._call_editors: list[QPlainTextEdit] = []
+
+        self.model_selector.model_changed.connect(self._on_base_model_changed)
+        self.effort_combo.activated.connect(self._on_effort_activated)
+
+    def set_model_state(self, full_model_id: Optional[str]) -> None:
+        """Load a stored ``<model>[:<variant>]`` id into both selectors."""
+        normalized = normalize_model_id(full_model_id) or ""
+        base, variant = split_model_variant(normalized)
+        self.model_selector.blockSignals(True)
+        self.model_selector.set_model_id(base or None)
+        self.model_selector.blockSignals(False)
+        self._reload_effort_options(variant if base else "")
+
+    def current_full_model_id(self) -> str:
+        """Return the composed ``<model>[:<variant>]`` id currently selected."""
+        base = self.model_selector.current_model_id() or ""
+        if not base:
+            return ""
+        if not variant_options_for(base):
+            return base
+        data = self.effort_combo.currentData()
+        variant = data if isinstance(data, str) and data else default_variant_for(base)
+        return compose_model_variant(base, variant)
+
+    def _on_base_model_changed(self, _old_id: str, _new_id: str) -> None:
+        self._reload_effort_options("")
+        self.model_selection_changed.emit(self.current_full_model_id())
+
+    def _on_effort_activated(self, _index: int) -> None:
+        self.model_selection_changed.emit(self.current_full_model_id())
+
+    def _reload_effort_options(self, selected_variant: str) -> None:
+        base_id = self.model_selector.current_model_id() or ""
+        options = variant_options_for(base_id)
+        self._effort_widget.setVisible(bool(options))
+        self.effort_combo.blockSignals(True)
+        self.effort_combo.clear()
+        for value, label in options:
+            self.effort_combo.addItem(label, userData=value)
+        known = {value for value, _ in options}
+        target = selected_variant if selected_variant in known else default_variant_for(base_id)
+        target_index = 0
+        for index in range(self.effort_combo.count()):
+            if self.effort_combo.itemData(index) == target:
+                target_index = index
+                break
+        if self.effort_combo.count():
+            self.effort_combo.setCurrentIndex(target_index)
+        self.effort_combo.blockSignals(False)
 
     def set_profile_state(
         self,

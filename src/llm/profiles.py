@@ -38,7 +38,7 @@ class CLIProfile:
 
 # Per-provider scan rules: the dot-folder base name plus the env var the CLI
 # honours to relocate its config home. Providers absent from this map (e.g.
-# Gemini) do not support profile selection.
+# Grok and OpenCode) do not support profile selection.
 _PROVIDER_RULES = {
     "codex": {"base": ".codex", "env_var": "CODEX_HOME"},
     "claude": {"base": ".claude", "env_var": "CLAUDE_CONFIG_DIR"},

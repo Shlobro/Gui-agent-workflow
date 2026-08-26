@@ -47,7 +47,7 @@ from src.gui.variables import VariableNode
 
 GraphNode = WorkflowNode
 SourceNode = Union[StartNode, WorkflowNode]
-PREFERRED_DEFAULT_LLM_MODEL_ID = "gemini-3.1-pro-preview"
+PREFERRED_DEFAULT_LLM_MODEL_ID = "x-preview-f-free"
 
 
 class _CancelableWorker(Protocol):

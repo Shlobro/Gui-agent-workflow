@@ -213,6 +213,7 @@ class PropertiesPanel(QWidget):
 
         self._current_node: Optional[object] = None
         self._old_title: str = ""
+        self._active_llm_model_id: str = ""
         self._prompt_dirty: bool = False
         self._save_session_name_dirty: bool = False
         self._filename_dirty: bool = False
@@ -288,7 +289,7 @@ class PropertiesPanel(QWidget):
 
     def _wire_signals(self):
         self._llm_form.title_edit.editingFinished.connect(self._on_llm_title_committed)
-        self._llm_form.model_selector.model_changed.connect(self._on_model_changed)
+        self._llm_form.model_selection_changed.connect(self._on_llm_model_selection_changed)
         self._llm_form.profile_combo.activated.connect(self._on_profile_changed)
         self._llm_form.resume_session_checkbox.toggled.connect(self._on_resume_session_toggled)
         self._llm_form.save_session_checkbox.toggled.connect(self._on_save_session_toggled)
@@ -452,10 +453,15 @@ class PropertiesPanel(QWidget):
             self.title_committed.emit(self._current_node.node_id, self._old_title, new_title)
             self._old_title = new_title
 
-    def _on_model_changed(self, old_id: str, new_id: str):
+    def _on_llm_model_selection_changed(self, new_full_model_id: str):
         if self._current_node is None:
             return
-        self.model_changed.emit(self._current_node.node_id, old_id, new_id)
+        old_id = self._active_llm_model_id
+        if old_id == new_full_model_id:
+            return
+        self._active_llm_model_id = new_full_model_id
+        self.model_changed.emit(self._current_node.node_id, old_id, new_full_model_id)
+
     def _on_profile_changed(self, _index: int):
         if self._current_node is None:
             return

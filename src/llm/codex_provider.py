@@ -3,23 +3,34 @@
 import json
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
-from .base_provider import BaseLLMProvider, LLMProviderRegistry
+from .base_provider import (
+    BaseLLMProvider,
+    LLMProviderRegistry,
+    ModelEntry,
+    effort_variants,
+)
 
 
 class CodexProvider(BaseLLMProvider):
-    MODELS = [
-        ("gpt-5.5", "GPT-5.5 (Medium)"),
-        ("gpt-5.5:low", "GPT-5.5 (Low)"),
-        ("gpt-5.5:high", "GPT-5.5 (High)"),
-        ("gpt-5.5:xhigh", "GPT-5.5 (Ultra High)"),
-        ("gpt-5.4", "GPT-5.4 (Medium)"),
-        ("gpt-5.4:low", "GPT-5.4 (Low)"),
-        ("gpt-5.4:high", "GPT-5.4 (High)"),
-        ("gpt-5.4:xhigh", "GPT-5.4 (Ultra High)"),
-        ("gpt-5.3-codex", "GPT-5.3 Codex (Medium)"),
-        ("gpt-5.3-codex:low", "GPT-5.3 Codex (Low)"),
-        ("gpt-5.3-codex:high", "GPT-5.3 Codex (High)"),
-        ("gpt-5.3-codex:xhigh", "GPT-5.3 Codex (Ultra High)"),
+    ENTRIES = [
+        ModelEntry(
+            model_id="gpt-5.6-sol",
+            label="GPT-5.6 Sol",
+            variants=effort_variants("low", "medium", "high", "xhigh", "max", "ultra"),
+            default_variant_id="low",
+        ),
+        ModelEntry(
+            model_id="gpt-5.6-terra",
+            label="GPT-5.6 Terra",
+            variants=effort_variants("low", "medium", "high", "xhigh", "max", "ultra"),
+            default_variant_id="medium",
+        ),
+        ModelEntry(
+            model_id="gpt-5.6-luna",
+            label="GPT-5.6 Luna",
+            variants=effort_variants("low", "medium", "high", "xhigh", "max"),
+            default_variant_id="medium",
+        ),
     ]
 
     @property
@@ -30,8 +41,8 @@ class CodexProvider(BaseLLMProvider):
     def display_name(self) -> str:
         return "Codex"
 
-    def get_models(self) -> List[Tuple[str, str]]:
-        return self.MODELS
+    def get_model_entries(self) -> List[ModelEntry]:
+        return self.ENTRIES
 
     @property
     def uses_stdin(self) -> bool:

@@ -18,7 +18,8 @@ def load_llm_form(panel, node) -> None:
     form.prompt_edit.blockSignals(True)
 
     form.title_edit.setText(node.title)
-    form.model_selector.set_model_id(node.model_id)
+    form.set_model_state(node.model_id)
+    panel._active_llm_model_id = node.model_id or ""
     refresh_llm_profile_state(panel, node)
     refresh_llm_session_state(panel, node)
     form.prompt_edit.setPlainText(node.prompt_text)
@@ -108,7 +109,7 @@ def refresh_llm_prompt_preview(panel) -> None:
 def refresh_llm_profile_state(panel, node) -> None:
     """Populate the profile dropdown for the node's provider.
 
-    Hidden for providers without profile support (e.g. Gemini). The first
+    Hidden for providers without profile support (e.g. Grok, OpenCode). The first
     option is always "Default account" (empty value), which runs the CLI with
     no environment override. A saved profile name that no longer exists falls
     back to the default selection.

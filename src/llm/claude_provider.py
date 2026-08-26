@@ -2,20 +2,32 @@
 
 import json
 from typing import Iterable, List, Optional, Tuple
-from .base_provider import BaseLLMProvider, LLMProviderRegistry
+from .base_provider import (
+    BaseLLMProvider,
+    LLMProviderRegistry,
+    ModelEntry,
+    effort_variants,
+)
+
+
+THINKING_REQUIRED_EFFORTS = frozenset({"xhigh", "max"})
+ALWAYS_THINKING_SETTINGS_JSON = '{"alwaysThinkingEnabled": true}'
 
 
 class ClaudeProvider(BaseLLMProvider):
-    MODELS = [
-        ("claude-opus-4-8:low", "Claude Opus 4.8 (Low)"),
-        ("claude-opus-4-8:medium", "Claude Opus 4.8 (Medium)"),
-        ("claude-opus-4-8:high", "Claude Opus 4.8 (High)"),
-        ("claude-opus-4-8:xhigh", "Claude Opus 4.8 (Ultra High)"),
-        ("claude-opus-4-8:max", "Claude Opus 4.8 (Max)"),
-        ("claude-sonnet-4-6:low", "Claude Sonnet 4.6 (Low)"),
-        ("claude-sonnet-4-6:medium", "Claude Sonnet 4.6 (Medium)"),
-        ("claude-sonnet-4-6:high", "Claude Sonnet 4.6 (High)"),
-        ("claude-sonnet-4-6:max", "Claude Sonnet 4.6 (Max)"),
+    ENTRIES = [
+        ModelEntry(
+            model_id="claude-opus-5",
+            label="Claude Opus 5",
+            variants=effort_variants("low", "medium", "high", "xhigh", "max"),
+            default_variant_id="high",
+        ),
+        ModelEntry(
+            model_id="claude-sonnet-5",
+            label="Claude Sonnet 5",
+            variants=effort_variants("low", "medium", "high", "xhigh"),
+            default_variant_id="medium",
+        ),
     ]
 
     @property
@@ -26,8 +38,8 @@ class ClaudeProvider(BaseLLMProvider):
     def display_name(self) -> str:
         return "Claude"
 
-    def get_models(self) -> List[Tuple[str, str]]:
-        return self.MODELS
+    def get_model_entries(self) -> List[ModelEntry]:
+        return self.ENTRIES
 
     def build_command(self, prompt: str, model: Optional[str] = None,
                       working_directory: Optional[str] = None,
@@ -43,6 +55,8 @@ class ClaudeProvider(BaseLLMProvider):
             cmd.extend(["--model", actual_model])
         if effort:
             cmd.extend(["--effort", effort])
+        if effort in THINKING_REQUIRED_EFFORTS:
+            cmd.extend(["--settings", ALWAYS_THINKING_SETTINGS_JSON])
         if session_id:
             cmd.extend(["--resume", session_id])
         cmd.append("-p")

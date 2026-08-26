@@ -9,7 +9,6 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QIcon,
-    QLinearGradient,
     QPainter,
     QPen,
     QPixmap,
@@ -33,7 +32,6 @@ LOGO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 PROVIDER_LOGO_FILES = {
     "claude": "claude_logo.png",
     "codex": "openai_logo.png",
-    "gemini": "gemini_logo.png",
 }
 PROVIDER_ICON_CACHE: dict = {}
 
@@ -367,7 +365,8 @@ def provider_company(provider_name: str) -> str:
     return {
         "claude": "Anthropic",
         "codex": "OpenAI",
-        "gemini": "Google Gemini",
+        "grok": "xAI",
+        "opencode": "OpenCode",
     }.get(provider_name, provider_name.title())
 
 
@@ -438,13 +437,14 @@ def _fallback_provider_icon(provider_name: str) -> QIcon:
         fill_brush = QBrush(QColor("#10a37f"))
         border = QColor("#6de8cb")
         label = "O"
-    elif provider_name == "gemini":
-        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        gradient.setColorAt(0.0, QColor("#1a73e8"))
-        gradient.setColorAt(1.0, QColor("#9b63ff"))
-        fill_brush = QBrush(gradient)
-        border = QColor("#bfd3ff")
-        label = "G"
+    elif provider_name == "grok":
+        fill_brush = QBrush(QColor("#101010"))
+        border = QColor("#d0d0d0")
+        label = "X"
+    elif provider_name == "opencode":
+        fill_brush = QBrush(QColor("#16181d"))
+        border = QColor("#8a93a6")
+        label = "OC"
     else:
         fill_brush = QBrush(QColor("#1d1d1d"))
         border = QColor("#a0a0a0")
@@ -465,7 +465,7 @@ def _fallback_provider_icon(provider_name: str) -> QIcon:
 
 
 def populate_model_selector(selector: ModelSelector) -> None:
-    """Fill a ModelSelector with all registered provider models."""
+    """Fill a ModelSelector with one entry per catalog model (no variants)."""
     selector.clear()
     providers = get_registered_providers()
     first_model_index = -1
@@ -474,8 +474,8 @@ def populate_model_selector(selector: ModelSelector) -> None:
     for prov in providers:
         icon = provider_icon(prov.name)
         company = provider_company(prov.name)
-        for model_id, model_name in prov.get_models():
-            selector.add_model(icon, model_name, model_id, company)
+        for entry in prov.get_model_entries():
+            selector.add_model(icon, entry.label, entry.model_id, company)
             if first_model_index < 0:
                 first_model_index = model_rows
             model_rows += 1
@@ -486,3 +486,34 @@ def populate_model_selector(selector: ModelSelector) -> None:
 
     selector.clear()
     selector.set_enabled(False)
+
+
+def find_catalog_entry(base_model_id: str):
+    """Return the ``(provider, ModelEntry)`` owning ``base_model_id``.
+
+    ``base_model_id`` is the bare catalog id without any variant suffix.
+    Returns ``(None, None)`` when no registered provider exposes it.
+    """
+    normalized_base = normalize_model_id(base_model_id) or ""
+    for prov in get_registered_providers():
+        for entry in prov.get_model_entries():
+            if entry.model_id == normalized_base:
+                return prov, entry
+    return None, None
+
+
+def variant_options_for(base_model_id: str):
+    """Return the ``(variant_id, label)`` options offered by a model."""
+    _, entry = find_catalog_entry(base_model_id)
+    if entry is None or not entry.variants:
+        return []
+    return [(variant.id, variant.label) for variant in entry.variants]
+
+
+def default_variant_for(base_model_id: str) -> str:
+    """Return the default variant id for a model, or "" when it has none."""
+    _, entry = find_catalog_entry(base_model_id)
+    if entry is None:
+        return ""
+    variant = entry.default_variant()
+    return variant.id if variant is not None else ""

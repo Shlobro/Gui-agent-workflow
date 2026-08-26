@@ -16,13 +16,13 @@ A visual node-graph editor for chaining LLM calls, file operations, git actions,
 
 Build workflows visually. Connect nodes. Run them.
 
-Each node does one job. LLM nodes call Claude, Codex/OpenAI, or Gemini. Other nodes handle files, conditions, loops, joins, git actions, attention pauses, and scripts.
+Each node does one job. LLM nodes call Claude, Codex/OpenAI, Grok, or OpenCode models. Other nodes handle files, conditions, loops, joins, git actions, attention pauses, and scripts.
 
 ## Node Types
 
 | Node | What it does |
 |------|-------------|
-| **LLM** | Calls Claude, Gemini, or Codex with a prompt. Claude/Codex nodes can optionally resume their previous session context. |
+| **LLM** | Calls a Claude, Codex/OpenAI, Grok, or OpenCode model with a prompt. Resumable providers can optionally continue their previous session context. |
 | **File Op** | Creates, truncates, or deletes a file in the project folder. |
 | **Conditional** | Evaluates a condition and routes to a true or false branch. |
 | **Attention** | Stops on that branch and asks the user whether to continue. |
@@ -36,13 +36,16 @@ Each node does one job. LLM nodes call Claude, Codex/OpenAI, or Gemini. Other no
 
 | Provider | Models |
 |----------|--------|
-| **Claude** | Opus 4, Sonnet 4, Haiku 3.5 |
-| **Codex / OpenAI** | GPT-5.4 and GPT-5.3 Codex with `low` / `medium` / `high` / `xhigh` effort |
-| **Gemini** | Gemini 3.1 Pro, Gemini 3 Flash, Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash Lite |
+| **Claude** | Opus 5 and Sonnet 5 with `low` / `medium` / `high` / `xhigh` / `max` effort (per-model ladder) |
+| **Codex / OpenAI** | GPT-5.6 Sol, Terra, and Luna with efforts through `ultra` (per-model ladder) |
+| **Grok** | Grok 4.6 (`low`–`xhigh`) and Grok 4.5 (`low`–`high`) |
+| **OpenCode** | Free OpenCode Zen models: Ox Alpha Free, MiMo-V2.5 Free, Hy3 Free, Nemotron 3 Ultra/3.5 Lightning Free, Muse Spark 1.2 Contributor Free |
 
 All providers run as CLI subprocesses.
 
-`Resume previous session` is available only for Claude and Codex/OpenAI models. If a Gemini model is selected, the checkbox is disabled and cleared.
+Pick a model first, then choose the reasoning effort from the dependent Effort dropdown that appears for models with variants. Models without variants (the OpenCode free models) skip that step.
+
+Session resume (`Resume previous session`) is available for Claude, Codex/OpenAI, Grok, and OpenCode models; other selections disable and clear it.
 
 ## Getting Started
 
@@ -51,7 +54,7 @@ pip install PySide6
 python workflow_entry.py
 ```
 
-Or launch `run_gui_workflow.bat` on Windows.
+Or launch `run_gui_workflow.bat` on Windows. The batch launcher checks for `PySide6`, bootstraps `pip` if needed, and installs `requirements.txt` automatically before retrying the app.
 
 On first launch, choose a project folder. LLM, git, and script subprocesses run with that folder as their working directory.
 
@@ -67,12 +70,12 @@ On first launch, choose a project folder. LLM, git, and script subprocesses run 
 
 When `Resume previous session` is enabled on an LLM node:
 
-- The first Claude/Codex call starts fresh and stores the returned session ID in the workflow JSON.
+- The first resumable call starts fresh and stores the returned session ID in the workflow JSON.
 - Later calls from that same node automatically resume the saved session so the model keeps context.
 - If the same resumable node is reached in parallel, later invocations wait until the earlier one finishes so the conversation stays linear.
 - If you load a workflow that already contains saved LLM sessions, the next run asks whether to resume those saved sessions or delete them and start fresh.
-- If you change the model on a node that already has a saved Claude/Codex session, the app warns first. Approving the change deletes that node's saved session.
-- Copy/paste does not clone a live Claude/Codex session. Pasted LLM nodes start with no saved provider session ID.
+- If you change the model on a node that already has a saved session, the app warns first. Approving the change deletes that node's saved session.
+- Copy/paste does not clone a live provider session. Pasted LLM nodes start with no saved provider session ID.
 
 ## Canvas Controls
 
@@ -133,11 +136,11 @@ GUI Workflow/
         |-- git_action_node.py
         |-- connection_item.py
         |-- properties_panel.py
-        `-- _panel_forms.py
+        `-- panel_forms/
 ```
 
 ## Requirements
 
 - Python 3.11+
 - PySide6 >= 6.7.0
-- CLI tools installed for the providers you want to use: `claude`, `codex`, `gemini`
+- CLI tools installed for the providers you want to use: `claude`, `codex`, `grok`, `opencode`

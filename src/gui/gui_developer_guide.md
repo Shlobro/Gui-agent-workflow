@@ -11,7 +11,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `control_flow/`: Coordination-oriented nodes such as `JoinNode`.
 - `llm_node.py`: Shared graphics-item base plus `LLMNode` and `StartNode`. `WorkflowNode` carries `is_invalid`; invalid nodes render a red border while not actively running or looping. `LLMNode` displays the chosen model's provider logo in its header.
 - `checked_dropdown.py`: Reusable checked popup dropdown used by per-node prompt-template selection controls.
-- `llm_widget.py`: `ModelSelector`, model list widget, provider icon helpers, and `populate_model_selector`.
+- `llm_widget.py`: `ModelSelector`, model list widget, provider icon helpers, catalog variant lookup helpers (`variant_options_for`, `default_variant_for`), and `populate_model_selector` (one row per catalog model, without variants).
 - `variables/`: Variable-node package with the graphics item, validation helpers, and variable form widget.
 - `file_op_node.py`: `FileOpNode` plus convenience factories and `AttentionNode`.
 - `git_action_node.py`: Compact node for git operations with action/message settings.
@@ -29,6 +29,7 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `assets/`: Static logo files used by the model selector.
 
 ## Key Interactions
+- Model selection is two-stage: the Model dropdown lists one row per catalog model; picking one reveals an Effort dropdown preloaded with that model's variants (reasoning efforts) when the catalog entry declares any. Models without variants (OpenCode free models) hide the Effort dropdown. The node stores the composed `<model>:<variant>` id; user-driven changes to either control emit the panel's `model_changed` signal once per effective change.
 - The panel remains visible at all times. With exactly one selected workflow node it shows that node form; with exactly one selected connection it shows an arrow-focused overview; otherwise it shows the workflow overview page.
 - Overview data is maintained by `MainWindow` and includes working directory, connection count, selected counts, node counts by type, invalid node titles, prompt injection payload, resumable LLM count, and saved-session count.
 - Before any run, reachable nodes are validated with node-type rules (`LLMNode`, `VariableNode`, `FileOpNode`, `ConditionalNode`, `AttentionNode`, `LoopNode`, `JoinNode`, `GitActionNode`, `ScriptNode`).
@@ -37,15 +38,15 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `JoinNode` is a barrier: it waits for `wait_for_count` arrivals from the same parallel split group before it releases one downstream continuation.
 
 ## LLM Profile UI Rules
-- The LLM form shows a `Profile` dropdown only for providers that support profiles (Claude, Codex). It is hidden for Gemini.
+- The LLM form shows a `Profile` dropdown only for providers that support profiles (Claude, Codex). It is hidden for Grok and OpenCode.
 - Options come from `src.llm.profiles.discover_profiles`. The first entry is always `Default account` (empty value) which runs the CLI with no environment override. The default config dir (`~/.codex`, `~/.claude`) is labeled `<name> (default)`.
 - The selection is stored on the node as `profile_name` and resolved to an env overlay at run time in `execution.py`. A saved profile name that no longer exists on disk falls back to the default selection.
 - Switching a node's model to a different provider refreshes the dropdown; because Claude and Codex profile names are disjoint, a stale selection resets to the default.
-- Claude's selector entries are reasoning-tier variants of Opus 4.8 and Sonnet 4.6; choosing one changes the saved model id suffix and the provider maps that suffix to Claude Code's `--effort` flag at run time.
+- Claude's catalog entries are Opus 5 and Sonnet 5; each entry declares reasoning-effort variants, and the form's Effort dropdown writes the chosen variant into the saved `<model>:<effort>` id suffix that the provider maps to Claude Code's `--effort` flag at run time.
 
 ## LLM Session UI Rules
-- Claude and Codex/OpenAI models show three base controls: `Resume previous session`, `Save session ID`, and `Resume session ID`.
-- Gemini hides the entire session-controls block and any hidden session settings are cleared during reconciliation.
+- Claude, Codex/OpenAI, Grok, and OpenCode models show three base controls: `Resume previous session`, `Save session ID`, and `Resume session ID`.
+- Models without session-resume support hide the entire session-controls block, and any hidden session settings are cleared during reconciliation.
 - `Resume previous session` remains node-local and undoable.
 - `Save session ID` reserves a workflow-level name for the current node. The name is typed by the user and can only be owned by one node at a time.
 - When `Save session ID` is enabled, the form reveals `Restart session ID at this node`. That checkbox is persisted on the node, hidden again when saving is disabled, and causes the node to start fresh on each run before overwriting its saved named session after a successful call.
@@ -71,4 +72,4 @@ Implements the interactive Qt UI for composing and running LLM workflows.
 - `VariableNode` stores `variable_name`, `variable_type`, and `variable_value`. Later variable nodes with the same name overwrite the earlier value on downstream branches, and the variable form shows a yellow non-blocking warning when the selected node overwrites an upstream definition.
 - Ctrl+mouse-wheel inside properties panel changes panel text size.
 - Properties panel output areas stream execution output for the currently selected node.
-- Copy/paste generates a new node identity and never carries over a saved Claude/Codex session ID or named-session binding to the pasted node.
+- Copy/paste generates a new node identity and never carries over a saved CLI session ID or named-session binding to the pasted node.

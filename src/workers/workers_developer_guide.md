@@ -14,8 +14,8 @@ Hosts threaded execution logic so long-running subprocess calls do not block the
 - `GitWorker` receives a concrete git command, optional working directory, and timeout; validates cwd exists before launch; merges stdout and stderr and emits lines through `output_line`.
 - `ScriptWorker` receives a fully built script command, optional working directory, timeout, and optional `stdin_text`; validates cwd exists before launch; writes `stdin_text` once after spawn when provided; then merges stdout and stderr and emits lines through `output_line`.
 - `LLMWorker.finished` and `LLMWorker.error` both emit `(output_text, session_id)`.
-- For Claude and Codex providers, the worker does not stream raw JSON lines to the node output. It parses structured output, extracts the final assistant text, captures `session_id` for workflow persistence, and may emit provider-specific human-readable progress lines during execution.
-- For non-structured providers such as Gemini, the worker still streams plain text line by line.
+- For structured-output providers (Claude, Codex, Grok, OpenCode), the worker does not stream raw JSON lines to the node output. It parses structured output, extracts the final assistant text, captures the session id for workflow persistence, and may emit provider-specific human-readable progress lines during execution. Grok produces no live events in `json` mode; its result arrives as one final parse.
+- For non-structured providers, if any exist, the worker streams plain text line by line. All current built-in providers are structured-output providers.
 
 ## Cancellation Contract
 - `cancel()` is non-blocking. It sets `_cancelled` and spawns a daemon watchdog thread that runs terminate, wait up to 4 seconds, then kill if needed.
