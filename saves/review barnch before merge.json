@@ -236,7 +236,7 @@
       "x": 4655.458657792127,
       "y": 851.5489160701148,
       "name": "LLM 23",
-      "model": "gemini-3.1-pro-preview",
+      "model": "claude-sonnet-5:medium",
       "prompt": "stage commit and push. do not ask for confirmation about the commit message or anything. just stage commit and push.",
       "resume_session_enabled": false,
       "save_session_enabled": false,

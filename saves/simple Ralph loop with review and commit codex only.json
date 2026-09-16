@@ -94,7 +94,7 @@
       "x": 2022.5267788616347,
       "y": 215.89092607274745,
       "name": "stage commit and push",
-      "model": "gemini-3-flash-preview",
+      "model": "claude-sonnet-5:medium",
       "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore. do not ask for confirmation do not ask if a commit message is good do not fix anything just stage commit and push.",
       "resume_session_enabled": false,
       "save_session_enabled": false,

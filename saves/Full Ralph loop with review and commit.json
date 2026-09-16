@@ -210,7 +210,7 @@
       "x": 2401.6717625952283,
       "y": 544.8884026063411,
       "name": "LLM 20",
-      "model": "gemini-3-flash-preview",
+      "model": "claude-sonnet-5:medium",
       "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore",
       "resume_session_enabled": false,
       "save_session_enabled": false,

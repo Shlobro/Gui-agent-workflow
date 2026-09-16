@@ -141,7 +141,7 @@
       "x": 1514.9255938452288,
       "y": 293.0315026063412,
       "name": "LLM 20",
-      "model": "gemini-3-flash-preview",
+      "model": "claude-sonnet-5:medium",
       "prompt": "Stage commit and push. make sure anything that should be in gitignore is in gitignore. do not ask for confirmation do not ask if a commit message is good do not fix anything just stage commit and push.",
       "resume_session_enabled": false,
       "save_session_enabled": false,
