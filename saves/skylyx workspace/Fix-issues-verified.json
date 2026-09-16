@@ -1,0 +1,338 @@
+{
+ "nodes": [
+  {
+   "node_type": "create_file",
+   "id": "dc26ae69-d666-4911-bf6e-fdadfa5f4e5a",
+   "label_index": 1,
+   "x": -1500,
+   "y": 0,
+   "name": "create issue-taken.txt",
+   "filename": "issue-taken.txt"
+  },
+  {
+   "node_type": "create_file",
+   "id": "5879dc2a-2ea7-4110-8a0a-7692c9166092",
+   "label_index": 2,
+   "x": -1150,
+   "y": 0,
+   "name": "create pr-review.txt",
+   "filename": "pr-review.txt"
+  },
+  {
+   "node_type": "loop",
+   "id": "e2f1ff61-40e6-48d6-90b9-15ebd6383ef2",
+   "label_index": 3,
+   "x": -800,
+   "y": 0,
+   "name": "Issue loop (max 3 issues)",
+   "loop_count": 3
+  },
+  {
+   "id": "fd1fa223-4ade-40fe-be3d-76c39b09db90",
+   "label_index": 4,
+   "x": -400,
+   "y": -80,
+   "name": "Triage & claim one issue",
+   "model": "gpt-5.6-terra:medium",
+   "prompt": "You are the triage step of an automated workflow. No human can answer questions mid-run.\n\nLook at the open GitHub issues on this repository. Pick AT MOST ONE issue that you understand completely and are convinced you could implement start to finish without asking anything.\n\nIf you pick one:\n- Assign it to me.\n- Write ONLY the issue number and title to issue-taken.txt, e.g. '#42 Crash on empty config'.\n\nIf no open issue meets that bar:\n- Leave issue-taken.txt completely EMPTY. This is a valid and expected outcome, do not force a pick.\n- For any issue you looked at but declined, comment on it explaining exactly what is unclear or what decision you would need a human to make.\n\nDo not write any code in this step. Do not re-evaluate issues you already declined in an earlier pass of this conversation, skip straight past them.",
+   "profile_name": "",
+   "resume_session_enabled": true,
+   "save_session_enabled": false,
+   "save_session_name": "",
+   "restart_session_enabled": false,
+   "resume_named_session_name": "",
+   "saved_session_id": "",
+   "saved_session_provider": "",
+   "prepend_template_ids": [],
+   "append_template_ids": [],
+   "prepend_disabled_global_template_ids": [],
+   "append_disabled_global_template_ids": []
+  },
+  {
+   "node_type": "conditional",
+   "id": "65d2d6b7-9bdb-4a17-9940-2036f06d93b2",
+   "label_index": 5,
+   "x": 0,
+   "y": -80,
+   "name": "Did we claim an issue?",
+   "filename": "issue-taken.txt",
+   "condition_type": "file_empty"
+  },
+  {
+   "node_type": "attention",
+   "id": "d1d41ece-f843-4d13-8d75-8ed897e1fe68",
+   "label_index": 6,
+   "x": 0,
+   "y": -420,
+   "name": "No suitable issue - stopping",
+   "message": "Triage found no issue it could complete unaided. Nothing was assigned. Check the comments it left on the issues it declined."
+  },
+  {
+   "id": "8ac57335-3037-4e80-b32d-45a82ec57be4",
+   "label_index": 7,
+   "x": 400,
+   "y": -80,
+   "name": "Implement the claimed issue",
+   "model": "claude-opus-5:medium",
+   "prompt": "Read issue-taken.txt for the issue you are implementing. Implement it fully on a new branch named for the issue.\n\nYou are part of an automated workflow so no human can answer questions. Commit your work, but do NOT open a pull request yet. A verification step runs next and a PR is opened only if it passes.\n\nIf partway through you conclude you cannot finish this issue: discard all your work (reset the worktree, delete the branch), unassign me from the issue, comment on it explaining where you got stuck, and then empty issue-taken.txt so the workflow knows the attempt was abandoned.",
+   "profile_name": "",
+   "resume_session_enabled": false,
+   "save_session_enabled": false,
+   "save_session_name": "",
+   "restart_session_enabled": true,
+   "resume_named_session_name": "",
+   "saved_session_id": "",
+   "saved_session_provider": "",
+   "prepend_template_ids": [],
+   "append_template_ids": [],
+   "prepend_disabled_global_template_ids": [],
+   "append_disabled_global_template_ids": []
+  },
+  {
+   "node_type": "loop",
+   "id": "d181d16c-d1d4-4de3-986a-8c1a07221863",
+   "label_index": 8,
+   "x": 800,
+   "y": -80,
+   "name": "Review cycle (max 3 rounds)",
+   "loop_count": 3
+  },
+  {
+   "id": "0deb2f66-a4dd-41b6-989d-c2ecaf75e99b",
+   "label_index": 9,
+   "x": 1200,
+   "y": -80,
+   "name": "Verify & review before PR",
+   "model": "gpt-5.6-terra:high",
+   "prompt": "A junior dev just implemented the issue described in issue-taken.txt. Review their work before it becomes a pull request.\n\nFirst run the project's own checks. Read the repo developer guide, README and package manifest to find them (tests, linters, type checks, build) and actually run them.\n\nThen review the diff against the base branch. Be meticulous but only report things that should block a PR. Output ONLY these sections, and only if they have content:\n- Failing checks\n- Definite bugs\n- Does not actually solve the issue\n\nIgnore pre-existing TODOs and style nits. Put everything in pr-review.txt. If the checks pass and the change correctly solves the issue, leave pr-review.txt completely EMPTY.",
+   "profile_name": "",
+   "resume_session_enabled": false,
+   "save_session_enabled": false,
+   "save_session_name": "",
+   "restart_session_enabled": false,
+   "resume_named_session_name": "",
+   "saved_session_id": "",
+   "saved_session_provider": "",
+   "prepend_template_ids": [],
+   "append_template_ids": [],
+   "prepend_disabled_global_template_ids": [],
+   "append_disabled_global_template_ids": []
+  },
+  {
+   "node_type": "conditional",
+   "id": "ea3f4e66-0b3f-4f67-baf4-41b736125a59",
+   "label_index": 10,
+   "x": 1600,
+   "y": -80,
+   "name": "Is the review clean?",
+   "filename": "pr-review.txt",
+   "condition_type": "file_empty"
+  },
+  {
+   "id": "b4ec6c16-2fdb-4841-8aa1-8f9ac3e67ea8",
+   "label_index": 11,
+   "x": 1600,
+   "y": 300,
+   "name": "Fix review findings",
+   "model": "claude-opus-5:medium",
+   "prompt": "Read pr-review.txt. It lists blocking problems found in your implementation of the issue in issue-taken.txt. Fix everything you agree with and commit the fixes.\n\nIf you disagree with a finding, leave the code as-is. You cannot reply to the reviewer; the review file is cleared and the reviewer will re-check your work from scratch.",
+   "profile_name": "",
+   "resume_session_enabled": false,
+   "save_session_enabled": false,
+   "save_session_name": "",
+   "restart_session_enabled": false,
+   "resume_named_session_name": "",
+   "saved_session_id": "",
+   "saved_session_provider": "",
+   "prepend_template_ids": [],
+   "append_template_ids": [],
+   "prepend_disabled_global_template_ids": [],
+   "append_disabled_global_template_ids": []
+  },
+  {
+   "node_type": "truncate_file",
+   "id": "f7f36944-4337-41cc-af20-752aa985d225",
+   "label_index": 12,
+   "x": 1200,
+   "y": 300,
+   "name": "clear pr-review.txt",
+   "filename": "pr-review.txt"
+  },
+  {
+   "node_type": "attention",
+   "id": "eedb1000-32d3-49f7-a33f-91b3565dcb07",
+   "label_index": 13,
+   "x": 800,
+   "y": -420,
+   "name": "Review did not converge - no PR opened",
+   "message": "Three review rounds still found blocking problems. The branch is committed but NO pull request was opened. Read pr-review.txt and take it from here."
+  },
+  {
+   "id": "7f5dc42b-d927-43f8-90e4-36ec59a7b73c",
+   "label_index": 14,
+   "x": 2000,
+   "y": -80,
+   "name": "Open the pull request",
+   "model": "claude-sonnet-5:medium",
+   "prompt": "The implementation for the issue in issue-taken.txt passed review. Push the branch and open a pull request that closes that issue.\n\nWrite a clear title and a body covering what changed and why. Link the issue so merging the PR closes it. Do not ask for confirmation about anything, just push and open the PR.",
+   "profile_name": "",
+   "resume_session_enabled": false,
+   "save_session_enabled": false,
+   "save_session_name": "",
+   "restart_session_enabled": false,
+   "resume_named_session_name": "",
+   "saved_session_id": "",
+   "saved_session_provider": "",
+   "prepend_template_ids": [],
+   "append_template_ids": [],
+   "prepend_disabled_global_template_ids": [],
+   "append_disabled_global_template_ids": []
+  },
+  {
+   "node_type": "truncate_file",
+   "id": "020dde38-9003-418d-96c7-be2187ecee57",
+   "label_index": 15,
+   "x": 2400,
+   "y": -80,
+   "name": "clear issue-taken.txt",
+   "filename": "issue-taken.txt"
+  },
+  {
+   "node_type": "conditional",
+   "id": "383b5fcc-a8f2-4eb4-be5c-0e7f0e5927b1",
+   "label_index": 16,
+   "x": -400,
+   "y": 400,
+   "name": "Worktree left dirty?",
+   "condition_type": "git_changes"
+  },
+  {
+   "id": "ee03d87e-728a-4e92-b5d8-fb96c9c103c0",
+   "label_index": 17,
+   "x": 0,
+   "y": 400,
+   "name": "Report uncommitted leftovers",
+   "model": "claude-sonnet-5:medium",
+   "prompt": "The issue workflow finished but the working tree still has uncommitted or untracked changes. Do NOT delete anything. Run git status, summarise what is left over and which issue it probably came from, and write that summary to leftover-work.txt so a human can decide what to keep.",
+   "profile_name": "",
+   "resume_session_enabled": false,
+   "save_session_enabled": false,
+   "save_session_name": "",
+   "restart_session_enabled": false,
+   "resume_named_session_name": "",
+   "saved_session_id": "",
+   "saved_session_provider": "",
+   "prepend_template_ids": [],
+   "append_template_ids": [],
+   "prepend_disabled_global_template_ids": [],
+   "append_disabled_global_template_ids": []
+  },
+  {
+   "node_type": "attention",
+   "id": "e4b96bd0-c350-48ae-a0a4-46bc63089901",
+   "label_index": 18,
+   "x": 400,
+   "y": 700,
+   "name": "Workflow finished",
+   "message": "Issue workflow finished cleanly."
+  }
+ ],
+ "connections": [
+  {
+   "from": "start",
+   "to": "dc26ae69-d666-4911-bf6e-fdadfa5f4e5a"
+  },
+  {
+   "from": "dc26ae69-d666-4911-bf6e-fdadfa5f4e5a",
+   "to": "5879dc2a-2ea7-4110-8a0a-7692c9166092"
+  },
+  {
+   "from": "5879dc2a-2ea7-4110-8a0a-7692c9166092",
+   "to": "e2f1ff61-40e6-48d6-90b9-15ebd6383ef2"
+  },
+  {
+   "from": "e2f1ff61-40e6-48d6-90b9-15ebd6383ef2",
+   "to": "fd1fa223-4ade-40fe-be3d-76c39b09db90",
+   "source_port": "loop"
+  },
+  {
+   "from": "fd1fa223-4ade-40fe-be3d-76c39b09db90",
+   "to": "65d2d6b7-9bdb-4a17-9940-2036f06d93b2"
+  },
+  {
+   "from": "65d2d6b7-9bdb-4a17-9940-2036f06d93b2",
+   "to": "d1d41ece-f843-4d13-8d75-8ed897e1fe68",
+   "source_port": "true"
+  },
+  {
+   "from": "65d2d6b7-9bdb-4a17-9940-2036f06d93b2",
+   "to": "8ac57335-3037-4e80-b32d-45a82ec57be4",
+   "source_port": "false"
+  },
+  {
+   "from": "8ac57335-3037-4e80-b32d-45a82ec57be4",
+   "to": "d181d16c-d1d4-4de3-986a-8c1a07221863"
+  },
+  {
+   "from": "d181d16c-d1d4-4de3-986a-8c1a07221863",
+   "to": "0deb2f66-a4dd-41b6-989d-c2ecaf75e99b",
+   "source_port": "loop"
+  },
+  {
+   "from": "d181d16c-d1d4-4de3-986a-8c1a07221863",
+   "to": "eedb1000-32d3-49f7-a33f-91b3565dcb07",
+   "source_port": "done"
+  },
+  {
+   "from": "0deb2f66-a4dd-41b6-989d-c2ecaf75e99b",
+   "to": "ea3f4e66-0b3f-4f67-baf4-41b736125a59"
+  },
+  {
+   "from": "ea3f4e66-0b3f-4f67-baf4-41b736125a59",
+   "to": "7f5dc42b-d927-43f8-90e4-36ec59a7b73c",
+   "source_port": "true"
+  },
+  {
+   "from": "ea3f4e66-0b3f-4f67-baf4-41b736125a59",
+   "to": "b4ec6c16-2fdb-4841-8aa1-8f9ac3e67ea8",
+   "source_port": "false"
+  },
+  {
+   "from": "b4ec6c16-2fdb-4841-8aa1-8f9ac3e67ea8",
+   "to": "f7f36944-4337-41cc-af20-752aa985d225"
+  },
+  {
+   "from": "f7f36944-4337-41cc-af20-752aa985d225",
+   "to": "d181d16c-d1d4-4de3-986a-8c1a07221863"
+  },
+  {
+   "from": "7f5dc42b-d927-43f8-90e4-36ec59a7b73c",
+   "to": "020dde38-9003-418d-96c7-be2187ecee57"
+  },
+  {
+   "from": "020dde38-9003-418d-96c7-be2187ecee57",
+   "to": "e2f1ff61-40e6-48d6-90b9-15ebd6383ef2"
+  },
+  {
+   "from": "e2f1ff61-40e6-48d6-90b9-15ebd6383ef2",
+   "to": "383b5fcc-a8f2-4eb4-be5c-0e7f0e5927b1",
+   "source_port": "done"
+  },
+  {
+   "from": "383b5fcc-a8f2-4eb4-be5c-0e7f0e5927b1",
+   "to": "e4b96bd0-c350-48ae-a0a4-46bc63089901",
+   "source_port": "false"
+  },
+  {
+   "from": "383b5fcc-a8f2-4eb4-be5c-0e7f0e5927b1",
+   "to": "ee03d87e-728a-4e92-b5d8-fb96c9c103c0",
+   "source_port": "true"
+  }
+ ],
+ "node_counter": 18,
+ "start_pos": [
+  -1800.0,
+  0.0
+ ],
+ "named_sessions": []
+}
