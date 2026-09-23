@@ -107,7 +107,10 @@ function Editor() {
 
   useEffect(() => {
     const unsubscribe = window.workflow.onMessage((message) => {
-      if (message.type === "state") setState(message.state);
+      if (message.type === "state") {
+        setState(message.state);
+        if (!message.state.running) setAttention(null);
+      }
       if (message.type === "error") notify(message.error);
       if (message.type === "usage_limit") setUsage(message);
       if (message.type === "attention") setAttention(message);

@@ -518,6 +518,9 @@ class DesktopBridge:
             return self._run(payload)
         if action == "stop":
             self.canvas.stop_all()
+            for loop, answer in self.attention_waits.values():
+                answer[0] = False
+                loop.quit()
             return None
         if action == "schedule_resume":
             node_id = str(payload.get("id", ""))
@@ -619,6 +622,10 @@ class DesktopBridge:
 
 
 def main() -> int:
+    # The Electron host reads and writes UTF-8; Windows defaults pipes to cp1252.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
     app = QApplication(sys.argv)
     app.setApplicationName("LLM Workflow Runtime")
     bridge = DesktopBridge(app)

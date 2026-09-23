@@ -9,6 +9,8 @@ from typing import Optional, Sequence
 
 from PySide6.QtCore import QThread, Signal
 
+from src.workers.process_tree import terminate_tree, terminate_tree_async
+
 
 class ScriptWorker(QThread):
     """Run a script command in a background thread with cancellation support."""
@@ -36,16 +38,7 @@ class ScriptWorker(QThread):
         self._lock = threading.Lock()
 
     def _terminate_process(self):
-        proc = self._process
-        if proc and proc.poll() is None:
-            try:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=4)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-            except Exception:
-                pass
+        terminate_tree(self._process)
 
     def _start_timeout_watchdog(self, done_event: threading.Event):
         if self.timeout <= 0:
@@ -158,16 +151,4 @@ class ScriptWorker(QThread):
 
     def cancel(self):
         self._cancelled = True
-        proc = self._process
-        if proc and proc.poll() is None:
-            def _kill():
-                try:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=4)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                except Exception:
-                    pass
-
-            threading.Thread(target=_kill, daemon=True).start()
+        terminate_tree_async(self._process)

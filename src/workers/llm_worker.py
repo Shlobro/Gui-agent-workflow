@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from PySide6.QtCore import QThread, Signal
 
 from src.llm.base_provider import BaseLLMProvider
+from src.workers.process_tree import terminate_tree, terminate_tree_async
 
 
 class LLMWorker(QThread):
@@ -41,16 +42,7 @@ class LLMWorker(QThread):
 
     def _terminate_process(self):
         """Kill the subprocess if it is running. Safe to call from any thread."""
-        proc = self._process
-        if proc and proc.poll() is None:
-            try:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=4)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-            except Exception:
-                pass
+        terminate_tree(self._process)
 
     def run(self):
         try:
@@ -147,20 +139,8 @@ class LLMWorker(QThread):
             self._emit_error("Cancelled" if self._cancelled else str(e))
 
     def cancel(self):
-        """Signal the worker to stop. Non-blocking: sets flag and spawns a
-        daemon thread that runs terminate→wait(4s)→kill so the subprocess is
-        guaranteed to die even if readline() is blocking the worker thread."""
+        """Signal the worker to stop. Non-blocking: sets the flag and kills
+        the whole process tree on a daemon thread so a blocked readline()
+        returns."""
         self._cancelled = True
-        proc = self._process
-        if proc and proc.poll() is None:
-            def _kill():
-                try:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=4)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                except Exception:
-                    pass
-            t = threading.Thread(target=_kill, daemon=True)
-            t.start()
+        terminate_tree_async(self._process)
